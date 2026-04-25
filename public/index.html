@@ -4,8 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ECOCO 智慧客服</title>
-  <!-- 優化四：Markdown 渲染 -->
+  <!-- Markdown 渲染 + XSS 防護 -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
   <style>
     :root {
@@ -317,9 +318,9 @@ function appendMessage(role, text) {
   const bubble = document.createElement('div');
   bubble.className = `bubble ${role}`;
 
-  // 優化四：bot 訊息用 Markdown 渲染
+  // bot 訊息：Markdown 渲染 + DOMPurify 防 XSS
   if (role === 'bot') {
-    bubble.innerHTML = marked.parse(text);
+    bubble.innerHTML = DOMPurify.sanitize(marked.parse(text));
   } else {
     bubble.innerHTML = text.replace(/\n/g, '<br>');
   }

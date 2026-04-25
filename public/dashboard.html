@@ -125,6 +125,32 @@
     .empty-state { text-align:center; padding:40px; color:var(--gray-mid); font-size:14px; }
     .loading { text-align:center; padding:40px; color:var(--gray-mid); }
 
+    /* ── 登入 Modal ── */
+    .modal-overlay {
+      position:fixed; inset:0; background:rgba(0,0,0,0.5);
+      display:flex; align-items:center; justify-content:center; z-index:999;
+    }
+    .modal-overlay.hidden { display:none; }
+    .modal-box {
+      background:var(--white); border-radius:16px; padding:32px;
+      width:360px; box-shadow:0 8px 40px rgba(0,0,0,0.2); text-align:center;
+    }
+    .modal-box h2 { font-size:18px; color:var(--green-dark); margin-bottom:8px; }
+    .modal-box p  { font-size:13px; color:var(--gray-mid); margin-bottom:20px; }
+    .modal-input {
+      width:100%; border:1.5px solid #cce0d8; border-radius:8px;
+      padding:10px 14px; font-size:14px; outline:none; margin-bottom:12px;
+      font-family:'Noto Sans TC',sans-serif;
+    }
+    .modal-input:focus { border-color:var(--green-mid); }
+    .modal-btn {
+      width:100%; padding:10px; background:var(--green-main); color:white;
+      border:none; border-radius:8px; font-size:14px; cursor:pointer;
+      font-family:'Noto Sans TC',sans-serif;
+    }
+    .modal-btn:hover { background:var(--green-mid); }
+    .modal-error { font-size:12px; color:#e07070; margin-top:8px; }
+
     @media (max-width: 768px) {
       .stats-grid { grid-template-columns: repeat(2, 1fr); }
       .two-col { grid-template-columns: 1fr !important; }
@@ -132,6 +158,19 @@
   </style>
 </head>
 <body>
+
+<!-- 登入 Modal -->
+<div class="modal-overlay" id="loginModal">
+  <div class="modal-box">
+    <div style="font-size:32px;margin-bottom:12px">🔐</div>
+    <h2>後台登入</h2>
+    <p>請輸入 Admin Key 以存取儀表板</p>
+    <input class="modal-input" type="password" id="adminKeyInput"
+      placeholder="輸入 Admin Key..." onkeydown="if(event.key==='Enter')submitLogin()" />
+    <button class="modal-btn" onclick="submitLogin()">登入</button>
+    <div class="modal-error" id="loginError"></div>
+  </div>
+</div>
 
 <div class="header">
   <div>
@@ -176,13 +215,55 @@
 </div>
 
 <script>
+// ── XSS 防護：跳脫 HTML 特殊字元 ─────────────────────────
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// ── Admin Key 管理 ────────────────────────────────────────
+function getAdminKey() { return sessionStorage.getItem('adminKey') || ''; }
+
+function adminFetch(url) {
+  return fetch(url, { headers: { 'x-admin-key': getAdminKey() } })
+    .then(res => {
+      if (res.status === 401) { showLogin(); throw new Error('401'); }
+      return res.json();
+    });
+}
+
+// ── 登入 Modal ────────────────────────────────────────────
+function showLogin() {
+  document.getElementById('loginModal').classList.remove('hidden');
+  document.getElementById('adminKeyInput').value = '';
+  document.getElementById('loginError').textContent = '';
+}
+
+async function submitLogin() {
+  const key = document.getElementById('adminKeyInput').value.trim();
+  if (!key) return;
+
+  const res = await fetch('/api/stats', { headers: { 'x-admin-key': key } });
+  if (res.status === 401) {
+    document.getElementById('loginError').textContent = 'Admin Key 錯誤，請重新輸入';
+    return;
+  }
+  sessionStorage.setItem('adminKey', key);
+  document.getElementById('loginModal').classList.add('hidden');
+  loadAll();
+}
+
 async function loadAll() {
   await Promise.all([loadStats(), loadKeywords(), loadSessions()]);
 }
 
 // 統計卡片 + 滿意度圖表
 async function loadStats() {
-  const data = await fetch('/api/stats').then(r => r.json());
+  const data = await adminFetch('/api/stats');
   const total = data.positiveRatings + data.negativeRatings;
   const satisfactionRate = total > 0 ? Math.round(data.positiveRatings / total * 100) : 0;
 
@@ -240,7 +321,7 @@ async function loadStats() {
 
 // 關鍵字排行
 async function loadKeywords() {
-  const data = await fetch('/api/top-questions').then(r => r.json());
+  const data = await adminFetch('/api/top-questions');
   if (data.length === 0) {
     document.getElementById('keywordList').innerHTML = '<div class="empty-state">尚無資料，開始對話後會顯示統計</div>';
     return;
@@ -260,7 +341,7 @@ async function loadKeywords() {
 
 // 對話紀錄
 async function loadSessions() {
-  const data = await fetch('/api/sessions').then(r => r.json());
+  const data = await adminFetch('/api/sessions');
   if (data.length === 0) {
     document.getElementById('sessionsList').innerHTML = '<div class="empty-state">尚無對話紀錄，對話後會自動出現在這裡</div>';
     return;
@@ -272,7 +353,7 @@ async function loadSessions() {
     const messages  = session.messages.map(msg => `
       <div class="msg-item">
         <span class="msg-role ${msg.role}">${msg.role === 'user' ? '用戶' : 'AI'}</span>
-        <div class="msg-content">${msg.content.substring(0, 120)}${msg.content.length > 120 ? '…' : ''}</div>
+        <div class="msg-content">${escapeHtml(msg.content.substring(0, 120))}${msg.content.length > 120 ? '…' : ''}</div>
         <div class="msg-time">${new Date(msg.timestamp).toLocaleTimeString('zh-TW', { hour:'2-digit', minute:'2-digit' })}</div>
       </div>
     `).join('');
@@ -280,7 +361,7 @@ async function loadSessions() {
     return `
       <div class="session-item">
         <div class="session-header" onclick="toggleSession('sess-${idx}', ${idx})">
-          <span class="session-id">${session.session_id.substring(0, 20)}…</span>
+          <span class="session-id">${escapeHtml(session.session_id.substring(0, 20))}…</span>
           <span class="session-meta">${startTime}</span>
           <span class="session-count">${msgCount} 問答</span>
           <span class="session-toggle" id="toggle-${idx}">▼</span>
@@ -300,7 +381,13 @@ function toggleSession(id, idx) {
   toggle.textContent = el.classList.contains('open') ? '▲' : '▼';
 }
 
-loadAll();
+// ── 初始化：有 key 就直接載入，沒有就顯示登入畫面 ──────
+if (getAdminKey()) {
+  document.getElementById('loginModal').classList.add('hidden');
+  loadAll();
+} else {
+  showLogin();
+}
 </script>
 
 </body>

@@ -1,14 +1,33 @@
 require('dotenv').config();
 const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
-const path     = require('path');
-const Database = require('better-sqlite3');
+const path      = require('path');
+const Database  = require('better-sqlite3');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 const client = new Anthropic();
+
+// ── 安全性：Rate Limiting ─────────────────────────────────
+const chatLimiter = rateLimit({
+  windowMs: 60 * 1000,   // 1 分鐘
+  max: 10,               // 每個 IP 最多 10 次
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: '請求過於頻繁，請稍後再試（每分鐘限 10 次）' },
+});
+
+// ── 安全性：Admin API 保護 ────────────────────────────────
+function requireAdminKey(req, res, next) {
+  const key = req.headers['x-admin-key'];
+  if (!key || key !== process.env.ADMIN_KEY) {
+    return res.status(401).json({ error: '未授權，請提供有效的 Admin Key' });
+  }
+  next();
+}
 
 // ── SQLite 資料庫初始化 ───────────────────────────────────
 const db = new Database(path.join(__dirname, 'ecoco_chat.db'));
@@ -233,11 +252,24 @@ ${KNOWLEDGE_BASE}
 - 用戶問優惠或折扣：說明現有點數兌換制度，不承諾額外優惠`;
 
 // ── API 路由 ──────────────────────────────────────────────
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', chatLimiter, async (req, res) => {
   const { history } = req.body;
+
+  // ── 安全性：輸入驗證 ──
+  const MAX_HISTORY = 20;
+  const MAX_MSG_LEN = 2000;
 
   if (!Array.isArray(history) || history.length === 0) {
     return res.status(400).json({ error: '缺少對話紀錄' });
+  }
+  if (history.length > MAX_HISTORY) {
+    return res.status(400).json({ error: `對話歷史超過 ${MAX_HISTORY} 則上限` });
+  }
+  if (!history.every(m => ['user', 'assistant'].includes(m.role))) {
+    return res.status(400).json({ error: '訊息格式錯誤' });
+  }
+  if (history.some(m => typeof m.content !== 'string' || m.content.length > MAX_MSG_LEN)) {
+    return res.status(400).json({ error: `訊息長度超過 ${MAX_MSG_LEN} 字上限` });
   }
 
   try {
@@ -283,7 +315,7 @@ app.post('/api/rating', (req, res) => {
 });
 
 // ── 統計總覽 ─────────────────────────────────────────────
-app.get('/api/stats', (req, res) => {
+app.get('/api/stats', requireAdminKey, (req, res) => {
   const { count: totalSessions   } = db.prepare('SELECT COUNT(DISTINCT session_id) as count FROM conversations').get();
   const { count: totalMessages   } = db.prepare('SELECT COUNT(*) as count FROM conversations').get();
   const { count: positiveRatings } = db.prepare("SELECT COUNT(*) as count FROM ratings WHERE type = 'positive'").get();
@@ -292,7 +324,7 @@ app.get('/api/stats', (req, res) => {
 });
 
 // ── 每次對話的詳細紀錄 ───────────────────────────────────
-app.get('/api/sessions', (req, res) => {
+app.get('/api/sessions', requireAdminKey, (req, res) => {
   const sessions = db.prepare(`
     SELECT session_id,
            COUNT(*)       AS message_count,
@@ -315,7 +347,7 @@ app.get('/api/sessions', (req, res) => {
 });
 
 // ── 最常被問的關鍵字 Top 10 ──────────────────────────────
-app.get('/api/top-questions', (req, res) => {
+app.get('/api/top-questions', requireAdminKey, (req, res) => {
   const userMessages = db.prepare("SELECT content FROM conversations WHERE role = 'user'").all();
   const keywordList  = ['點數', '兌換', '寶特瓶', '電池', '全聯', '全家', '家樂福',
                         '站點', 'App', '帳號', '密碼', '壓扁', '期限', '合作'];
