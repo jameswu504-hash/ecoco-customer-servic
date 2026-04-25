@@ -1,8 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
-const path = require('path');
-const fs = require('fs');
+const path     = require('path');
+const Database = require('better-sqlite3');
 
 const app = express();
 app.use(express.json());
@@ -10,17 +10,25 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const client = new Anthropic();
 
-// ── JSON 檔案儲存（純 JS，不需要 native 套件）────────────
-const DB_PATH = path.join(__dirname, 'ecoco_chat.json');
+// ── SQLite 資料庫初始化 ───────────────────────────────────
+const db = new Database(path.join(__dirname, 'ecoco_chat.db'));
 
-let db = { conversations: [], ratings: [] };
-if (fs.existsSync(DB_PATH)) {
-  try { db = JSON.parse(fs.readFileSync(DB_PATH, 'utf8')); } catch (e) {}
-}
+db.exec(`
+  CREATE TABLE IF NOT EXISTS conversations (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT    NOT NULL,
+    role       TEXT    NOT NULL,
+    content    TEXT    NOT NULL,
+    timestamp  TEXT    NOT NULL
+  );
 
-function saveDB() {
-  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
-}
+  CREATE TABLE IF NOT EXISTS ratings (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    msg_id    TEXT NOT NULL,
+    type      TEXT NOT NULL,
+    timestamp TEXT NOT NULL
+  );
+`);
 
 // ── 完整 ECOCO 知識庫 ──────────────────────────────────────
 const KNOWLEDGE_BASE = `
@@ -252,11 +260,11 @@ app.post('/api/chat', async (req, res) => {
 
     // 儲存對話紀錄
     const sessionId = req.headers['x-session-id'] || 'unknown';
-    const userMsg = history[history.length - 1];
-    const ts = new Date().toISOString();
-    db.conversations.push({ session_id: sessionId, role: 'user',      content: userMsg.content, timestamp: ts });
-    db.conversations.push({ session_id: sessionId, role: 'assistant', content: reply,            timestamp: ts });
-    saveDB();
+    const userMsg   = history[history.length - 1];
+    const ts        = new Date().toISOString();
+    const insertConv = db.prepare('INSERT INTO conversations (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)');
+    insertConv.run(sessionId, 'user',      userMsg.content, ts);
+    insertConv.run(sessionId, 'assistant', reply,           ts);
 
     res.json({ reply });
   } catch (err) {
@@ -269,65 +277,61 @@ app.post('/api/chat', async (req, res) => {
 app.post('/api/rating', (req, res) => {
   const { msgId, type } = req.body;
   if (!msgId || !type) return res.status(400).json({ error: '缺少參數' });
-  db.ratings.push({ msg_id: String(msgId), type, timestamp: new Date().toISOString() });
-  saveDB();
+  db.prepare('INSERT INTO ratings (msg_id, type, timestamp) VALUES (?, ?, ?)')
+    .run(String(msgId), type, new Date().toISOString());
   res.json({ success: true });
 });
 
 // ── 統計總覽 ─────────────────────────────────────────────
 app.get('/api/stats', (req, res) => {
-  const sessionIds = new Set(db.conversations.map(c => c.session_id));
-  res.json({
-    totalSessions:   sessionIds.size,
-    totalMessages:   db.conversations.length,
-    positiveRatings: db.ratings.filter(r => r.type === 'positive').length,
-    negativeRatings: db.ratings.filter(r => r.type === 'negative').length,
-  });
+  const { count: totalSessions   } = db.prepare('SELECT COUNT(DISTINCT session_id) as count FROM conversations').get();
+  const { count: totalMessages   } = db.prepare('SELECT COUNT(*) as count FROM conversations').get();
+  const { count: positiveRatings } = db.prepare("SELECT COUNT(*) as count FROM ratings WHERE type = 'positive'").get();
+  const { count: negativeRatings } = db.prepare("SELECT COUNT(*) as count FROM ratings WHERE type = 'negative'").get();
+  res.json({ totalSessions, totalMessages, positiveRatings, negativeRatings });
 });
 
 // ── 每次對話的詳細紀錄 ───────────────────────────────────
 app.get('/api/sessions', (req, res) => {
-  const sessionMap = {};
-  for (const conv of db.conversations) {
-    if (!sessionMap[conv.session_id]) {
-      sessionMap[conv.session_id] = {
-        session_id: conv.session_id,
-        messages:   [],
-        started_at: conv.timestamp,
-        last_at:    conv.timestamp,
-      };
-    }
-    const s = sessionMap[conv.session_id];
-    s.messages.push({ role: conv.role, content: conv.content, timestamp: conv.timestamp });
-    if (conv.timestamp < s.started_at) s.started_at = conv.timestamp;
-    if (conv.timestamp > s.last_at)    s.last_at    = conv.timestamp;
-  }
+  const sessions = db.prepare(`
+    SELECT session_id,
+           COUNT(*)       AS message_count,
+           MIN(timestamp) AS started_at,
+           MAX(timestamp) AS last_at
+    FROM conversations
+    GROUP BY session_id
+    ORDER BY started_at DESC
+  `).all();
 
-  const result = Object.values(sessionMap)
-    .map(s => ({ ...s, message_count: s.messages.length }))
-    .sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
+  const result = sessions.map(s => ({
+    ...s,
+    messages: db.prepare(`
+      SELECT role, content, timestamp FROM conversations
+      WHERE session_id = ? ORDER BY timestamp ASC
+    `).all(s.session_id),
+  }));
 
   res.json(result);
 });
 
 // ── 最常被問的關鍵字 Top 10 ──────────────────────────────
 app.get('/api/top-questions', (req, res) => {
-  const userMessages = db.conversations.filter(c => c.role === 'user');
+  const userMessages = db.prepare("SELECT content FROM conversations WHERE role = 'user'").all();
   const keywordList  = ['點數', '兌換', '寶特瓶', '電池', '全聯', '全家', '家樂福',
                         '站點', 'App', '帳號', '密碼', '壓扁', '期限', '合作'];
 
   const keywords = {};
-  userMessages.forEach(msg => {
+  userMessages.forEach(({ content }) => {
     keywordList.forEach(kw => {
-      if (msg.content.includes(kw)) keywords[kw] = (keywords[kw] || 0) + 1;
+      if (content.includes(kw)) keywords[kw] = (keywords[kw] || 0) + 1;
     });
   });
 
-  const sorted = Object.entries(keywords)
-    .sort((a, b) => b[1] - a[1])
-    .map(([keyword, count]) => ({ keyword, count }));
-
-  res.json(sorted);
+  res.json(
+    Object.entries(keywords)
+      .sort((a, b) => b[1] - a[1])
+      .map(([keyword, count]) => ({ keyword, count }))
+  );
 });
 
 // ── 啟動伺服器 ────────────────────────────────────────────

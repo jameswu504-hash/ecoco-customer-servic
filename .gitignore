@@ -6,6 +6,7 @@ node_modules/
 
 # 對話資料（用戶隱私，不上傳）
 ecoco_chat.json
+ecoco_chat.db
 
 # 系統檔案
 .DS_Store
