@@ -1,0 +1,12 @@
+# 套件（可用 npm install 重新安裝，不需上傳）
+node_modules/
+
+# 環境變數（含 API Key，絕對不能上傳）
+.env
+
+# 對話資料（用戶隱私，不上傳）
+ecoco_chat.json
+
+# 系統檔案
+.DS_Store
+Thumbs.db

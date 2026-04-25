@@ -1,0 +1,15 @@
+{
+  "name": "ecoco-customer-service",
+  "version": "1.0.0",
+  "description": "ECOCO 宜可可 AI 客服系統後端",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "latest",
+    "dotenv": "^16.0.0",
+    "express": "^4.18.0"
+  }
+}

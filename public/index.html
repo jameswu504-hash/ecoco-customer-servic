@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ECOCO 智慧客服</title>
+  <!-- 優化四：Markdown 渲染 -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --green-dark:  #0a3d2e;
+      --green-main:  #1a6b4a;
+      --green-mid:   #2d9b6f;
+      --green-light: #4ecb94;
+      --green-pale:  #d4f5e9;
+      --green-ghost: #f0faf5;
+      --black:       #0d1f1a;
+      --gray-dark:   #2c3e35;
+      --gray-mid:    #6b8a7a;
+      --gray-light:  #b8d0c5;
+      --white:       #ffffff;
+      --bg:          #f5faf7;
+      --bubble-user: #1a6b4a;
+      --bubble-bot:  #ffffff;
+      --radius-lg:   18px;
+      --radius-md:   12px;
+      --radius-sm:   8px;
+      --shadow:      0 4px 24px rgba(10,61,46,0.10);
+      --shadow-sm:   0 2px 8px rgba(10,61,46,0.07);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Noto Sans TC', sans-serif;
+      background: var(--bg);
+      color: var(--black);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: var(--green-dark);
+      padding: 0 24px;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+    }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .logo-icon {
+      width: 36px; height: 36px;
+      background: var(--green-light);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; flex-shrink: 0;
+    }
+    .header-title { color: var(--white); font-size: 16px; font-weight: 700; letter-spacing: 0.5px; }
+    .header-sub { color: var(--green-light); font-size: 11px; font-family: 'Space Mono', monospace; margin-top: 1px; }
+    .status-dot {
+      width: 8px; height: 8px;
+      background: var(--green-light); border-radius: 50%;
+      animation: pulse 2s infinite; flex-shrink: 0;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(1.2); }
+    }
+    .header-right { display: flex; align-items: center; gap: 8px; color: var(--green-light); font-size: 12px; font-family: 'Space Mono', monospace; }
+
+    /* ── 快速問題列 ── */
+    .quick-bar {
+      background: var(--white); border-bottom: 1px solid #e0ede8;
+      padding: 10px 16px; display: flex; gap: 8px;
+      overflow-x: auto; flex-shrink: 0; scrollbar-width: none;
+    }
+    .quick-bar::-webkit-scrollbar { display: none; }
+    .quick-chip {
+      flex-shrink: 0; padding: 6px 14px; border-radius: 20px;
+      border: 1.5px solid var(--green-mid); color: var(--green-main);
+      font-size: 12px; font-weight: 500; cursor: pointer;
+      background: transparent; transition: all 0.18s; white-space: nowrap;
+      font-family: 'Noto Sans TC', sans-serif;
+    }
+    .quick-chip:hover { background: var(--green-main); color: var(--white); border-color: var(--green-main); }
+
+    /* ── 訊息區 ── */
+    .messages {
+      flex: 1; overflow-y: auto; padding: 20px 16px;
+      display: flex; flex-direction: column; gap: 16px; scroll-behavior: smooth;
+    }
+    .messages::-webkit-scrollbar { width: 4px; }
+    .messages::-webkit-scrollbar-track { background: transparent; }
+    .messages::-webkit-scrollbar-thumb { background: var(--gray-light); border-radius: 4px; }
+
+    /* ── 訊息泡泡 ── */
+    .msg-row { display: flex; gap: 10px; align-items: flex-end; animation: fadeUp 0.3s ease; }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .msg-row.user { flex-direction: row-reverse; }
+    .avatar {
+      width: 32px; height: 32px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px; flex-shrink: 0;
+    }
+    .avatar.bot  { background: var(--green-dark); }
+    .avatar.user { background: var(--green-mid); }
+    .bubble {
+      max-width: 72%; padding: 12px 16px; border-radius: var(--radius-lg);
+      font-size: 14px; line-height: 1.65; box-shadow: var(--shadow-sm);
+    }
+    .bubble.bot  { background: var(--bubble-bot); color: var(--black); border-bottom-left-radius: 4px; border: 1px solid #e0ede8; }
+    .bubble.user { background: var(--bubble-user); color: var(--white); border-bottom-right-radius: 4px; }
+    .bubble-time { font-size: 10px; color: var(--gray-mid); margin-top: 4px; font-family: 'Space Mono', monospace; }
+    .msg-row.user .bubble-time { text-align: right; }
+
+    /* ── 打字動畫 ── */
+    .typing-indicator { display: flex; gap: 4px; align-items: center; padding: 14px 16px; }
+    .typing-dot { width: 7px; height: 7px; background: var(--green-mid); border-radius: 50%; animation: typing 1.2s infinite; }
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes typing {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+      30% { transform: translateY(-6px); opacity: 1; }
+    }
+
+    /* ── 來源標籤 ── */
+    .source-tag {
+      display: inline-block; margin-top: 8px; padding: 3px 10px;
+      background: var(--green-ghost); border: 1px solid var(--green-pale);
+      border-radius: 12px; font-size: 11px; color: var(--green-main);
+      font-family: 'Space Mono', monospace;
+    }
+
+    /* ── 優化二：評分按鈕 ── */
+    .rating-bar { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+    .rating-btn {
+      background: none; border: 1.5px solid var(--gray-light);
+      border-radius: 20px; padding: 3px 12px; font-size: 12px;
+      cursor: pointer; color: var(--gray-mid); transition: all 0.18s;
+      font-family: 'Noto Sans TC', sans-serif;
+    }
+    .rating-btn:hover { border-color: var(--green-mid); color: var(--green-main); }
+    .rating-btn.selected { background: var(--green-pale); border-color: var(--green-mid); color: var(--green-main); }
+    .rating-text { font-size: 11px; color: var(--gray-mid); font-family: 'Space Mono', monospace; }
+
+    /* ── 優化三：客服聯絡按鈕 ── */
+    .contact-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      margin-top: 10px; padding: 8px 16px;
+      background: var(--green-main); color: white;
+      border: none; border-radius: 20px; font-size: 12px;
+      font-family: 'Noto Sans TC', sans-serif; cursor: pointer;
+      text-decoration: none; transition: background 0.18s;
+    }
+    .contact-btn:hover { background: var(--green-mid); }
+
+    /* ── 優化四：Markdown 樣式 ── */
+    .bubble.bot table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+    .bubble.bot th,
+    .bubble.bot td { border: 1px solid #e0ede8; padding: 6px 10px; text-align: left; }
+    .bubble.bot th { background: var(--green-ghost); color: var(--green-main); font-weight: 500; }
+    .bubble.bot ul,
+    .bubble.bot ol { padding-left: 18px; margin: 6px 0; }
+    .bubble.bot li { margin: 3px 0; }
+    .bubble.bot strong { color: var(--green-dark); font-weight: 500; }
+    .bubble.bot code { background: var(--green-ghost); padding: 1px 6px; border-radius: 4px; font-size: 12px; font-family: 'Space Mono', monospace; }
+    .bubble.bot p { margin: 4px 0; }
+    .bubble.bot h1, .bubble.bot h2, .bubble.bot h3 { font-size: 14px; margin: 6px 0 4px; color: var(--green-dark); }
+
+    /* ── 輸入區 ── */
+    .input-area {
+      background: var(--white); border-top: 1px solid #e0ede8;
+      padding: 12px 16px; display: flex; gap: 10px; align-items: flex-end; flex-shrink: 0;
+    }
+    .input-box {
+      flex: 1; border: 1.5px solid #cce0d8; border-radius: var(--radius-md);
+      padding: 11px 16px; font-size: 14px; font-family: 'Noto Sans TC', sans-serif;
+      resize: none; outline: none; line-height: 1.5;
+      max-height: 120px; overflow-y: auto; transition: border-color 0.2s;
+      color: var(--black); background: var(--bg);
+    }
+    .input-box:focus { border-color: var(--green-mid); background: var(--white); }
+    .input-box::placeholder { color: var(--gray-mid); }
+    .send-btn {
+      width: 44px; height: 44px; background: var(--green-main); border: none;
+      border-radius: var(--radius-md); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; transition: all 0.18s;
+    }
+    .send-btn:hover { background: var(--green-mid); transform: scale(1.05); }
+    .send-btn:active { transform: scale(0.97); }
+    .send-btn:disabled { background: var(--gray-light); cursor: not-allowed; transform: none; }
+    .send-btn svg { width: 18px; height: 18px; fill: white; }
+
+    /* ── 歡迎卡片 ── */
+    .welcome-card {
+      background: linear-gradient(135deg, var(--green-dark) 0%, var(--green-main) 100%);
+      border-radius: var(--radius-lg); padding: 20px;
+      color: white; text-align: center; margin: 8px 0 4px;
+    }
+    .welcome-card .emoji { font-size: 32px; margin-bottom: 8px; }
+    .welcome-card h2 { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+    .welcome-card p { font-size: 13px; opacity: 0.85; line-height: 1.6; }
+
+    /* ── 底部提示 ── */
+    .footer-hint {
+      text-align: center; font-size: 11px; color: var(--gray-mid);
+      padding: 6px 16px 10px; flex-shrink: 0; font-family: 'Space Mono', monospace;
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="logo-icon">♻️</div>
+    <div>
+      <div class="header-title">ECOCO 智慧客服</div>
+      <div class="header-sub">AI-POWERED · 24/7</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="status-dot"></div>
+    線上服務中
+  </div>
+</div>
+
+<div class="quick-bar" id="quickBar">
+  <button class="quick-chip" onclick="quickAsk('每種回收物可以得幾點？')">💰 回收點數</button>
+  <button class="quick-chip" onclick="quickAsk('點數有效期限是多久？')">⏰ 點數期限</button>
+  <button class="quick-chip" onclick="quickAsk('ECOCO 有哪些合作商家？')">🏪 合作商家</button>
+  <button class="quick-chip" onclick="quickAsk('瓶子可以壓扁再投嗎？')">🍶 投瓶規則</button>
+  <button class="quick-chip" onclick="quickAsk('怎麼查詢附近的 ECOCO 站點？')">📍 找站點</button>
+  <button class="quick-chip" onclick="quickAsk('如何聯絡 ECOCO 客服？')">📞 聯絡客服</button>
+</div>
+
+<div class="messages" id="messages">
+  <div class="welcome-card">
+    <div class="emoji">♻️</div>
+    <h2>嗨！我是 ECOCO 智慧客服</h2>
+    <p>我可以回答關於回收、點數兌換、<br>站點查詢、App 使用等各種問題！</p>
+  </div>
+  <div class="msg-row bot">
+    <div class="avatar bot">🤖</div>
+    <div>
+      <div class="bubble bot">
+        您好！歡迎使用 ECOCO 智慧客服 😊<br><br>
+        我能幫您解答關於智慧回收機操作、點數計算、合作商家兌換、App 使用等問題。<br><br>
+        請問有什麼我可以幫到您的嗎？
+      </div>
+      <div class="bubble-time" id="initTime"></div>
+    </div>
+  </div>
+</div>
+
+<div class="input-area">
+  <textarea
+    class="input-box" id="inputBox"
+    placeholder="請輸入您的問題..."
+    rows="1"
+    onkeydown="handleKey(event)"
+    oninput="autoResize(this)"
+  ></textarea>
+  <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+    <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg>
+  </button>
+</div>
+
+<div class="footer-hint">回答內容來自 ECOCO 官方知識庫 · 如有疑問請洽官方客服</div>
+
+<script>
+// 優化五：Session ID（識別這次對話）
+const SESSION_ID = 'session_' + Date.now();
+
+let chatHistory = [];
+
+document.getElementById('initTime').textContent = getTime();
+
+function getTime() {
+  return new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+
+function quickAsk(text) {
+  document.getElementById('inputBox').value = text;
+  sendMessage();
+}
+
+function appendMessage(role, text) {
+  const messages = document.getElementById('messages');
+  const row = document.createElement('div');
+  row.className = `msg-row ${role}`;
+
+  const avatar = document.createElement('div');
+  avatar.className = `avatar ${role}`;
+  avatar.textContent = role === 'bot' ? '🤖' : '👤';
+
+  const wrapper = document.createElement('div');
+
+  const bubble = document.createElement('div');
+  bubble.className = `bubble ${role}`;
+
+  // 優化四：bot 訊息用 Markdown 渲染
+  if (role === 'bot') {
+    bubble.innerHTML = marked.parse(text);
+  } else {
+    bubble.innerHTML = text.replace(/\n/g, '<br>');
+  }
+
+  const time = document.createElement('div');
+  time.className = 'bubble-time';
+  time.textContent = getTime();
+
+  if (role === 'bot') {
+    const tag = document.createElement('div');
+    tag.innerHTML = '<span class="source-tag">📚 ECOCO 知識庫</span>';
+    wrapper.appendChild(bubble);
+    wrapper.appendChild(tag);
+    wrapper.appendChild(time);
+
+    // 優化二：滿意度評分按鈕
+    const ratingBar = document.createElement('div');
+    ratingBar.className = 'rating-bar';
+
+    const msgId = Date.now();
+
+    const thumbUp = document.createElement('button');
+    thumbUp.className = 'rating-btn';
+    thumbUp.textContent = '👍 有幫助';
+
+    const thumbDown = document.createElement('button');
+    thumbDown.className = 'rating-btn';
+    thumbDown.textContent = '👎 沒幫助';
+
+    const ratingText = document.createElement('span');
+    ratingText.className = 'rating-text';
+
+    thumbUp.onclick   = () => submitRating(msgId, 'positive', thumbUp,   thumbDown, ratingText);
+    thumbDown.onclick = () => submitRating(msgId, 'negative', thumbDown, thumbUp,   ratingText);
+
+    ratingBar.appendChild(thumbUp);
+    ratingBar.appendChild(thumbDown);
+    ratingBar.appendChild(ratingText);
+    wrapper.appendChild(ratingBar);
+
+    // 優化三：自動偵測是否需要聯絡客服按鈕
+    const needsContact = text.includes('客服') || text.includes('不確定') || text.includes('沒有確切');
+    if (needsContact) {
+      const contactWrapper = document.createElement('div');
+      contactWrapper.style.marginTop = '8px';
+      const contactBtn = document.createElement('a');
+      contactBtn.className = 'contact-btn';
+      contactBtn.href = 'mailto:info@ecoco.xyz';
+      contactBtn.innerHTML = '📧 聯絡 ECOCO 客服';
+      contactWrapper.appendChild(contactBtn);
+      wrapper.appendChild(contactWrapper);
+    }
+  } else {
+    wrapper.appendChild(bubble);
+    wrapper.appendChild(time);
+  }
+
+  row.appendChild(avatar);
+  row.appendChild(wrapper);
+  messages.appendChild(row);
+  messages.scrollTop = messages.scrollHeight;
+
+  return bubble;
+}
+
+function showTyping() {
+  const messages = document.getElementById('messages');
+  const row = document.createElement('div');
+  row.className = 'msg-row bot';
+  row.id = 'typingRow';
+  const avatar = document.createElement('div');
+  avatar.className = 'avatar bot';
+  avatar.textContent = '🤖';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble bot';
+  bubble.innerHTML = '<div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>';
+  row.appendChild(avatar);
+  row.appendChild(bubble);
+  messages.appendChild(row);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function removeTyping() {
+  const row = document.getElementById('typingRow');
+  if (row) row.remove();
+}
+
+// 優化二：滿意度評分送出
+async function submitRating(msgId, type, clickedBtn, otherBtn, textEl) {
+  clickedBtn.classList.add('selected');
+  otherBtn.disabled = true;
+  otherBtn.style.opacity = '0.4';
+  textEl.textContent = type === 'positive' ? '謝謝您的回饋！😊' : '感謝告知，我們會持續改善！';
+
+  try {
+    await fetch('/api/rating', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ msgId, type, timestamp: new Date().toISOString() })
+    });
+  } catch (e) {
+    // 記錄失敗不影響使用者體驗
+  }
+}
+
+// 送出訊息
+async function sendMessage() {
+  const input = document.getElementById('inputBox');
+  const sendBtn = document.getElementById('sendBtn');
+  const text = input.value.trim();
+  if (!text) return;
+
+  input.value = '';
+  input.style.height = 'auto';
+  sendBtn.disabled = true;
+
+  appendMessage('user', text);
+  chatHistory.push({ role: 'user', content: text });
+
+  showTyping();
+
+  try {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-session-id': SESSION_ID       // 優化五：傳入 session ID
+      },
+      body: JSON.stringify({ history: chatHistory })
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || '伺服器錯誤');
+
+    const reply = data.reply;
+    chatHistory.push({ role: 'assistant', content: reply });
+
+    removeTyping();
+    appendMessage('bot', reply);
+  } catch (err) {
+    removeTyping();
+    appendMessage('bot', '抱歉，連線發生問題 😢\n請稍後再試，或直接聯絡客服：info@ecoco.xyz');
+  }
+
+  sendBtn.disabled = false;
+  input.focus();
+}
+</script>
+
+</body>
+</html>

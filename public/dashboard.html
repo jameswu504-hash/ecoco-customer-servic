@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ECOCO 客服後台</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Space+Mono&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --green-dark: #0a3d2e;
+      --green-main: #1a6b4a;
+      --green-mid:  #2d9b6f;
+      --green-light:#4ecb94;
+      --green-pale: #d4f5e9;
+      --green-ghost:#f0faf5;
+      --bg: #f5faf7;
+      --white: #ffffff;
+      --black: #0d1f1a;
+      --gray-mid: #6b8a7a;
+      --gray-light:#b8d0c5;
+      --radius: 12px;
+      --shadow: 0 2px 12px rgba(10,61,46,0.08);
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:'Noto Sans TC',sans-serif; background:var(--bg); color:var(--black); }
+
+    /* Header */
+    .header {
+      background:var(--green-dark);
+      padding:0 28px; height:60px;
+      display:flex; align-items:center; justify-content:space-between;
+    }
+    .header-title { color:white; font-size:16px; font-weight:700; }
+    .header-sub { color:var(--green-light); font-size:11px; font-family:'Space Mono',monospace; }
+    .header-right { display:flex; gap:12px; align-items:center; }
+    .refresh-btn {
+      padding:6px 14px; background:var(--green-mid); color:white;
+      border:none; border-radius:8px; font-size:12px; cursor:pointer;
+      font-family:'Noto Sans TC',sans-serif;
+    }
+    .refresh-btn:hover { background:var(--green-light); color:var(--green-dark); }
+    .back-link { color:var(--green-light); text-decoration:none; font-size:12px; font-family:'Space Mono',monospace; }
+
+    .container { max-width:1100px; margin:0 auto; padding:24px 20px; }
+
+    /* 統計卡片 */
+    .stats-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:28px; }
+    .stat-card {
+      background:var(--white); border-radius:var(--radius); padding:20px;
+      box-shadow:var(--shadow); border:1px solid #e0ede8;
+    }
+    .stat-num { font-size:32px; font-weight:700; color:var(--green-main); font-family:'Space Mono',monospace; }
+    .stat-label { font-size:13px; color:var(--gray-mid); margin-top:4px; }
+    .stat-icon { font-size:20px; margin-bottom:8px; }
+
+    /* 區塊標題 */
+    .section-title { font-size:15px; font-weight:700; color:var(--green-dark); margin-bottom:14px; display:flex; align-items:center; gap:8px; }
+
+    /* 關鍵字排行 */
+    .keyword-card {
+      background:var(--white); border-radius:var(--radius); padding:20px;
+      box-shadow:var(--shadow); border:1px solid #e0ede8;
+    }
+    .keyword-item {
+      display:flex; align-items:center; gap:10px;
+      padding:8px 0; border-bottom:1px solid var(--green-ghost);
+    }
+    .keyword-item:last-child { border-bottom:none; }
+    .keyword-rank {
+      width:24px; height:24px; border-radius:50%;
+      background:var(--green-pale); color:var(--green-main);
+      font-size:11px; font-weight:700;
+      display:flex; align-items:center; justify-content:center;
+      flex-shrink:0; font-family:'Space Mono',monospace;
+    }
+    .keyword-rank.top3 { background:var(--green-main); color:white; }
+    .keyword-name { flex:1; font-size:13px; }
+    .keyword-bar-wrap { width:120px; height:8px; background:var(--green-ghost); border-radius:4px; overflow:hidden; }
+    .keyword-bar { height:100%; background:var(--green-mid); border-radius:4px; transition:width 0.5s; }
+    .keyword-count { font-size:12px; color:var(--gray-mid); font-family:'Space Mono',monospace; width:24px; text-align:right; }
+
+    /* 滿意度 */
+    .rating-card {
+      background:var(--white); border-radius:var(--radius); padding:20px;
+      box-shadow:var(--shadow); border:1px solid #e0ede8;
+    }
+    .rating-bar-wrap { display:flex; align-items:center; gap:12px; margin:8px 0; }
+    .rating-label { font-size:13px; width:70px; }
+    .rating-track { flex:1; height:12px; background:var(--green-ghost); border-radius:6px; overflow:hidden; }
+    .rating-fill { height:100%; border-radius:6px; transition:width 0.5s; }
+    .rating-fill.positive { background:#2d9b6f; }
+    .rating-fill.negative { background:#e07070; }
+    .rating-pct { font-size:12px; font-family:'Space Mono',monospace; width:36px; text-align:right; color:var(--gray-mid); }
+
+    /* 對話紀錄 */
+    .sessions-card {
+      background:var(--white); border-radius:var(--radius); padding:20px;
+      box-shadow:var(--shadow); border:1px solid #e0ede8; margin-bottom:28px;
+    }
+    .session-item { border:1px solid #e0ede8; border-radius:10px; margin-bottom:12px; overflow:hidden; }
+    .session-header {
+      display:flex; align-items:center; gap:12px; padding:12px 16px;
+      background:var(--green-ghost); cursor:pointer; user-select:none;
+    }
+    .session-header:hover { background:var(--green-pale); }
+    .session-id {
+      font-size:11px; font-family:'Space Mono',monospace; color:var(--green-main);
+      background:var(--green-pale); padding:2px 8px; border-radius:6px;
+    }
+    .session-meta { font-size:12px; color:var(--gray-mid); flex:1; }
+    .session-count { font-size:11px; font-family:'Space Mono',monospace; color:var(--green-main); }
+    .session-toggle { font-size:12px; color:var(--gray-mid); }
+    .session-messages { display:none; padding:12px 16px; }
+    .session-messages.open { display:block; }
+    .msg-item { display:flex; gap:10px; margin-bottom:10px; align-items:flex-start; }
+    .msg-role {
+      font-size:10px; font-family:'Space Mono',monospace;
+      padding:2px 8px; border-radius:10px; flex-shrink:0; margin-top:2px;
+    }
+    .msg-role.user      { background:#e0ede8; color:var(--green-main); }
+    .msg-role.assistant { background:var(--green-pale); color:var(--green-dark); }
+    .msg-content { font-size:13px; line-height:1.6; color:var(--black); flex:1; }
+    .msg-time { font-size:10px; color:var(--gray-light); font-family:'Space Mono',monospace; flex-shrink:0; }
+
+    .empty-state { text-align:center; padding:40px; color:var(--gray-mid); font-size:14px; }
+    .loading { text-align:center; padding:40px; color:var(--gray-mid); }
+
+    @media (max-width: 768px) {
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .two-col { grid-template-columns: 1fr !important; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="header-title">♻️ ECOCO 客服後台</div>
+    <div class="header-sub">DASHBOARD · 管理員視角</div>
+  </div>
+  <div class="header-right">
+    <a href="/" class="back-link">← 回到客服</a>
+    <button class="refresh-btn" onclick="loadAll()">🔄 重新整理</button>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- 統計總覽 -->
+  <div class="stats-grid" id="statsGrid">
+    <div class="loading">載入中...</div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:28px" class="two-col">
+
+    <!-- 熱門關鍵字 -->
+    <div class="keyword-card">
+      <div class="section-title">🔥 用戶最常問的關鍵字</div>
+      <div id="keywordList"><div class="loading">載入中...</div></div>
+    </div>
+
+    <!-- 滿意度 -->
+    <div class="rating-card">
+      <div class="section-title">⭐ 回答滿意度</div>
+      <div id="ratingChart"><div class="loading">載入中...</div></div>
+    </div>
+
+  </div>
+
+  <!-- 對話紀錄 -->
+  <div class="sessions-card">
+    <div class="section-title">💬 每次對話詳細紀錄</div>
+    <div id="sessionsList"><div class="loading">載入中...</div></div>
+  </div>
+
+</div>
+
+<script>
+async function loadAll() {
+  await Promise.all([loadStats(), loadKeywords(), loadSessions()]);
+}
+
+// 統計卡片 + 滿意度圖表
+async function loadStats() {
+  const data = await fetch('/api/stats').then(r => r.json());
+  const total = data.positiveRatings + data.negativeRatings;
+  const satisfactionRate = total > 0 ? Math.round(data.positiveRatings / total * 100) : 0;
+
+  document.getElementById('statsGrid').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-icon">💬</div>
+      <div class="stat-num">${data.totalSessions}</div>
+      <div class="stat-label">總對話次數</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">📨</div>
+      <div class="stat-num">${data.totalMessages}</div>
+      <div class="stat-label">總訊息數</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">👍</div>
+      <div class="stat-num">${satisfactionRate}%</div>
+      <div class="stat-label">回答滿意率</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">📊</div>
+      <div class="stat-num">${total}</div>
+      <div class="stat-label">收到評分數</div>
+    </div>
+  `;
+
+  const pos = data.positiveRatings;
+  const neg = data.negativeRatings;
+  const posWidth = total > 0 ? Math.round(pos / total * 100) : 0;
+  const negWidth = total > 0 ? Math.round(neg / total * 100) : 0;
+
+  document.getElementById('ratingChart').innerHTML = `
+    <div style="margin-bottom:16px;font-size:13px;color:var(--gray-mid)">
+      共收到 <strong>${total}</strong> 筆評分
+    </div>
+    <div class="rating-bar-wrap">
+      <span class="rating-label">👍 有幫助</span>
+      <div class="rating-track">
+        <div class="rating-fill positive" style="width:${posWidth}%"></div>
+      </div>
+      <span class="rating-pct">${pos} 筆</span>
+    </div>
+    <div class="rating-bar-wrap">
+      <span class="rating-label">👎 沒幫助</span>
+      <div class="rating-track">
+        <div class="rating-fill negative" style="width:${negWidth}%"></div>
+      </div>
+      <span class="rating-pct">${neg} 筆</span>
+    </div>
+    <div style="margin-top:16px;font-size:12px;color:var(--gray-mid)">
+      滿意率：<strong style="color:var(--green-main)">${posWidth}%</strong>
+    </div>
+  `;
+}
+
+// 關鍵字排行
+async function loadKeywords() {
+  const data = await fetch('/api/top-questions').then(r => r.json());
+  if (data.length === 0) {
+    document.getElementById('keywordList').innerHTML = '<div class="empty-state">尚無資料，開始對話後會顯示統計</div>';
+    return;
+  }
+  const max = data[0]?.count || 1;
+  document.getElementById('keywordList').innerHTML = data.slice(0, 8).map((item, i) => `
+    <div class="keyword-item">
+      <div class="keyword-rank ${i < 3 ? 'top3' : ''}">${i + 1}</div>
+      <div class="keyword-name">${item.keyword}</div>
+      <div class="keyword-bar-wrap">
+        <div class="keyword-bar" style="width:${Math.round(item.count / max * 100)}%"></div>
+      </div>
+      <div class="keyword-count">${item.count}</div>
+    </div>
+  `).join('');
+}
+
+// 對話紀錄
+async function loadSessions() {
+  const data = await fetch('/api/sessions').then(r => r.json());
+  if (data.length === 0) {
+    document.getElementById('sessionsList').innerHTML = '<div class="empty-state">尚無對話紀錄，對話後會自動出現在這裡</div>';
+    return;
+  }
+
+  document.getElementById('sessionsList').innerHTML = data.map((session, idx) => {
+    const startTime = new Date(session.started_at).toLocaleString('zh-TW');
+    const msgCount  = Math.floor(session.message_count / 2);
+    const messages  = session.messages.map(msg => `
+      <div class="msg-item">
+        <span class="msg-role ${msg.role}">${msg.role === 'user' ? '用戶' : 'AI'}</span>
+        <div class="msg-content">${msg.content.substring(0, 120)}${msg.content.length > 120 ? '…' : ''}</div>
+        <div class="msg-time">${new Date(msg.timestamp).toLocaleTimeString('zh-TW', { hour:'2-digit', minute:'2-digit' })}</div>
+      </div>
+    `).join('');
+
+    return `
+      <div class="session-item">
+        <div class="session-header" onclick="toggleSession('sess-${idx}', ${idx})">
+          <span class="session-id">${session.session_id.substring(0, 20)}…</span>
+          <span class="session-meta">${startTime}</span>
+          <span class="session-count">${msgCount} 問答</span>
+          <span class="session-toggle" id="toggle-${idx}">▼</span>
+        </div>
+        <div class="session-messages" id="sess-${idx}">
+          ${messages}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function toggleSession(id, idx) {
+  const el     = document.getElementById(id);
+  const toggle = document.getElementById('toggle-' + idx);
+  el.classList.toggle('open');
+  toggle.textContent = el.classList.contains('open') ? '▲' : '▼';
+}
+
+loadAll();
+</script>
+
+</body>
+</html>
