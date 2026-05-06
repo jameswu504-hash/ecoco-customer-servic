@@ -342,6 +342,10 @@ function appendMessage(role, text) {
 
     const msgId = Date.now();
 
+    // 取得這輪對話的用戶問題和 AI 回答，一起送出供後台分析
+    const question = chatHistory.length >= 2 ? chatHistory[chatHistory.length - 2].content : '';
+    const reply    = text;
+
     const thumbUp = document.createElement('button');
     thumbUp.className = 'rating-btn';
     thumbUp.textContent = '👍 有幫助';
@@ -353,8 +357,8 @@ function appendMessage(role, text) {
     const ratingText = document.createElement('span');
     ratingText.className = 'rating-text';
 
-    thumbUp.onclick   = () => submitRating(msgId, 'positive', thumbUp,   thumbDown, ratingText);
-    thumbDown.onclick = () => submitRating(msgId, 'negative', thumbDown, thumbUp,   ratingText);
+    thumbUp.onclick   = () => submitRating(msgId, 'positive', thumbUp,   thumbDown, ratingText, question, reply);
+    thumbDown.onclick = () => submitRating(msgId, 'negative', thumbDown, thumbUp,   ratingText, question, reply);
 
     ratingBar.appendChild(thumbUp);
     ratingBar.appendChild(thumbDown);
@@ -409,7 +413,7 @@ function removeTyping() {
 }
 
 // 優化二：滿意度評分送出
-async function submitRating(msgId, type, clickedBtn, otherBtn, textEl) {
+async function submitRating(msgId, type, clickedBtn, otherBtn, textEl, question, reply) {
   clickedBtn.classList.add('selected');
   otherBtn.disabled = true;
   otherBtn.style.opacity = '0.4';
@@ -419,7 +423,7 @@ async function submitRating(msgId, type, clickedBtn, otherBtn, textEl) {
     await fetch('/api/rating', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ msgId, type, timestamp: new Date().toISOString() })
+      body: JSON.stringify({ msgId, type, question, reply })
     });
   } catch (e) {
     // 記錄失敗不影響使用者體驗
