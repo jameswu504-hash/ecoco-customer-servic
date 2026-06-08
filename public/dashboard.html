@@ -178,6 +178,54 @@
     .save-msg.ok  { color:var(--green-main); }
     .save-msg.err { color:#e07070; }
 
+    /* 知識庫分類管理 */
+    .kb-add-btn {
+      padding:6px 14px; background:var(--green-main); color:white;
+      border:none; border-radius:8px; font-size:13px; cursor:pointer;
+      font-family:'Noto Sans TC',sans-serif;
+    }
+    .kb-add-btn:hover { background:var(--green-mid); }
+    .kb-layout { display:grid; grid-template-columns:240px 1fr; gap:16px; }
+    .kb-sidebar {
+      max-height:460px; overflow-y:auto;
+      border:1px solid #e0ede8; border-radius:10px; padding:8px; background:var(--green-ghost);
+    }
+    .kb-cat-btn {
+      display:flex; justify-content:space-between; align-items:center; gap:8px;
+      width:100%; text-align:left; padding:9px 12px; margin-bottom:4px;
+      border:1px solid transparent; border-radius:8px; background:var(--white);
+      cursor:pointer; font-family:'Noto Sans TC',sans-serif; font-size:13px;
+      color:var(--black); transition:all 0.15s;
+    }
+    .kb-cat-btn:hover { border-color:var(--green-mid); }
+    .kb-cat-btn.active { background:var(--green-main); color:white; }
+    .kb-cat-btn.active .kb-cat-size { color:var(--green-pale); }
+    .kb-cat-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .kb-cat-size { font-size:10px; font-family:'Space Mono',monospace; color:var(--gray-mid); flex-shrink:0; }
+    .kb-editor { border:1px solid #e0ede8; border-radius:10px; padding:16px; min-height:340px; }
+    .kb-empty { color:var(--gray-mid); font-size:14px; text-align:center; padding:80px 20px; line-height:1.7; }
+    .kb-label { display:block; font-size:12px; color:var(--gray-mid); margin:4px 0; }
+    .kb-name-input {
+      width:100%; border:1.5px solid #cce0d8; border-radius:8px;
+      padding:9px 12px; font-size:14px; outline:none; margin-bottom:12px;
+      font-family:'Noto Sans TC',sans-serif;
+    }
+    .kb-name-input:focus { border-color:var(--green-mid); }
+    .kb-content-input {
+      width:100%; height:300px; border:1.5px solid #cce0d8; border-radius:8px;
+      padding:12px; font-size:13px; font-family:'Space Mono',monospace;
+      resize:vertical; outline:none; line-height:1.7; color:var(--black);
+      background:var(--green-ghost);
+    }
+    .kb-content-input:focus { border-color:var(--green-mid); background:var(--white); }
+    .kb-actions { display:flex; justify-content:space-between; align-items:center; margin-top:10px; }
+    .kb-del-btn {
+      padding:8px 16px; background:white; color:#e07070; border:1.5px solid #e07070;
+      border-radius:8px; font-size:13px; cursor:pointer; font-family:'Noto Sans TC',sans-serif;
+    }
+    .kb-del-btn:hover { background:#e07070; color:white; }
+    @media (max-width:768px) { .kb-layout { grid-template-columns:1fr; } }
+
     /* 搜尋 */
     .search-wrap { margin-bottom:14px; }
     .search-input {
@@ -275,15 +323,30 @@
 
   </div>
 
-  <!-- 知識庫編輯器 -->
+  <!-- 知識庫管理（分類版）-->
   <div class="knowledge-card">
-    <div class="section-title">📝 知識庫編輯（儲存後立即生效，不需重啟）</div>
-    <textarea class="knowledge-textarea" id="knowledgeText" oninput="updateCharCount()" spellcheck="false"></textarea>
-    <div class="knowledge-actions">
-      <span class="knowledge-char" id="charCount">0 字</span>
-      <div style="display:flex;gap:12px;align-items:center">
-        <span class="save-msg" id="saveMsg"></span>
-        <button class="save-btn" id="saveBtn" onclick="saveKnowledge()">💾 儲存並立即生效</button>
+    <div class="section-title" style="justify-content:space-between">
+      <span>📚 知識庫管理 <span id="kbCount" style="color:var(--gray-mid);font-weight:400;font-size:13px"></span></span>
+      <button class="kb-add-btn" onclick="newSection()">＋ 新增分類</button>
+    </div>
+    <div class="kb-layout">
+      <div class="kb-sidebar" id="kbSidebar"><div class="loading">載入中...</div></div>
+      <div class="kb-editor">
+        <div class="kb-empty" id="kbEmpty">← 從左邊點一個分類來檢視或編輯<br>或按右上角「＋ 新增分類」<br><br>修改後按「儲存」，AI 立即生效、永久保存</div>
+        <div id="kbForm" style="display:none">
+          <label class="kb-label">分類名稱</label>
+          <input class="kb-name-input" id="kbName" placeholder="例如：點數計算規則" />
+          <label class="kb-label">內容</label>
+          <textarea class="kb-content-input" id="kbContent" spellcheck="false" oninput="kbCharCount()"></textarea>
+          <div class="kb-actions">
+            <span class="knowledge-char" id="kbChar">0 字</span>
+            <div style="display:flex;gap:10px;align-items:center">
+              <span class="save-msg" id="kbMsg"></span>
+              <button class="kb-del-btn" id="kbDelBtn" onclick="deleteSection()">🗑 刪除</button>
+              <button class="save-btn" id="kbSaveBtn" onclick="saveSection()">💾 儲存</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -360,44 +423,114 @@ async function loadAll() {
   await Promise.all([loadStats(), loadKeywords(), loadSessions(), loadUnanswered(), loadRatingDetails(), loadKnowledge()]);
 }
 
-// 知識庫編輯器
+// ── 知識庫分類管理 ────────────────────────────────────────
+let kbSections = [];     // 目前所有分類
+let kbCurrentId = null;  // 正在編輯的 id（null = 新增中尚未存）
+
 async function loadKnowledge() {
-  const data = await adminFetch('/api/knowledge');
-  const ta = document.getElementById('knowledgeText');
-  ta.value = data.content;
-  updateCharCount();
+  const data = await adminFetch('/api/knowledge/sections');
+  kbSections = data;
+  document.getElementById('kbCount').textContent = `（共 ${data.length} 個分類）`;
+  renderKbSidebar();
 }
 
-function updateCharCount() {
-  const len = document.getElementById('knowledgeText').value.length;
-  document.getElementById('charCount').textContent = len.toLocaleString() + ' 字';
+function renderKbSidebar() {
+  const el = document.getElementById('kbSidebar');
+  if (kbSections.length === 0) {
+    el.innerHTML = '<div class="empty-state">尚無分類，按「＋ 新增分類」開始</div>';
+    return;
+  }
+  el.innerHTML = kbSections.map(s => `
+    <button class="kb-cat-btn ${s.id === kbCurrentId ? 'active' : ''}" onclick="selectSection(${s.id})">
+      <span class="kb-cat-name">${escapeHtml(s.category)}</span>
+      <span class="kb-cat-size">${s.content.length}字</span>
+    </button>
+  `).join('');
 }
 
-async function saveKnowledge() {
-  const content = document.getElementById('knowledgeText').value.trim();
-  if (!content) return;
-  const btn = document.getElementById('saveBtn');
-  const msg = document.getElementById('saveMsg');
-  btn.disabled = true;
-  btn.textContent = '儲存中...';
-  msg.textContent = '';
+function showKbForm() {
+  document.getElementById('kbEmpty').style.display = 'none';
+  document.getElementById('kbForm').style.display = 'block';
+  document.getElementById('kbMsg').textContent = '';
+}
 
+function selectSection(id) {
+  const s = kbSections.find(x => x.id === id);
+  if (!s) return;
+  kbCurrentId = id;
+  document.getElementById('kbName').value = s.category;
+  document.getElementById('kbContent').value = s.content;
+  document.getElementById('kbDelBtn').style.display = '';
+  showKbForm();
+  kbCharCount();
+  renderKbSidebar();
+}
+
+function newSection() {
+  kbCurrentId = null;
+  document.getElementById('kbName').value = '';
+  document.getElementById('kbContent').value = '';
+  document.getElementById('kbDelBtn').style.display = 'none'; // 還沒存，不給刪
+  showKbForm();
+  kbCharCount();
+  renderKbSidebar();
+  document.getElementById('kbName').focus();
+}
+
+function kbCharCount() {
+  document.getElementById('kbChar').textContent =
+    document.getElementById('kbContent').value.length.toLocaleString() + ' 字';
+}
+
+async function saveSection() {
+  const category = document.getElementById('kbName').value.trim();
+  const content  = document.getElementById('kbContent').value;
+  const msg = document.getElementById('kbMsg');
+  const btn = document.getElementById('kbSaveBtn');
+  if (!category) { msg.textContent = '❌ 請填分類名稱'; msg.className = 'save-msg err'; return; }
+
+  btn.disabled = true; btn.textContent = '儲存中...'; msg.textContent = '';
   try {
-    const res = await fetch('/api/knowledge', {
-      method:  'POST',
-      headers: { 'x-admin-key': getAdminKey(), 'Content-Type': 'text/plain; charset=utf-8' },
-      body:    content,
+    const isNew = (kbCurrentId == null);
+    const url   = isNew ? '/api/knowledge/sections' : '/api/knowledge/sections/' + kbCurrentId;
+    const res = await fetch(url, {
+      method:  isNew ? 'POST' : 'PUT',
+      headers: { 'x-admin-key': getAdminKey(), 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ category, content }),
     });
-    if (!res.ok) throw new Error((await res.json()).error || '儲存失敗');
-    msg.textContent = '✅ 已儲存，立即生效';
-    msg.className = 'save-msg ok';
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || '儲存失敗');
+    if (isNew) kbCurrentId = body.id;
+    msg.textContent = '✅ 已儲存，AI 立即生效'; msg.className = 'save-msg ok';
+    await loadKnowledge();
+    document.getElementById('kbDelBtn').style.display = '';
+    renderKbSidebar();
   } catch (e) {
-    msg.textContent = '❌ ' + e.message;
-    msg.className = 'save-msg err';
+    msg.textContent = '❌ ' + e.message; msg.className = 'save-msg err';
   } finally {
-    btn.disabled = false;
-    btn.textContent = '💾 儲存並立即生效';
+    btn.disabled = false; btn.textContent = '💾 儲存';
     setTimeout(() => { msg.textContent = ''; }, 4000);
+  }
+}
+
+async function deleteSection() {
+  if (kbCurrentId == null) return;
+  const s = kbSections.find(x => x.id === kbCurrentId);
+  if (!confirm(`確定要刪除分類「${s ? s.category : ''}」嗎？\n此動作無法復原。`)) return;
+  const msg = document.getElementById('kbMsg');
+  try {
+    const res = await fetch('/api/knowledge/sections/' + kbCurrentId, {
+      method: 'DELETE',
+      headers: { 'x-admin-key': getAdminKey() },
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || '刪除失敗');
+    kbCurrentId = null;
+    document.getElementById('kbForm').style.display = 'none';
+    document.getElementById('kbEmpty').style.display = 'block';
+    await loadKnowledge();
+  } catch (e) {
+    msg.textContent = '❌ ' + e.message; msg.className = 'save-msg err';
   }
 }
 
