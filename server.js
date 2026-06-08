@@ -3,7 +3,7 @@ const express   = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 const path      = require('path');
 const crypto    = require('crypto');
-const Database  = require('better-sqlite3');
+const { Pool }  = require('pg');
 const rateLimit = require('express-rate-limit');
 
 const app = express();
@@ -11,6 +11,15 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 const client = new Anthropic();
+
+// ── PostgreSQL 連線池 ─────────────────────────────────────
+// DATABASE_URL 由環境變數提供（Neon / Supabase / Render Postgres）
+// 雲端 Postgres 外部連線一律需要 SSL；若用 Render 內部連線報 SSL 錯，
+// 可在環境變數加 PGSSL=disable 關閉。
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.PGSSL === 'disable' ? false : { rejectUnauthorized: false },
+});
 
 // ── 安全性：Rate Limiting ─────────────────────────────────
 const chatLimiter = rateLimit({
@@ -37,81 +46,74 @@ function requireAdminKey(req, res, next) {
   next();
 }
 
-// ── Fix 2：資料庫初始化 + Index 加速查詢 ──────────────────
-const db = new Database(path.join(__dirname, 'ecoco_chat.db'));
+// ── 資料庫初始化（建表 + 索引），啟動時跑一次 ──────────────
+// 注意：每條指令分開執行（雲端 Postgres 連線池不接受一次多語句）
+const SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS conversations (
+      id         SERIAL PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      role       TEXT NOT NULL,
+      content    TEXT NOT NULL,
+      timestamp  TEXT NOT NULL
+    )`,
+  `CREATE TABLE IF NOT EXISTS ratings (
+      id        SERIAL PRIMARY KEY,
+      msg_id    TEXT NOT NULL,
+      type      TEXT NOT NULL,
+      timestamp TEXT NOT NULL,
+      question  TEXT DEFAULT '',
+      reply     TEXT DEFAULT ''
+    )`,
+  `CREATE TABLE IF NOT EXISTS unanswered_questions (
+      id         SERIAL PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      question   TEXT NOT NULL,
+      timestamp  TEXT NOT NULL
+    )`,
+  `CREATE TABLE IF NOT EXISTS knowledge_sections (
+      id         SERIAL PRIMARY KEY,
+      category   TEXT NOT NULL,
+      content    TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL
+    )`,
+  `CREATE INDEX IF NOT EXISTS idx_conv_session  ON conversations(session_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_conv_role     ON conversations(role)`,
+  `CREATE INDEX IF NOT EXISTS idx_ratings_type  ON ratings(type)`,
+  `CREATE INDEX IF NOT EXISTS idx_unanswered_ts ON unanswered_questions(timestamp)`,
+  `CREATE INDEX IF NOT EXISTS idx_ks_sort       ON knowledge_sections(sort_order, id)`,
+];
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS conversations (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id TEXT NOT NULL,
-    role       TEXT NOT NULL,
-    content    TEXT NOT NULL,
-    timestamp  TEXT NOT NULL
+async function initDb() {
+  for (const stmt of SCHEMA) {
+    await pool.query(stmt);
+  }
+
+  // 首次部署：若 knowledge_sections 為空，從 knowledge.js 匯入初始分類
+  const { rows } = await pool.query('SELECT COUNT(*) AS count FROM knowledge_sections');
+  if (Number(rows[0].count) === 0) {
+    const seed = require('./knowledge'); // 分類陣列 [{category, content}]
+    const now  = new Date().toISOString();
+    let i = 0;
+    for (const s of seed) {
+      await pool.query(
+        'INSERT INTO knowledge_sections (category, content, sort_order, updated_at) VALUES ($1, $2, $3, $4)',
+        [s.category, s.content, i++, now]
+      );
+    }
+    console.log(`知識庫初始化：從 knowledge.js 匯入 ${seed.length} 個分類`);
+  }
+}
+
+// ── 知識庫：用記憶體快取，避免每次對話都查 DB ──────────────
+let knowledgeCache = '';
+
+async function refreshKnowledgeCache() {
+  const { rows } = await pool.query(
+    'SELECT category, content FROM knowledge_sections ORDER BY sort_order ASC, id ASC'
   );
-  CREATE TABLE IF NOT EXISTS ratings (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    msg_id    TEXT NOT NULL,
-    type      TEXT NOT NULL,
-    timestamp TEXT NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS unanswered_questions (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id TEXT NOT NULL,
-    question   TEXT NOT NULL,
-    timestamp  TEXT NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS settings (
-    key   TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS idx_conv_session  ON conversations(session_id);
-  CREATE INDEX IF NOT EXISTS idx_conv_role     ON conversations(role);
-  CREATE INDEX IF NOT EXISTS idx_ratings_type  ON ratings(type);
-  CREATE INDEX IF NOT EXISTS idx_unanswered_ts ON unanswered_questions(timestamp);
-`);
-
-// 舊資料庫遷移：ratings 補上 question / reply 欄位
-try { db.exec("ALTER TABLE ratings ADD COLUMN question TEXT DEFAULT ''"); } catch {}
-try { db.exec("ALTER TABLE ratings ADD COLUMN reply TEXT DEFAULT ''");    } catch {}
-
-// ── Fix 1：Prepared statements 啟動時建立一次，不在 request 內重複 prepare ──
-const stmts = {
-  insertConv:       db.prepare('INSERT INTO conversations (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)'),
-  insertRating:     db.prepare('INSERT INTO ratings (msg_id, type, timestamp, question, reply) VALUES (?, ?, ?, ?, ?)'),
-  listRatings:      db.prepare("SELECT type, question, reply, timestamp FROM ratings WHERE question != '' ORDER BY timestamp DESC LIMIT 50"),
-  insertUnanswered: db.prepare('INSERT INTO unanswered_questions (session_id, question, timestamp) VALUES (?, ?, ?)'),
-  countUnanswered:  db.prepare('SELECT COUNT(*) AS count FROM unanswered_questions'),
-  listUnanswered:   db.prepare('SELECT session_id, question, timestamp FROM unanswered_questions ORDER BY timestamp DESC LIMIT 100'),
-  countSessions:    db.prepare('SELECT COUNT(DISTINCT session_id) AS count FROM conversations'),
-  countMessages:    db.prepare('SELECT COUNT(*) AS count FROM conversations'),
-  countPositive:    db.prepare("SELECT COUNT(*) AS count FROM ratings WHERE type = 'positive'"),
-  countNegative:    db.prepare("SELECT COUNT(*) AS count FROM ratings WHERE type = 'negative'"),
-  listSessions:     db.prepare(`
-    SELECT session_id,
-           COUNT(*)       AS message_count,
-           MIN(timestamp) AS started_at,
-           MAX(timestamp) AS last_at
-    FROM conversations
-    GROUP BY session_id
-    ORDER BY started_at DESC
-  `),
-  listMessages:     db.prepare('SELECT role, content, timestamp FROM conversations WHERE session_id = ? ORDER BY timestamp ASC'),
-  listUserMessages: db.prepare("SELECT content FROM conversations WHERE role = 'user'"),
-};
-
-// ── 知識庫：優先從 DB 讀取，首次部署時從 knowledge.js 初始化 ──
-const getKnowledgeStmt = db.prepare("SELECT value FROM settings WHERE key = 'knowledge_base'");
-const setKnowledgeStmt = db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('knowledge_base', ?)");
-
-let KNOWLEDGE_BASE;
-const dbKnowledge = getKnowledgeStmt.get();
-if (dbKnowledge) {
-  KNOWLEDGE_BASE = dbKnowledge.value;
-  console.log('知識庫從資料庫載入，長度：', KNOWLEDGE_BASE.length);
-} else {
-  KNOWLEDGE_BASE = require('./knowledge');
-  setKnowledgeStmt.run(KNOWLEDGE_BASE);
-  console.log('知識庫從 knowledge.js 初始化並存入資料庫，長度：', KNOWLEDGE_BASE.length);
+  knowledgeCache = rows.map(r => `【${r.category}】\n${r.content}`).join('\n\n');
+  console.log('知識庫快取已更新，長度：', knowledgeCache.length);
 }
 
 function buildSystemPrompt() { return `你是 ECOCO 宜可可循環經濟的官方 AI 客服助理。
@@ -120,7 +122,7 @@ function buildSystemPrompt() { return `你是 ECOCO 宜可可循環經濟的官�
 根據以下知識庫，用友善、簡潔的方式回答用戶問題。
 
 ## 知識庫
-${KNOWLEDGE_BASE}
+${knowledgeCache}
 
 ## 回答規則
 
@@ -154,9 +156,9 @@ ${KNOWLEDGE_BASE}
 
 ### 格式（使用 Markdown 語法，介面會自動渲染）
 - 段落式回答為主，抱怨類不要用條列（顯得冷漠）
-- 純資訊查詢（點數規則、操作步驟）用條列 `-` 或表格
+- 純資訊查詢（點數規則、操作步驟）用條列 \`-\` 或表格
 - 數字與重點用粗體 **粗體** 標示
-- 多步驟操作用編號 `1.` `2.` `3.`
+- 多步驟操作用編號 \`1.\` \`2.\` \`3.\`
 - 不要在抱怨／安慰類回覆使用條列，改用自然段落
 
 ### 最重要的規則：不確定就說不確定
@@ -202,17 +204,25 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
     const reply = response.content.find(b => b.type === 'text')?.text
       ?? '抱歉，我暫時無法回應，請稍後再試。';
 
-    // Fix 1 + Fix 4：使用 stmts，並加 try/catch 避免 DB 錯誤 crash server
+    // 寫入對話紀錄（DB 錯誤不影響回覆）
     try {
       const sessionId = req.headers['x-session-id'] || 'unknown';
       const userMsg   = history[history.length - 1];
       const ts        = new Date().toISOString();
-      stmts.insertConv.run(sessionId, 'user',      userMsg.content, ts);
-      stmts.insertConv.run(sessionId, 'assistant', reply,           ts);
-
-      // 未被回答問題歸檔
+      await pool.query(
+        'INSERT INTO conversations (session_id, role, content, timestamp) VALUES ($1, $2, $3, $4)',
+        [sessionId, 'user', userMsg.content, ts]
+      );
+      await pool.query(
+        'INSERT INTO conversations (session_id, role, content, timestamp) VALUES ($1, $2, $3, $4)',
+        [sessionId, 'assistant', reply, ts]
+      );
+      // 未被回答的問題歸檔（知識缺口）
       if (reply.includes('沒有確切資料')) {
-        stmts.insertUnanswered.run(sessionId, userMsg.content, ts);
+        await pool.query(
+          'INSERT INTO unanswered_questions (session_id, question, timestamp) VALUES ($1, $2, $3)',
+          [sessionId, userMsg.content, ts]
+        );
       }
     } catch (dbErr) {
       console.error('DB 寫入失敗（不影響回覆）:', dbErr.message);
@@ -225,16 +235,15 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
   }
 });
 
-app.post('/api/rating', (req, res) => {
+app.post('/api/rating', async (req, res) => {
   const { msgId, type, question, reply } = req.body;
   if (!msgId || !type) return res.status(400).json({ error: '缺少參數' });
   try {
-    stmts.insertRating.run(
-      String(msgId),
-      type,
-      new Date().toISOString(),
-      String(question || '').substring(0, 300),
-      String(reply    || '').substring(0, 300),
+    await pool.query(
+      'INSERT INTO ratings (msg_id, type, timestamp, question, reply) VALUES ($1, $2, $3, $4, $5)',
+      [String(msgId), type, new Date().toISOString(),
+       String(question || '').substring(0, 300),
+       String(reply    || '').substring(0, 300)]
     );
     res.json({ success: true });
   } catch (dbErr) {
@@ -243,38 +252,59 @@ app.post('/api/rating', (req, res) => {
   }
 });
 
-app.get('/api/ratings', requireAdminKey, (req, res) => {
+app.get('/api/ratings', requireAdminKey, async (req, res) => {
   try {
-    res.json(stmts.listRatings.all());
+    const { rows } = await pool.query(
+      "SELECT type, question, reply, timestamp FROM ratings WHERE question <> '' ORDER BY timestamp DESC LIMIT 50"
+    );
+    res.json(rows);
   } catch (dbErr) {
     console.error('DB 查詢失敗:', dbErr.message);
     res.status(500).json({ error: '資料庫查詢失敗' });
   }
 });
 
-app.get('/api/stats', requireAdminKey, (req, res) => {
-  // Fix 1 + Fix 4
+app.get('/api/stats', requireAdminKey, async (req, res) => {
   try {
-    const { count: totalSessions   } = stmts.countSessions.get();
-    const { count: totalMessages   } = stmts.countMessages.get();
-    const { count: positiveRatings } = stmts.countPositive.get();
-    const { count: negativeRatings } = stmts.countNegative.get();
-    const { count: unansweredCount } = stmts.countUnanswered.get();
-    res.json({ totalSessions, totalMessages, positiveRatings, negativeRatings, unansweredCount });
+    const [s, m, p, n, u] = await Promise.all([
+      pool.query('SELECT COUNT(DISTINCT session_id) AS count FROM conversations'),
+      pool.query('SELECT COUNT(*) AS count FROM conversations'),
+      pool.query("SELECT COUNT(*) AS count FROM ratings WHERE type = 'positive'"),
+      pool.query("SELECT COUNT(*) AS count FROM ratings WHERE type = 'negative'"),
+      pool.query('SELECT COUNT(*) AS count FROM unanswered_questions'),
+    ]);
+    res.json({
+      totalSessions:   Number(s.rows[0].count),
+      totalMessages:   Number(m.rows[0].count),
+      positiveRatings: Number(p.rows[0].count),
+      negativeRatings: Number(n.rows[0].count),
+      unansweredCount: Number(u.rows[0].count),
+    });
   } catch (dbErr) {
     console.error('DB 查詢失敗:', dbErr.message);
     res.status(500).json({ error: '資料庫查詢失敗' });
   }
 });
 
-app.get('/api/sessions', requireAdminKey, (req, res) => {
-  // Fix 1 + Fix 4
+app.get('/api/sessions', requireAdminKey, async (req, res) => {
   try {
-    const sessions = stmts.listSessions.all();
-    const result   = sessions.map(s => ({
-      ...s,
-      messages: stmts.listMessages.all(s.session_id),
-    }));
+    const { rows: sessions } = await pool.query(`
+      SELECT session_id,
+             COUNT(*)       AS message_count,
+             MIN(timestamp) AS started_at,
+             MAX(timestamp) AS last_at
+      FROM conversations
+      GROUP BY session_id
+      ORDER BY started_at DESC
+    `);
+    const result = [];
+    for (const s of sessions) {
+      const { rows: messages } = await pool.query(
+        'SELECT role, content, timestamp FROM conversations WHERE session_id = $1 ORDER BY timestamp ASC',
+        [s.session_id]
+      );
+      result.push({ ...s, message_count: Number(s.message_count), messages });
+    }
     res.json(result);
   } catch (dbErr) {
     console.error('DB 查詢失敗:', dbErr.message);
@@ -282,12 +312,11 @@ app.get('/api/sessions', requireAdminKey, (req, res) => {
   }
 });
 
-app.get('/api/top-questions', requireAdminKey, (req, res) => {
-  // Fix 1 + Fix 4
+app.get('/api/top-questions', requireAdminKey, async (req, res) => {
   try {
-    const userMessages = stmts.listUserMessages.all();
-    const keywordList  = ['點數', '兌換', '寶特瓶', '電池', '全聯', '全家', '家樂福',
-                          '站點', 'App', '帳號', '密碼', '壓扁', '期限', '合作'];
+    const { rows: userMessages } = await pool.query("SELECT content FROM conversations WHERE role = 'user'");
+    const keywordList = ['點數', '兌換', '寶特瓶', '電池', '全聯', '全家', '家樂福',
+                         '站點', 'App', '帳號', '密碼', '壓扁', '期限', '合作'];
     const keywords = {};
     userMessages.forEach(({ content }) => {
       keywordList.forEach(kw => {
@@ -306,56 +335,131 @@ app.get('/api/top-questions', requireAdminKey, (req, res) => {
 });
 
 // 知識缺口列表
-app.get('/api/unanswered', requireAdminKey, (req, res) => {
+app.get('/api/unanswered', requireAdminKey, async (req, res) => {
   try {
-    res.json(stmts.listUnanswered.all());
+    const { rows } = await pool.query(
+      'SELECT session_id, question, timestamp FROM unanswered_questions ORDER BY timestamp DESC LIMIT 100'
+    );
+    res.json(rows);
   } catch (dbErr) {
     console.error('DB 查詢失敗:', dbErr.message);
     res.status(500).json({ error: '資料庫查詢失敗' });
   }
 });
 
-// 知識庫讀取
-app.get('/api/knowledge', requireAdminKey, (req, res) => {
-  res.json({ content: KNOWLEDGE_BASE });
+// ── 知識庫（分類版）─────────────────────────────────────────
+
+// 取得所有分類（後台用）
+app.get('/api/knowledge/sections', requireAdminKey, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, category, content, sort_order, updated_at FROM knowledge_sections ORDER BY sort_order ASC, id ASC'
+    );
+    res.json(rows);
+  } catch (dbErr) {
+    console.error('DB 查詢失敗:', dbErr.message);
+    res.status(500).json({ error: '資料庫查詢失敗' });
+  }
 });
 
-// 知識庫儲存（寫入資料庫，重啟後仍有效；下次 git push 重新部署才重置）
-app.post('/api/knowledge', requireAdminKey, express.text({ limit: '500kb' }), (req, res) => {
-  const content = req.body;
-  if (typeof content !== 'string' || content.trim().length === 0)
-    return res.status(400).json({ error: '內容不可為空' });
-
+// 新增一個分類
+app.post('/api/knowledge/sections', requireAdminKey, async (req, res) => {
+  const { category, content } = req.body;
+  if (!category || typeof category !== 'string' || !category.trim())
+    return res.status(400).json({ error: '分類名稱不可為空' });
   try {
-    setKnowledgeStmt.run(content);
-    KNOWLEDGE_BASE = content;
-    console.log('知識庫已更新（DB），長度：', KNOWLEDGE_BASE.length);
+    const { rows } = await pool.query('SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM knowledge_sections');
+    const sortOrder = Number(rows[0].next);
+    const { rows: inserted } = await pool.query(
+      'INSERT INTO knowledge_sections (category, content, sort_order, updated_at) VALUES ($1, $2, $3, $4) RETURNING id',
+      [category.trim(), String(content || ''), sortOrder, new Date().toISOString()]
+    );
+    await refreshKnowledgeCache();
+    res.json({ success: true, id: inserted[0].id });
+  } catch (dbErr) {
+    console.error('DB 寫入失敗:', dbErr.message);
+    res.status(500).json({ error: '新增失敗，請稍後再試' });
+  }
+});
+
+// 修改一個分類
+app.put('/api/knowledge/sections/:id', requireAdminKey, async (req, res) => {
+  const id = Number(req.params.id);
+  const { category, content } = req.body;
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'ID 錯誤' });
+  if (!category || typeof category !== 'string' || !category.trim())
+    return res.status(400).json({ error: '分類名稱不可為空' });
+  try {
+    const result = await pool.query(
+      'UPDATE knowledge_sections SET category = $1, content = $2, updated_at = $3 WHERE id = $4',
+      [category.trim(), String(content || ''), new Date().toISOString(), id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: '找不到此分類' });
+    await refreshKnowledgeCache();
     res.json({ success: true });
-  } catch (err) {
-    console.error('知識庫更新失敗:', err.message);
+  } catch (dbErr) {
+    console.error('DB 寫入失敗:', dbErr.message);
     res.status(500).json({ error: '儲存失敗，請稍後再試' });
   }
 });
 
+// 刪除一個分類
+app.delete('/api/knowledge/sections/:id', requireAdminKey, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'ID 錯誤' });
+  try {
+    const result = await pool.query('DELETE FROM knowledge_sections WHERE id = $1', [id]);
+    if (result.rowCount === 0) return res.status(404).json({ error: '找不到此分類' });
+    await refreshKnowledgeCache();
+    res.json({ success: true });
+  } catch (dbErr) {
+    console.error('DB 寫入失敗:', dbErr.message);
+    res.status(500).json({ error: '刪除失敗，請稍後再試' });
+  }
+});
+
+// （相容用）回傳整包知識庫文字
+app.get('/api/knowledge', requireAdminKey, (req, res) => {
+  res.json({ content: knowledgeCache });
+});
+
 // 對話紀錄搜尋
-const searchStmt = db.prepare(`
-  SELECT DISTINCT session_id, MIN(timestamp) AS started_at, COUNT(*) AS message_count
-  FROM conversations WHERE content LIKE ? GROUP BY session_id ORDER BY started_at DESC LIMIT 30
-`);
-app.get('/api/search', requireAdminKey, (req, res) => {
+app.get('/api/search', requireAdminKey, async (req, res) => {
   const q = (req.query.q || '').trim();
   if (q.length < 2) return res.status(400).json({ error: '請輸入至少 2 個字' });
   try {
-    const sessions = searchStmt.all(`%${q}%`);
-    res.json(sessions.map(s => ({ ...s, messages: stmts.listMessages.all(s.session_id) })));
+    const { rows: sessions } = await pool.query(`
+      SELECT session_id, MIN(timestamp) AS started_at, COUNT(*) AS message_count
+      FROM conversations WHERE content LIKE $1 GROUP BY session_id ORDER BY started_at DESC LIMIT 30
+    `, [`%${q}%`]);
+    const result = [];
+    for (const s of sessions) {
+      const { rows: messages } = await pool.query(
+        'SELECT role, content, timestamp FROM conversations WHERE session_id = $1 ORDER BY timestamp ASC',
+        [s.session_id]
+      );
+      result.push({ ...s, message_count: Number(s.message_count), messages });
+    }
+    res.json(result);
   } catch (dbErr) {
     console.error('搜尋失敗:', dbErr.message);
     res.status(500).json({ error: '搜尋失敗' });
   }
 });
 
-// ── 啟動伺服器 ────────────────────────────────────────────
+// ── 啟動伺服器（先建表 + 載入知識庫，再開始接請求）──────────
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`✅ ECOCO 客服伺服器啟動：http://localhost:${PORT}`);
-});
+
+(async () => {
+  try {
+    await initDb();
+    await refreshKnowledgeCache();
+    app.listen(PORT, () => {
+      console.log(`✅ ECOCO 客服伺服器啟動：http://localhost:${PORT}`);
+    });
+  } catch (err) {
+    console.error('❌ 啟動失敗：', err.message);
+    console.error('請確認 DATABASE_URL 環境變數是否正確設定。');
+    process.exit(1);
+  }
+})();
