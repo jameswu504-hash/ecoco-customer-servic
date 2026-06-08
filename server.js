@@ -2,7 +2,6 @@ require('dotenv').config();
 const express   = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 const path      = require('path');
-const fs        = require('fs');
 const crypto    = require('crypto');
 const Database  = require('better-sqlite3');
 const rateLimit = require('express-rate-limit');
@@ -61,6 +60,10 @@ db.exec(`
     question   TEXT NOT NULL,
     timestamp  TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
   CREATE INDEX IF NOT EXISTS idx_conv_session  ON conversations(session_id);
   CREATE INDEX IF NOT EXISTS idx_conv_role     ON conversations(role);
   CREATE INDEX IF NOT EXISTS idx_ratings_type  ON ratings(type);
@@ -96,8 +99,20 @@ const stmts = {
   listUserMessages: db.prepare("SELECT content FROM conversations WHERE role = 'user'"),
 };
 
-// ── 知識庫（let 讓後台可動態更新）────────────────────────
-let KNOWLEDGE_BASE = require('./knowledge');
+// ── 知識庫：優先從 DB 讀取，首次部署時從 knowledge.js 初始化 ──
+const getKnowledgeStmt = db.prepare("SELECT value FROM settings WHERE key = 'knowledge_base'");
+const setKnowledgeStmt = db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('knowledge_base', ?)");
+
+let KNOWLEDGE_BASE;
+const dbKnowledge = getKnowledgeStmt.get();
+if (dbKnowledge) {
+  KNOWLEDGE_BASE = dbKnowledge.value;
+  console.log('知識庫從資料庫載入，長度：', KNOWLEDGE_BASE.length);
+} else {
+  KNOWLEDGE_BASE = require('./knowledge');
+  setKnowledgeStmt.run(KNOWLEDGE_BASE);
+  console.log('知識庫從 knowledge.js 初始化並存入資料庫，長度：', KNOWLEDGE_BASE.length);
+}
 
 function buildSystemPrompt() { return `你是 ECOCO 宜可可循環經濟的官方 AI 客服助理。
 
@@ -305,21 +320,16 @@ app.get('/api/knowledge', requireAdminKey, (req, res) => {
   res.json({ content: KNOWLEDGE_BASE });
 });
 
-// 知識庫儲存（立即生效，不需重啟）
+// 知識庫儲存（寫入資料庫，重啟後仍有效；下次 git push 重新部署才重置）
 app.post('/api/knowledge', requireAdminKey, express.text({ limit: '500kb' }), (req, res) => {
   const content = req.body;
   if (typeof content !== 'string' || content.trim().length === 0)
     return res.status(400).json({ error: '內容不可為空' });
 
-  const knowledgePath = path.join(__dirname, 'knowledge.js');
-  const escaped = content.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
-  const newFile = `// ECOCO 官方知識庫\n// 後台儲存後立即生效\n\nmodule.exports = \`${escaped}\`;\n`;
-
   try {
-    fs.writeFileSync(knowledgePath, newFile, 'utf-8');
-    delete require.cache[require.resolve('./knowledge')];
-    KNOWLEDGE_BASE = require('./knowledge');
-    console.log('知識庫已更新，長度：', KNOWLEDGE_BASE.length);
+    setKnowledgeStmt.run(content);
+    KNOWLEDGE_BASE = content;
+    console.log('知識庫已更新（DB），長度：', KNOWLEDGE_BASE.length);
     res.json({ success: true });
   } catch (err) {
     console.error('知識庫更新失敗:', err.message);
