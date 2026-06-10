@@ -10,25 +10,25 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --green-dark:  #0a3d2e;
-      --green-main:  #1a6b4a;
-      --green-mid:   #2d9b6f;
-      --green-light: #4ecb94;
-      --green-pale:  #d4f5e9;
-      --green-ghost: #f0faf5;
-      --black:       #0d1f1a;
-      --gray-dark:   #2c3e35;
-      --gray-mid:    #6b8a7a;
-      --gray-light:  #b8d0c5;
+      --ecoco-orange:#FF5000;
+      --ecoco-blue:  #060E9F;
+      --ecoco-yellow:#FFCE00;
+      --ecoco-sky:   #8EB9C9;
+      --ecoco-beige: #FAE0B8;
+      --ecoco-teal:  #0076A9;
+      --ink:         #20242c;
+      --gray-dark:   #303642;
+      --gray-mid:    #6d7480;
+      --gray-light:  #c9d4dc;
       --white:       #ffffff;
-      --bg:          #f5faf7;
-      --bubble-user: #1a6b4a;
+      --bg:          #f7f8fb;
+      --bubble-user: #060E9F;
       --bubble-bot:  #ffffff;
-      --radius-lg:   18px;
-      --radius-md:   12px;
+      --radius-lg:   8px;
+      --radius-md:   8px;
       --radius-sm:   8px;
-      --shadow:      0 4px 24px rgba(10,61,46,0.10);
-      --shadow-sm:   0 2px 8px rgba(10,61,46,0.07);
+      --shadow:      0 12px 30px rgba(6,14,159,0.10);
+      --shadow-sm:   0 3px 12px rgba(6,14,159,0.08);
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -36,7 +36,7 @@
     body {
       font-family: 'Noto Sans TC', sans-serif;
       background: var(--bg);
-      color: var(--black);
+      color: var(--ink);
       height: 100vh;
       display: flex;
       flex-direction: column;
@@ -45,51 +45,58 @@
 
     /* ── Header ── */
     .header {
-      background: var(--green-dark);
+      background: var(--ecoco-blue);
       padding: 0 24px;
-      height: 64px;
+      height: 68px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       flex-shrink: 0;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+      box-shadow: 0 2px 18px rgba(6,14,159,0.26);
+      border-top: 6px solid var(--ecoco-orange);
     }
     .header-left { display: flex; align-items: center; gap: 12px; }
     .logo-icon {
-      width: 36px; height: 36px;
-      background: var(--green-light);
-      border-radius: 10px;
+      width: 42px; height: 42px;
+      background: var(--ecoco-orange);
+      border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
-      font-size: 18px; flex-shrink: 0;
+      font-size: 30px; flex-shrink: 0;
+      color: var(--white);
+      font-weight: 900;
+      line-height: 1;
+      font-family: Arial, sans-serif;
     }
-    .header-title { color: var(--white); font-size: 16px; font-weight: 700; letter-spacing: 0.5px; }
-    .header-sub { color: var(--green-light); font-size: 11px; font-family: 'Space Mono', monospace; margin-top: 1px; }
+    .brand-word { color: var(--white); font-size: 22px; font-weight: 900; letter-spacing: 0; line-height: 1; }
+    .brand-word span:nth-child(-n+3) { color: var(--ecoco-orange); }
+    .header-title { color: var(--white); font-size: 13px; font-weight: 700; margin-top: 3px; }
+    .header-sub { color: var(--ecoco-yellow); font-size: 11px; font-family: 'Space Mono', monospace; margin-top: 1px; }
     .status-dot {
       width: 8px; height: 8px;
-      background: var(--green-light); border-radius: 50%;
+      background: var(--ecoco-yellow); border-radius: 50%;
       animation: pulse 2s infinite; flex-shrink: 0;
     }
     @keyframes pulse {
       0%, 100% { opacity: 1; transform: scale(1); }
       50% { opacity: 0.6; transform: scale(1.2); }
     }
-    .header-right { display: flex; align-items: center; gap: 8px; color: var(--green-light); font-size: 12px; font-family: 'Space Mono', monospace; }
+    .header-right { display: flex; align-items: center; gap: 8px; color: var(--ecoco-yellow); font-size: 12px; font-family: 'Space Mono', monospace; }
 
     /* ── 快速問題列 ── */
     .quick-bar {
-      background: var(--white); border-bottom: 1px solid #e0ede8;
+      background: var(--white); border-bottom: 1px solid #dfe6ee;
       padding: 10px 16px; display: flex; gap: 8px;
       overflow-x: auto; flex-shrink: 0; scrollbar-width: none;
     }
     .quick-bar::-webkit-scrollbar { display: none; }
     .quick-chip {
       flex-shrink: 0; padding: 6px 14px; border-radius: 20px;
-      border: 1.5px solid var(--green-mid); color: var(--green-main);
+      border: 1.5px solid var(--ecoco-blue); color: var(--ecoco-blue);
       font-size: 12px; font-weight: 500; cursor: pointer;
       background: transparent; transition: all 0.18s; white-space: nowrap;
       font-family: 'Noto Sans TC', sans-serif;
     }
-    .quick-chip:hover { background: var(--green-main); color: var(--white); border-color: var(--green-main); }
+    .quick-chip:hover { background: var(--ecoco-yellow); color: var(--ecoco-blue); border-color: var(--ecoco-yellow); }
 
     /* ── 訊息區 ── */
     .messages {
@@ -101,7 +108,7 @@
     .messages::-webkit-scrollbar-thumb { background: var(--gray-light); border-radius: 4px; }
 
     /* ── 訊息泡泡 ── */
-    .msg-row { display: flex; gap: 10px; align-items: flex-end; animation: fadeUp 0.3s ease; }
+    .msg-row { display: flex; gap: 10px; align-items: flex-end; }
     @keyframes fadeUp {
       from { opacity: 0; transform: translateY(10px); }
       to   { opacity: 1; transform: translateY(0); }
@@ -112,20 +119,20 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 15px; flex-shrink: 0;
     }
-    .avatar.bot  { background: var(--green-dark); }
-    .avatar.user { background: var(--green-mid); }
+    .avatar.bot  { background: var(--ecoco-orange); color: var(--white); font-weight: 900; font-family: Arial, sans-serif; }
+    .avatar.user { background: var(--ecoco-blue); color: var(--white); }
     .bubble {
       max-width: 72%; padding: 12px 16px; border-radius: var(--radius-lg);
       font-size: 14px; line-height: 1.65; box-shadow: var(--shadow-sm);
     }
-    .bubble.bot  { background: var(--bubble-bot); color: var(--black); border-bottom-left-radius: 4px; border: 1px solid #e0ede8; }
+    .bubble.bot  { background: var(--bubble-bot); color: var(--ink); border-bottom-left-radius: 4px; border: 1px solid #dfe6ee; }
     .bubble.user { background: var(--bubble-user); color: var(--white); border-bottom-right-radius: 4px; }
     .bubble-time { font-size: 10px; color: var(--gray-mid); margin-top: 4px; font-family: 'Space Mono', monospace; }
     .msg-row.user .bubble-time { text-align: right; }
 
     /* ── 打字動畫 ── */
     .typing-indicator { display: flex; gap: 4px; align-items: center; padding: 14px 16px; }
-    .typing-dot { width: 7px; height: 7px; background: var(--green-mid); border-radius: 50%; animation: typing 1.2s infinite; }
+    .typing-dot { width: 7px; height: 7px; background: var(--ecoco-orange); border-radius: 50%; animation: typing 1.2s infinite; }
     .typing-dot:nth-child(2) { animation-delay: 0.2s; }
     .typing-dot:nth-child(3) { animation-delay: 0.4s; }
     @keyframes typing {
@@ -136,8 +143,8 @@
     /* ── 來源標籤 ── */
     .source-tag {
       display: inline-block; margin-top: 8px; padding: 3px 10px;
-      background: var(--green-ghost); border: 1px solid var(--green-pale);
-      border-radius: 12px; font-size: 11px; color: var(--green-main);
+      background: #fff7de; border: 1px solid var(--ecoco-yellow);
+      border-radius: 12px; font-size: 11px; color: var(--ecoco-blue);
       font-family: 'Space Mono', monospace;
     }
 
@@ -149,68 +156,84 @@
       cursor: pointer; color: var(--gray-mid); transition: all 0.18s;
       font-family: 'Noto Sans TC', sans-serif;
     }
-    .rating-btn:hover { border-color: var(--green-mid); color: var(--green-main); }
-    .rating-btn.selected { background: var(--green-pale); border-color: var(--green-mid); color: var(--green-main); }
+    .rating-btn:hover { border-color: var(--ecoco-orange); color: var(--ecoco-orange); }
+    .rating-btn.selected { background: #fff7de; border-color: var(--ecoco-yellow); color: var(--ecoco-blue); }
     .rating-text { font-size: 11px; color: var(--gray-mid); font-family: 'Space Mono', monospace; }
 
     /* ── 優化三：客服聯絡按鈕 ── */
     .contact-btn {
       display: inline-flex; align-items: center; gap: 6px;
       margin-top: 10px; padding: 8px 16px;
-      background: var(--green-main); color: white;
+      background: var(--ecoco-blue); color: white;
       border: none; border-radius: 20px; font-size: 12px;
       font-family: 'Noto Sans TC', sans-serif; cursor: pointer;
       text-decoration: none; transition: background 0.18s;
     }
-    .contact-btn:hover { background: var(--green-mid); }
+    .contact-btn:hover { background: var(--ecoco-orange); }
 
     /* ── 優化四：Markdown 樣式 ── */
     .bubble.bot table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
     .bubble.bot th,
-    .bubble.bot td { border: 1px solid #e0ede8; padding: 6px 10px; text-align: left; }
-    .bubble.bot th { background: var(--green-ghost); color: var(--green-main); font-weight: 500; }
+    .bubble.bot td { border: 1px solid #dfe6ee; padding: 6px 10px; text-align: left; }
+    .bubble.bot th { background: #fff7de; color: var(--ecoco-blue); font-weight: 500; }
     .bubble.bot ul,
     .bubble.bot ol { padding-left: 18px; margin: 6px 0; }
     .bubble.bot li { margin: 3px 0; }
-    .bubble.bot strong { color: var(--green-dark); font-weight: 500; }
-    .bubble.bot code { background: var(--green-ghost); padding: 1px 6px; border-radius: 4px; font-size: 12px; font-family: 'Space Mono', monospace; }
+    .bubble.bot strong { color: var(--ecoco-blue); font-weight: 700; }
+    .bubble.bot code { background: #fff7de; padding: 1px 6px; border-radius: 4px; font-size: 12px; font-family: 'Space Mono', monospace; }
     .bubble.bot p { margin: 4px 0; }
-    .bubble.bot h1, .bubble.bot h2, .bubble.bot h3 { font-size: 14px; margin: 6px 0 4px; color: var(--green-dark); }
+    .bubble.bot h1, .bubble.bot h2, .bubble.bot h3 { font-size: 14px; margin: 6px 0 4px; color: var(--ecoco-blue); }
 
     /* ── 輸入區 ── */
     .input-area {
-      background: var(--white); border-top: 1px solid #e0ede8;
+      background: var(--white); border-top: 1px solid #dfe6ee;
       padding: 12px 16px; display: flex; gap: 10px; align-items: flex-end; flex-shrink: 0;
     }
     .input-box {
-      flex: 1; border: 1.5px solid #cce0d8; border-radius: var(--radius-md);
+      flex: 1; border: 1.5px solid #c7d4e2; border-radius: var(--radius-md);
       padding: 11px 16px; font-size: 14px; font-family: 'Noto Sans TC', sans-serif;
       resize: none; outline: none; line-height: 1.5;
       max-height: 120px; overflow-y: auto; transition: border-color 0.2s;
-      color: var(--black); background: var(--bg);
+      color: var(--ink); background: var(--bg);
     }
-    .input-box:focus { border-color: var(--green-mid); background: var(--white); }
+    .input-box:focus { border-color: var(--ecoco-orange); background: var(--white); }
     .input-box::placeholder { color: var(--gray-mid); }
     .send-btn {
-      width: 44px; height: 44px; background: var(--green-main); border: none;
+      width: 44px; height: 44px; background: var(--ecoco-orange); border: none;
       border-radius: var(--radius-md); cursor: pointer;
       display: flex; align-items: center; justify-content: center;
       flex-shrink: 0; transition: all 0.18s;
     }
-    .send-btn:hover { background: var(--green-mid); transform: scale(1.05); }
+    .send-btn:hover { background: var(--ecoco-blue); transform: scale(1.05); }
     .send-btn:active { transform: scale(0.97); }
     .send-btn:disabled { background: var(--gray-light); cursor: not-allowed; transform: none; }
     .send-btn svg { width: 18px; height: 18px; fill: white; }
 
     /* ── 歡迎卡片 ── */
     .welcome-card {
-      background: linear-gradient(135deg, var(--green-dark) 0%, var(--green-main) 100%);
+      background: var(--ecoco-blue);
       border-radius: var(--radius-lg); padding: 20px;
       color: white; text-align: center; margin: 8px 0 4px;
+      border-top: 6px solid var(--ecoco-orange);
+      position: relative;
+      overflow: hidden;
     }
-    .welcome-card .emoji { font-size: 32px; margin-bottom: 8px; }
-    .welcome-card h2 { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
-    .welcome-card p { font-size: 13px; opacity: 0.85; line-height: 1.6; }
+    .welcome-card::after {
+      content: "";
+      position: absolute;
+      right: -34px; top: 16px;
+      width: 110px; height: 110px;
+      border-radius: 50%;
+      background: var(--ecoco-yellow);
+      opacity: 0.9;
+    }
+    .welcome-card .emoji {
+      font-size: 32px; margin-bottom: 8px;
+      position: relative; z-index: 1;
+      font-family: Arial, sans-serif; font-weight: 900;
+    }
+    .welcome-card h2 { font-size: 16px; font-weight: 700; margin-bottom: 6px; position: relative; z-index: 1; }
+    .welcome-card p { font-size: 13px; opacity: 0.9; line-height: 1.6; position: relative; z-index: 1; }
 
     /* ── 底部提示 ── */
     .footer-hint {
@@ -223,9 +246,10 @@
 
 <div class="header">
   <div class="header-left">
-    <div class="logo-icon">♻️</div>
+    <div class="logo-icon">e</div>
     <div>
-      <div class="header-title">ECOCO 智慧客服</div>
+      <div class="brand-word"><span>e</span><span>c</span><span>o</span><span>c</span><span>o</span></div>
+      <div class="header-title">宜可可智慧客服</div>
       <div class="header-sub">AI-POWERED · 24/7</div>
     </div>
   </div>
@@ -246,12 +270,12 @@
 
 <div class="messages" id="messages">
   <div class="welcome-card">
-    <div class="emoji">♻️</div>
+    <div class="emoji">e</div>
     <h2>嗨！我是 ECOCO 智慧客服</h2>
     <p>我可以回答關於回收、點數兌換、<br>站點查詢、App 使用等各種問題！</p>
   </div>
   <div class="msg-row bot">
-    <div class="avatar bot">🤖</div>
+    <div class="avatar bot">e</div>
     <div>
       <div class="bubble bot">
         您好！歡迎使用 ECOCO 智慧客服 😊<br><br>
@@ -311,7 +335,7 @@ function appendMessage(role, text) {
 
   const avatar = document.createElement('div');
   avatar.className = `avatar ${role}`;
-  avatar.textContent = role === 'bot' ? '🤖' : '👤';
+  avatar.textContent = role === 'bot' ? 'e' : '您';
 
   const wrapper = document.createElement('div');
 
@@ -397,7 +421,7 @@ function showTyping() {
   row.id = 'typingRow';
   const avatar = document.createElement('div');
   avatar.className = 'avatar bot';
-  avatar.textContent = '🤖';
+  avatar.textContent = 'e';
   const bubble = document.createElement('div');
   bubble.className = 'bubble bot';
   bubble.innerHTML = '<div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>';

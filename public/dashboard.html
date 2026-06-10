@@ -7,19 +7,25 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Space+Mono&display=swap" rel="stylesheet"/>
   <style>
     :root {
-      --green-dark: #0a3d2e;
-      --green-main: #1a6b4a;
-      --green-mid:  #2d9b6f;
-      --green-light:#4ecb94;
-      --green-pale: #d4f5e9;
-      --green-ghost:#f0faf5;
-      --bg: #f5faf7;
+      --ecoco-orange:#FF5000;
+      --ecoco-blue:  #060E9F;
+      --ecoco-yellow:#FFCE00;
+      --ecoco-sky:   #8EB9C9;
+      --ecoco-beige: #FAE0B8;
+      --ecoco-teal:  #0076A9;
+      --green-dark: var(--ecoco-blue);
+      --green-main: var(--ecoco-blue);
+      --green-mid:  var(--ecoco-orange);
+      --green-light:var(--ecoco-yellow);
+      --green-pale: #fff1cc;
+      --green-ghost:#f7f8fb;
+      --bg: #f7f8fb;
       --white: #ffffff;
-      --black: #0d1f1a;
-      --gray-mid: #6b8a7a;
-      --gray-light:#b8d0c5;
-      --radius: 12px;
-      --shadow: 0 2px 12px rgba(10,61,46,0.08);
+      --black: #20242c;
+      --gray-mid: #6d7480;
+      --gray-light:#c9d4dc;
+      --radius: 8px;
+      --shadow: 0 8px 24px rgba(6,14,159,0.08);
     }
     * { box-sizing:border-box; margin:0; padding:0; }
     body { font-family:'Noto Sans TC',sans-serif; background:var(--bg); color:var(--black); }
@@ -29,6 +35,15 @@
       background:var(--green-dark);
       padding:0 28px; height:60px;
       display:flex; align-items:center; justify-content:space-between;
+      border-top:6px solid var(--ecoco-orange);
+      box-shadow:0 2px 18px rgba(6,14,159,0.22);
+    }
+    .header-brand { display:flex; align-items:center; gap:10px; }
+    .brand-mark {
+      width:34px; height:34px; border-radius:50%;
+      background:var(--ecoco-orange); color:white;
+      display:flex; align-items:center; justify-content:center;
+      font-size:25px; font-weight:900; font-family:Arial,sans-serif; line-height:1;
     }
     .header-title { color:white; font-size:16px; font-weight:700; }
     .header-sub { color:var(--green-light); font-size:11px; font-family:'Space Mono',monospace; }
@@ -47,7 +62,7 @@
     .stats-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:16px; margin-bottom:28px; }
     .stat-card {
       background:var(--white); border-radius:var(--radius); padding:20px;
-      box-shadow:var(--shadow); border:1px solid #e0ede8;
+      box-shadow:var(--shadow); border:1px solid #dfe6ee;
     }
     .stat-num { font-size:32px; font-weight:700; color:var(--green-main); font-family:'Space Mono',monospace; }
     .stat-label { font-size:13px; color:var(--gray-mid); margin-top:4px; }
@@ -59,11 +74,11 @@
     /* 關鍵字排行 */
     .keyword-card {
       background:var(--white); border-radius:var(--radius); padding:20px;
-      box-shadow:var(--shadow); border:1px solid #e0ede8;
+      box-shadow:var(--shadow); border:1px solid #dfe6ee;
     }
     .keyword-item {
       display:flex; align-items:center; gap:10px;
-      padding:8px 0; border-bottom:1px solid var(--green-ghost);
+      padding:8px 0; border-bottom:1px solid #eef2f7;
     }
     .keyword-item:last-child { border-bottom:none; }
     .keyword-rank {
@@ -82,22 +97,22 @@
     /* 滿意度 */
     .rating-card {
       background:var(--white); border-radius:var(--radius); padding:20px;
-      box-shadow:var(--shadow); border:1px solid #e0ede8;
+      box-shadow:var(--shadow); border:1px solid #dfe6ee;
     }
     .rating-bar-wrap { display:flex; align-items:center; gap:12px; margin:8px 0; }
     .rating-label { font-size:13px; width:70px; }
     .rating-track { flex:1; height:12px; background:var(--green-ghost); border-radius:6px; overflow:hidden; }
     .rating-fill { height:100%; border-radius:6px; transition:width 0.5s; }
-    .rating-fill.positive { background:#2d9b6f; }
+    .rating-fill.positive { background:var(--ecoco-teal); }
     .rating-fill.negative { background:#e07070; }
     .rating-pct { font-size:12px; font-family:'Space Mono',monospace; width:36px; text-align:right; color:var(--gray-mid); }
 
     /* 對話紀錄 */
     .sessions-card {
       background:var(--white); border-radius:var(--radius); padding:20px;
-      box-shadow:var(--shadow); border:1px solid #e0ede8; margin-bottom:28px;
+      box-shadow:var(--shadow); border:1px solid #dfe6ee; margin-bottom:28px;
     }
-    .session-item { border:1px solid #e0ede8; border-radius:10px; margin-bottom:12px; overflow:hidden; }
+    .session-item { border:1px solid #dfe6ee; border-radius:8px; margin-bottom:12px; overflow:hidden; }
     .session-header {
       display:flex; align-items:center; gap:12px; padding:12px 16px;
       background:var(--green-ghost); cursor:pointer; user-select:none;
@@ -132,7 +147,7 @@
     }
     .modal-overlay.hidden { display:none; }
     .modal-box {
-      background:var(--white); border-radius:16px; padding:32px;
+      background:var(--white); border-radius:8px; padding:32px;
       width:360px; box-shadow:0 8px 40px rgba(0,0,0,0.2); text-align:center;
     }
     .modal-box h2 { font-size:18px; color:var(--green-dark); margin-bottom:8px; }
@@ -154,7 +169,7 @@
     /* 知識庫編輯器 */
     .knowledge-card {
       background:var(--white); border-radius:var(--radius); padding:20px;
-      box-shadow:var(--shadow); border:1px solid #e0ede8; margin-bottom:28px;
+      box-shadow:var(--shadow); border:1px solid #dfe6ee; margin-bottom:28px;
     }
     .knowledge-textarea {
       width:100%; height:320px; border:1.5px solid #cce0d8; border-radius:8px;
@@ -239,7 +254,7 @@
     /* 評分明細 */
     .ratings-card {
       background:var(--white); border-radius:var(--radius); padding:20px;
-      box-shadow:var(--shadow); border:1px solid #e0ede8; margin-bottom:28px;
+      box-shadow:var(--shadow); border:1px solid #dfe6ee; margin-bottom:28px;
     }
     .rating-detail-item {
       display:flex; gap:12px; align-items:flex-start;
@@ -257,7 +272,7 @@
     /* 知識缺口 */
     .unanswered-card {
       background:var(--white); border-radius:var(--radius); padding:20px;
-      box-shadow:var(--shadow); border:1px solid #e0ede8; margin-bottom:28px;
+      box-shadow:var(--shadow); border:1px solid #dfe6ee; margin-bottom:28px;
     }
     .unanswered-item {
       display:flex; gap:12px; align-items:flex-start;
@@ -274,6 +289,25 @@
     @media (max-width: 768px) {
       .stats-grid { grid-template-columns: repeat(2, 1fr); }
       .two-col { grid-template-columns: 1fr !important; }
+      .header { padding:0 14px; }
+      .header-brand { min-width:0; gap:8px; }
+      .brand-mark { width:30px; height:30px; font-size:22px; }
+      .header-title { font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .header-sub { font-size:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .header-right { display:none; }
+      .refresh-btn {
+        width:36px; height:32px; padding:0;
+        font-size:0; flex-shrink:0;
+      }
+      .refresh-btn::before { content:"↻"; font-size:16px; }
+      .back-link {
+        width:28px; height:32px; overflow:hidden;
+        color:transparent; position:relative; flex-shrink:0;
+      }
+      .back-link::before {
+        content:"←"; color:var(--green-light);
+        font-size:18px; position:absolute; left:6px; top:3px;
+      }
     }
   </style>
 </head>
@@ -293,9 +327,12 @@
 </div>
 
 <div class="header">
-  <div>
-    <div class="header-title">♻️ ECOCO 客服後台</div>
-    <div class="header-sub">DASHBOARD · 管理員視角</div>
+  <div class="header-brand">
+    <div class="brand-mark">e</div>
+    <div>
+      <div class="header-title">ECOCO 客服後台</div>
+      <div class="header-sub">DASHBOARD · 管理員視角</div>
+    </div>
   </div>
   <div class="header-right">
     <a href="/" class="back-link">← 回到客服</a>
