@@ -1,0 +1,73 @@
+{
+  "generated_at": "2026-06-10T11:13:19",
+  "policies": [
+    {
+      "key": "points_missing",
+      "name": "點數未入帳",
+      "risk": "medium",
+      "automation_level": "draft_review",
+      "required_fields": [
+        "註冊手機",
+        "使用日期時間",
+        "站點名稱",
+        "投入品項",
+        "投入數量",
+        "成功或錯誤畫面截圖"
+      ],
+      "do_not_say": [
+        "保證補點",
+        "保證立即處理完成",
+        "自行猜測原因"
+      ],
+      "action": "蒐集資訊後轉客服或後端查詢"
+    },
+    {
+      "key": "coupon_issue",
+      "name": "優惠券兌換或使用異常",
+      "risk": "high",
+      "automation_level": "draft_review",
+      "required_fields": [
+        "會員帳號",
+        "兌換日期",
+        "券名稱",
+        "使用店家",
+        "消費截圖",
+        "錯誤畫面"
+      ],
+      "do_not_say": [
+        "直接承諾退點",
+        "直接承諾補發優惠券"
+      ],
+      "action": "蒐集證明後由人工審核"
+    },
+    {
+      "key": "machine_issue",
+      "name": "機台異常或滿袋",
+      "risk": "medium",
+      "automation_level": "draft_review",
+      "required_fields": [
+        "站點名稱",
+        "機台類型",
+        "發生時間",
+        "異常描述",
+        "照片或影片"
+      ],
+      "do_not_say": [
+        "保證維修時間",
+        "指責使用者操作錯誤"
+      ],
+      "action": "先同理，再提供 App 查詢或客服表單回報方式"
+    },
+    {
+      "key": "simple_faq",
+      "name": "一般 FAQ",
+      "risk": "low",
+      "automation_level": "auto_reply_allowed",
+      "required_fields": [],
+      "do_not_say": [
+        "超出知識庫自行推測"
+      ],
+      "action": "可依知識庫直接回答"
+    }
+  ]
+}

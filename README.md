@@ -73,6 +73,22 @@ npm start
 | `DELETE` | `/api/knowledge/sections/:id` | 刪除知識庫分類 | Admin Key |
 | `GET` | `/api/search?q=...` | 搜尋對話紀錄 | Admin Key |
 
+## 匯入 ECOCO FAQ / 回覆規則
+
+已整理的 ECOCO FAQ 與回覆規則可透過 JSON 匯入 PostgreSQL：
+
+```bash
+npm run import:knowledge
+```
+
+若要清空現有分類並完全改用整理後資料：
+
+```bash
+npm run import:knowledge -- data/ecoco-knowledge-import.json --replace
+```
+
+整理來源與注意事項請見 `docs/knowledge-import.md`。
+
 ## 知識缺口如何判斷與記錄
 
 系統 prompt 明確要求 AI：如果知識庫沒有明確答案，必須回覆「這個問題我沒有確切資料...」並引導使用者透過 ECOCO 客服表單或 App 聯絡專人。
