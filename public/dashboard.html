@@ -39,11 +39,9 @@
       box-shadow:0 2px 18px rgba(6,14,159,0.22);
     }
     .header-brand { display:flex; align-items:center; gap:10px; }
-    .brand-mark {
-      width:34px; height:34px; border-radius:50%;
-      background:var(--ecoco-orange); color:white;
-      display:flex; align-items:center; justify-content:center;
-      font-size:25px; font-weight:900; font-family:Arial,sans-serif; line-height:1;
+    .brand-logo {
+      width:134px; height:42px; object-fit:contain; display:block; flex-shrink:0;
+      background:white; border-radius:8px; padding:4px 6px;
     }
     .header-title { color:white; font-size:16px; font-weight:700; }
     .header-sub { color:var(--green-light); font-size:11px; font-family:'Space Mono',monospace; }
@@ -291,7 +289,7 @@
       .two-col { grid-template-columns: 1fr !important; }
       .header { padding:0 14px; }
       .header-brand { min-width:0; gap:8px; }
-      .brand-mark { width:30px; height:30px; font-size:22px; }
+      .brand-logo { width:112px; height:36px; padding:3px 5px; }
       .header-title { font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       .header-sub { font-size:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       .header-right { display:none; }
@@ -328,7 +326,7 @@
 
 <div class="header">
   <div class="header-brand">
-    <div class="brand-mark">e</div>
+    <img class="brand-logo" src="ecoco-logo.png" alt="ECOCO 宜可可循環經濟" />
     <div>
       <div class="header-title">ECOCO 客服後台</div>
       <div class="header-sub">DASHBOARD · 管理員視角</div>
