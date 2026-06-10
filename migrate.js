@@ -4,7 +4,15 @@
  */
 const fs       = require('fs');
 const path     = require('path');
-const Database = require('better-sqlite3');
+
+let Database;
+try {
+  Database = require('better-sqlite3');
+} catch {
+  console.error('此腳本只用於舊版 JSON -> SQLite 遷移。');
+  console.error('如需執行，請先暫時安裝：npm install --no-save better-sqlite3');
+  process.exit(1);
+}
 
 const JSON_PATH = path.join(__dirname, 'ecoco_chat.json');
 const DB_PATH   = path.join(__dirname, 'ecoco_chat.db');

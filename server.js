@@ -68,8 +68,12 @@ const SCHEMA = [
       id         SERIAL PRIMARY KEY,
       session_id TEXT NOT NULL,
       question   TEXT NOT NULL,
+      reply      TEXT DEFAULT '',
+      reason     TEXT DEFAULT '',
       timestamp  TEXT NOT NULL
     )`,
+  `ALTER TABLE unanswered_questions ADD COLUMN IF NOT EXISTS reply TEXT DEFAULT ''`,
+  `ALTER TABLE unanswered_questions ADD COLUMN IF NOT EXISTS reason TEXT DEFAULT ''`,
   `CREATE TABLE IF NOT EXISTS knowledge_sections (
       id         SERIAL PRIMARY KEY,
       category   TEXT NOT NULL,
@@ -107,6 +111,14 @@ async function initDb() {
 
 // ── 知識庫：用記憶體快取，避免每次對話都查 DB ──────────────
 let knowledgeCache = '';
+const DEFAULT_ANTHROPIC_MODEL = 'claude-opus-4-7';
+const KNOWLEDGE_GAP_MARKERS = [
+  '沒有確切資料',
+  '沒有明確答案',
+  '沒有相關資料',
+  '建議您透過客服表單',
+  'App 內「我的」>「聯絡我們」',
+];
 
 async function refreshKnowledgeCache() {
   const { rows } = await pool.query(
@@ -174,6 +186,22 @@ ${knowledgeCache}
 
 // ── API 路由 ──────────────────────────────────────────────
 
+function detectKnowledgeGap(reply) {
+  if (typeof reply !== 'string') {
+    return { isGap: false, reason: '' };
+  }
+
+  const marker = KNOWLEDGE_GAP_MARKERS.find(text => reply.includes(text));
+  if (!marker) {
+    return { isGap: false, reason: '' };
+  }
+
+  return {
+    isGap: true,
+    reason: `AI 回覆包含知識缺口標記：「${marker}」`,
+  };
+}
+
 app.post('/api/chat', chatLimiter, async (req, res) => {
   const { history } = req.body;
 
@@ -195,7 +223,7 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
 
   try {
     const response = await client.messages.create({
-      model: 'claude-opus-4-7',
+      model: process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL,
       max_tokens: 1024,
       system: [{ type: 'text', text: buildSystemPrompt(), cache_control: { type: 'ephemeral' } }],
       messages: history,
@@ -218,10 +246,11 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
         [sessionId, 'assistant', reply, ts]
       );
       // 未被回答的問題歸檔（知識缺口）
-      if (reply.includes('沒有確切資料')) {
+      const gap = detectKnowledgeGap(reply);
+      if (gap.isGap) {
         await pool.query(
-          'INSERT INTO unanswered_questions (session_id, question, timestamp) VALUES ($1, $2, $3)',
-          [sessionId, userMsg.content, ts]
+          'INSERT INTO unanswered_questions (session_id, question, reply, reason, timestamp) VALUES ($1, $2, $3, $4, $5)',
+          [sessionId, userMsg.content, reply, gap.reason, ts]
         );
       }
     } catch (dbErr) {
@@ -338,7 +367,7 @@ app.get('/api/top-questions', requireAdminKey, async (req, res) => {
 app.get('/api/unanswered', requireAdminKey, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      'SELECT session_id, question, timestamp FROM unanswered_questions ORDER BY timestamp DESC LIMIT 100'
+      'SELECT session_id, question, reply, reason, timestamp FROM unanswered_questions ORDER BY timestamp DESC LIMIT 100'
     );
     res.json(rows);
   } catch (dbErr) {

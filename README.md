@@ -1,139 +1,123 @@
-# ECOCO 宜可可 AI 客服系統
+# ECOCO AI 客服系統
 
-> 基於 Claude AI 的智慧客服，整合官方知識庫、對話紀錄、滿意度評分與後台儀表板
+基於 Claude API 的 ECOCO 智慧客服，整合官方知識庫、對話紀錄、滿意度評分、知識缺口追蹤與後台儀表板。
 
----
+## 功能
 
-## 功能特色
+- AI 回答以後台分類知識庫為主，避免自行編造資訊
+- 即時客服對話，支援 Markdown 回覆
+- 每則 AI 回答可送出滿意度評分
+- 後台可查看統計、對話紀錄、評分明細與知識缺口
+- 後台可新增、修改、刪除知識庫分類，更新後立即生效
+- PostgreSQL 持久化儲存對話、評分、知識缺口與知識庫內容
+- Rate limiting、Admin Key、輸入驗證與前端 XSS 防護
 
-- 🤖 AI 回答完全基於官方知識庫，不編造資訊
-- 💬 即時對話，支援 Markdown 格式回覆（表格、條列、粗體）
-- 👍👎 每則回答都可評分，後台即時統計滿意率
-- 📊 後台儀表板：對話紀錄、熱門關鍵字排行、滿意度長條圖
-- 🗄️ SQLite 資料庫持久化儲存所有對話與評分
-- 🔒 Rate Limiting、Admin API 保護、XSS 防護、輸入驗證
+## 技術
 
----
-
-## 技術架構
-
-| 層級 | 技術 |
-|------|------|
+| 項目 | 技術 |
+| --- | --- |
 | 後端 | Node.js + Express |
-| AI | Anthropic Claude API（`claude-opus-4-7`）|
-| 資料庫 | SQLite（better-sqlite3）|
-| 前端 | 原生 HTML + CSS + JavaScript |
+| AI | Anthropic Claude API |
+| 資料庫 | PostgreSQL (`pg`) |
+| 前端 | HTML + CSS + JavaScript |
 | Markdown | marked.js + DOMPurify |
 | 安全 | express-rate-limit |
 
----
-
-## 快速開始
-
-### 環境需求
+## 環境需求
 
 - Node.js 18+
 - npm
-- [Anthropic API Key](https://console.anthropic.com/)
+- PostgreSQL database URL, 例如 Neon / Supabase / Render Postgres
+- Anthropic API Key
 
-### 安裝步驟
+## 快速開始
 
 ```bash
-# 1. 安裝套件
 npm install
-
-# 2. 設定環境變數
 cp .env.example .env
-# 用文字編輯器開啟 .env，填入 ANTHROPIC_API_KEY 和 ADMIN_KEY
-
-# 3. 啟動伺服器
 npm start
 ```
 
-### 開啟瀏覽器
-
-| 頁面 | 網址 |
-|------|------|
-| 客服介面 | http://localhost:3000 |
-| 後台儀表板 | http://localhost:3000/dashboard.html |
-
-> 後台需輸入 `.env` 裡設定的 `ADMIN_KEY` 才能登入
-
----
-
-## 環境變數
-
-複製 `.env.example` 為 `.env` 並填入以下變數：
+在 `.env` 填入：
 
 | 變數 | 說明 | 必填 |
-|------|------|:----:|
-| `ANTHROPIC_API_KEY` | Anthropic 平台的 API 金鑰 | ✅ |
-| `ADMIN_KEY` | 後台儀表板登入密鑰（自訂任意字串） | ✅ |
-| `PORT` | 伺服器 Port（預設 3000） | ❌ |
+| --- | --- | :---: |
+| `ANTHROPIC_API_KEY` | Anthropic API key | 是 |
+| `ANTHROPIC_MODEL` | Claude model，未填時使用程式預設值 | 否 |
+| `DATABASE_URL` | PostgreSQL 連線字串 | 是 |
+| `PGSSL` | SSL 設定；雲端 Postgres 通常使用 `require`，內部連線可設 `disable` | 否 |
+| `ADMIN_KEY` | 後台登入密鑰 | 是 |
+| `PORT` | 伺服器 port，預設 `3000` | 否 |
 
----
+啟動後：
 
-## API 文件
+| 頁面 | URL |
+| --- | --- |
+| 客服介面 | `http://localhost:3000` |
+| 後台儀表板 | `http://localhost:3000/dashboard.html` |
 
-| 方法 | 路由 | 說明 | 認證 |
-|------|------|------|------|
-| `POST` | `/api/chat` | 送出問題，取得 AI 回答 | 無 |
+## API
+
+| 方法 | 路徑 | 說明 | 權限 |
+| --- | --- | --- | --- |
+| `POST` | `/api/chat` | 送出對話並取得 AI 回覆 | 無 |
 | `POST` | `/api/rating` | 送出滿意度評分 | 無 |
 | `GET` | `/api/stats` | 統計總覽 | Admin Key |
-| `GET` | `/api/sessions` | 對話詳細紀錄 | Admin Key |
-| `GET` | `/api/top-questions` | 熱門關鍵字排行 | Admin Key |
+| `GET` | `/api/sessions` | 對話紀錄 | Admin Key |
+| `GET` | `/api/top-questions` | 熱門關鍵字 | Admin Key |
+| `GET` | `/api/ratings` | 評分明細 | Admin Key |
+| `GET` | `/api/unanswered` | 知識缺口紀錄 | Admin Key |
+| `GET` | `/api/knowledge/sections` | 取得知識庫分類 | Admin Key |
+| `POST` | `/api/knowledge/sections` | 新增知識庫分類 | Admin Key |
+| `PUT` | `/api/knowledge/sections/:id` | 更新知識庫分類 | Admin Key |
+| `DELETE` | `/api/knowledge/sections/:id` | 刪除知識庫分類 | Admin Key |
+| `GET` | `/api/search?q=...` | 搜尋對話紀錄 | Admin Key |
 
-### `/api/chat` 請求格式
+## 知識缺口如何判斷與記錄
 
-```json
-POST /api/chat
-Headers: { "x-session-id": "session_xxx" }
+系統 prompt 明確要求 AI：如果知識庫沒有明確答案，必須回覆「這個問題我沒有確切資料...」並引導使用者透過 ECOCO 客服表單或 App 聯絡專人。
 
-{
-  "history": [
-    { "role": "user", "content": "點數有效期限是多久？" }
-  ]
-}
-```
+後端收到 AI 回覆後，會用 `detectKnowledgeGap(reply)` 檢查回覆是否包含知識缺口標記，例如：
 
-限制：對話歷史最多 **20 則**，每則訊息最多 **2000 字**，每個 IP 每分鐘最多 **10 次**請求。
+- `沒有確切資料`
+- `沒有明確答案`
+- `沒有相關資料`
+- `建議您透過客服表單`
+- `App 內「我的」>「聯絡我們」`
 
-### Admin API 請求格式
+只要命中標記，就會寫入 `unanswered_questions`：
 
-```bash
-curl http://localhost:3000/api/stats \
-  -H "x-admin-key: 你的ADMIN_KEY"
-```
+- `session_id`：這次對話 session
+- `question`：使用者原始問題
+- `reply`：AI 當時的回覆
+- `reason`：命中的判斷原因
+- `timestamp`：記錄時間
 
----
+後台的「知識缺口列表」會顯示這些資料，方便管理者回頭補知識庫分類。
 
-## 安全性設計
+## 資料庫初始化
 
-| 機制 | 實作方式 |
-|------|---------|
-| Rate Limiting | 每 IP 每分鐘上限 10 次 `/api/chat` 請求 |
-| Admin 保護 | `/api/stats`、`/api/sessions`、`/api/top-questions` 需帶 `x-admin-key` header |
-| XSS 防護 | AI 回覆用 DOMPurify 清洗；後台用 escapeHtml 跳脫 |
-| 輸入驗證 | 限制 history 長度、訊息字數、role 格式 |
+啟動時會自動建立需要的資料表：
 
----
+- `conversations`
+- `ratings`
+- `unanswered_questions`
+- `knowledge_sections`
+
+如果 `knowledge_sections` 是空的，系統會從 `knowledge.js` 匯入初始分類，之後後台修改會寫回 PostgreSQL。
 
 ## 專案結構
 
-```
-ecoco-customer-service/
-├── server.js           # 後端主程式（Express + Claude API + SQLite）
-├── migrate.js          # 一次性遷移腳本（JSON → SQLite）
+```text
+.
+├── server.js              # Express + Claude API + PostgreSQL
+├── knowledge.js           # 初始知識庫分類種子資料
+├── import-stations.js     # 從 CSV/XLSX 匯入站點資料到 knowledge.js
+├── parse-kml.js           # 從 KML 匯入站點資料到 knowledge.js
+├── migrate.js             # 舊 SQLite 遷移輔助腳本
 ├── package.json
-├── .env.example        # 環境變數範本
-├── .gitignore
+├── .env.example
 └── public/
-    ├── index.html      # 客服對話介面
-    └── dashboard.html  # 後台儀表板
+    ├── index.html         # 客服對話介面
+    └── dashboard.html     # 後台儀表板
 ```
-
----
-
-## 授權
-
-MIT
