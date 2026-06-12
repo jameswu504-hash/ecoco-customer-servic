@@ -2,6 +2,7 @@ require('dotenv').config();
 const express   = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 const path      = require('path');
+const fs        = require('fs');
 const crypto    = require('crypto');
 const { Pool }  = require('pg');
 const rateLimit = require('express-rate-limit');
@@ -110,6 +111,70 @@ async function initDb() {
 }
 
 // ── 知識庫：用記憶體快取，避免每次對話都查 DB ──────────────
+async function syncKnowledgeFromImportFile() {
+  if (process.env.KNOWLEDGE_AUTO_SYNC === 'disable') {
+    console.log('Knowledge auto-sync skipped: KNOWLEDGE_AUTO_SYNC=disable');
+    return;
+  }
+
+  const importPath = path.join(__dirname, 'data', 'ecoco-knowledge-import.json');
+  if (!fs.existsSync(importPath)) {
+    console.log('Knowledge auto-sync skipped: import file not found');
+    return;
+  }
+
+  const payload = JSON.parse(fs.readFileSync(importPath, 'utf8'));
+  const sections = Array.isArray(payload.sections) ? payload.sections : [];
+  if (sections.length === 0) {
+    console.log('Knowledge auto-sync skipped: no sections found');
+    return;
+  }
+
+  const mode = process.env.KNOWLEDGE_AUTO_SYNC === 'replace' ? 'replace' : 'upsert';
+  if (mode === 'replace') {
+    await pool.query('DELETE FROM knowledge_sections');
+  }
+
+  const now = new Date().toISOString();
+  let sortOrder = 0;
+  let inserted = 0;
+  let updated = 0;
+  for (const section of sections) {
+    const category = String(section.category || '').trim();
+    const content = String(section.content || '').trim();
+    if (!category || !content) continue;
+
+    if (mode === 'replace') {
+      await pool.query(
+        'INSERT INTO knowledge_sections (category, content, sort_order, updated_at) VALUES ($1, $2, $3, $4)',
+        [category, content, sortOrder++, now]
+      );
+      inserted++;
+      continue;
+    }
+
+    const existing = await pool.query(
+      'SELECT id FROM knowledge_sections WHERE category = $1 ORDER BY id ASC LIMIT 1',
+      [category]
+    );
+    if (existing.rowCount > 0) {
+      await pool.query(
+        'UPDATE knowledge_sections SET content = $1, updated_at = $2 WHERE id = $3',
+        [content, now, existing.rows[0].id]
+      );
+      updated++;
+    } else {
+      const nextSort = await pool.query('SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM knowledge_sections');
+      await pool.query(
+        'INSERT INTO knowledge_sections (category, content, sort_order, updated_at) VALUES ($1, $2, $3, $4)',
+        [category, content, Number(nextSort.rows[0].next), now]
+      );
+      inserted++;
+    }
+  }
+  console.log(`Knowledge auto-sync complete: mode=${mode} inserted=${inserted} updated=${updated}`);
+}
+
 let knowledgeCache = '';
 const DEFAULT_ANTHROPIC_MODEL = 'claude-opus-4-7';
 const KNOWLEDGE_GAP_MARKERS = [
@@ -482,6 +547,7 @@ const PORT = process.env.PORT || 3000;
 (async () => {
   try {
     await initDb();
+    await syncKnowledgeFromImportFile();
     await refreshKnowledgeCache();
     app.listen(PORT, () => {
       console.log(`✅ ECOCO 客服伺服器啟動：http://localhost:${PORT}`);
