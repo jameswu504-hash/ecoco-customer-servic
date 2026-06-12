@@ -344,7 +344,7 @@ app.get('/api/sessions', requireAdminKey, async (req, res) => {
 app.get('/api/top-questions', requireAdminKey, async (req, res) => {
   try {
     const { rows: userMessages } = await pool.query("SELECT content FROM conversations WHERE role = 'user'");
-    const keywordList = ['點數', '兌換', '寶特瓶', '電池', '全聯', '全家', '家樂福',
+    const keywordList = ['點數', '兌換', '寶特瓶', '電池', '全聯', '全家', '康達盛通',
                          '站點', 'App', '帳號', '密碼', '壓扁', '期限', '合作'];
     const keywords = {};
     userMessages.forEach(({ content }) => {
