@@ -26,6 +26,14 @@ function sectionKey(row) {
   return normalizeText(row.category) || '未分類';
 }
 
+function automationLabel(value) {
+  const normalized = normalizeText(value);
+  if (normalized === 'auto_reply_with_guardrails') return '全自動回覆（高風險需保守話術）';
+  if (normalized === 'auto_reply_allowed') return '全自動回覆';
+  if (normalized === 'record_gap') return '記錄知識缺口';
+  return normalized;
+}
+
 function formatRecord(row) {
   const title = normalizeText(row.question_or_trigger) || normalizeText(row.subcategory) || row.record_id;
   const answer = normalizeText(row.answer_or_content);
@@ -33,7 +41,7 @@ function formatRecord(row) {
 
   if (row.source) meta.push(`來源：${row.source}`);
   if (row.source_date) meta.push(`日期：${row.source_date}`);
-  if (row.automation_level) meta.push(`自動化：${row.automation_level}`);
+  if (row.automation_level) meta.push(`自動化：${automationLabel(row.automation_level)}`);
   if (row.risk) meta.push(`風險：${row.risk}`);
   if (row.notes) meta.push(`備註：${row.notes}`);
 
@@ -64,7 +72,7 @@ function buildBrandSection(database) {
 
 function buildPolicySection(database) {
   const lines = [
-    '以下為 AI 客服處理高風險或需要人工審核問題時的 SOP。draft_review 代表 AI 只能產生草稿，不能直接自動回覆。',
+    '以下為 AI 客服全自動回覆時的安全邊界。高風險問題可以由 AI 直接回覆，但必須保守回答、收集必要資訊、引導客服表單，不能承諾補點、退款或已完成人工處理。',
     '',
   ];
 
@@ -73,7 +81,7 @@ function buildPolicySection(database) {
     lines.push(`- 必收資料：${policy.required_fields}`);
     lines.push(`- 可說：${policy.allowed_response}`);
     lines.push(`- 不可說：${policy.do_not_say}`);
-    lines.push(`- 自動化等級：${policy.automation_level}`);
+    lines.push(`- 自動化等級：${automationLabel(policy.automation_level)}`);
     lines.push(`- 來源：${policy.source}`);
     lines.push('');
   }
@@ -137,7 +145,7 @@ function buildKnowledgeSections(database) {
   for (const [key, rows] of grouped) {
     const header = [
       `本節共有 ${rows.length} 筆資料。`,
-      '使用原則：低風險 FAQ 可自動回答；點數、優惠券、帳號、客訴、機台異常等高風險內容應產生草稿並交由人工確認。',
+      '使用原則：所有可公開回答的 FAQ 均採全自動回覆；點數、優惠券、帳號、客訴、機台異常等高風險內容需用保守話術，收集必要資訊並引導客服表單，不承諾補點、退款或已完成人工處理。',
       '',
     ];
     sections.push({
