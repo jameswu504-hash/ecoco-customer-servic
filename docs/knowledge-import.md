@@ -1,47 +1,53 @@
-# ECOCO 知識庫匯入流程
+# ECOCO AI 客服資料庫匯入說明
 
-本專案可用 `data/ecoco-knowledge-import.json` 將整理後的 ECOCO FAQ、Meta 指令與舊 CommandCenter 品牌規則匯入 PostgreSQL 的 `knowledge_sections`。
+本專案目前以 `data/ecoco-ai-customer-service-database.json` 作為 AI 客服主資料庫底稿，再由 `scripts/build-ecoco-knowledge-data.js` 產出可匯入 PostgreSQL `knowledge_sections` 的 `data/ecoco-knowledge-import.json`。
 
-## 已整理來源
+## 最新資料來源
 
-| 檔案 | 匯入方式 |
+目前採用 2026-06-12 整合版資料，只保留可用且標記為 active 的資料。舊 CommandCenter 只抽品牌脈絡與流程概念，不匯入舊憑證、舊信箱設定或舊 AI 草稿中的錯誤事實。
+
+| 檔案 | 用途 |
 | --- | --- |
-| `凡立橙股份有限公司_官網常見問題_茗芬V2 的副本.xlsx` | 匯入最新版 `官網常見問題 20260515` 與 `回覆問答` |
-| `目前給Meta ai 指令.md` | 匯入為社群客服回覆規則 |
-| `ECOCO_CS_CommandCenter_v1.9.3/config.json` | 只匯入 `brand_context`，不匯入任何 key/token/mail 設定 |
+| `data/ecoco-ai-customer-service-database.json` | 完整 AI 客服資料庫，保留細項、來源、風險、自動化等級與衝突標記 |
+| `data/ecoco-knowledge-import.json` | 給 PostgreSQL `knowledge_sections` 匯入用，已依主分類整理成 53 個 section |
+| `data/ecoco-response-policies.json` | 點數、優惠券、機台、帳號等高風險問題的處理規則 |
 
-## 匯入指令
+## 這次和 Git 舊資料的差異
 
-先確認 `.env` 已設定：
+| 項目 | Git 舊資料 | 新版資料 |
+| --- | --- | --- |
+| 主資料格式 | 只有 `sections` 大段文字 | 新增完整細項資料庫，含 878 筆 knowledge records |
+| 匯入 section 數 | 42 個 section | 53 個 section，依主分類整理 |
+| 社群回覆資料 | 只放 Meta 指令與部分回覆問答 | 新增線上 reply helper 的 81 筆社群範本 |
+| FAQ 資料 | 主要來自 Excel | 同時整合 Excel 最新官網 FAQ 與線上 FAQ API |
+| 舊系統資料 | 容易混入舊草稿與舊設定 | 只保留品牌脈絡，不保留舊憑證與錯誤草稿 |
+| 衝突管理 | 沒有獨立欄位 | 新增 `conflicts_pending_review`，例如點數效期、App 版本、客服時間 |
+| AI 使用控制 | 較難分辨可否自動回覆 | 每筆資料都有 `automation_level` 與 `risk` |
+
+## 重產資料
+
+如果 `data/ecoco-ai-customer-service-database.json` 更新，可重產 PostgreSQL 匯入檔：
 
 ```bash
-DATABASE_URL=postgresql://...
-PGSSL=require
+npm run build:knowledge
 ```
 
-一般匯入或更新同名分類：
+匯入 PostgreSQL：
 
 ```bash
 npm run import:knowledge
 ```
 
-如果要清空舊分類，完全改用這份整理資料：
+若要清空後重新匯入：
 
 ```bash
 npm run import:knowledge -- data/ecoco-knowledge-import.json --replace
 ```
 
-## 產出檔案
+## 使用原則
 
-| 檔案 | 用途 |
-| --- | --- |
-| `data/ecoco-knowledge-import.json` | 可匯入 `knowledge_sections` 的知識分類 |
-| `data/ecoco-response-policies.json` | 未來可做 `response_policies` 表的 SOP 規則 |
-
-## 注意事項
-
-1. 歷史版 FAQ 沒有直接匯入，避免新舊規則混在一起。
-2. `關鍵字_內部備註` 被標記為內部輔助，不建議對客戶逐字揭露。
-3. 舊 CommandCenter 的 API key/token 不會被匯入。
-4. 高風險問題，例如點數、優惠券、帳號、客訴，建議走 AI 草稿加人工審核。
-
+1. 低風險 FAQ 可讓 AI 直接回答。
+2. 點數、優惠券、帳號、客訴、機台異常屬高風險，AI 只應產生草稿並交由人工確認。
+3. `conflicts_pending_review` 內的資料不可直接變成正式答案，必須由主管或官方來源確認。
+4. `internal_ops_signals` 只供客服後台提示，不建議對客戶逐字揭露。
+5. 舊 CommandCenter ticket 只做流程理解，不匯入 AI 對客知識庫。

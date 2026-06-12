@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
+    "build:knowledge": "node scripts/build-ecoco-knowledge-data.js",
     "import:knowledge": "node scripts/import-knowledge-json.js"
   },
   "dependencies": {

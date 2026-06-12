@@ -1,73 +1,51 @@
 {
-  "generated_at": "2026-06-10T11:13:19",
+  "generated_at": "2026-06-12T07:05:47.796Z",
+  "source": "ECOCO_AI客服資料庫_整合版.xlsx / ecoco_database_payload.json",
   "policies": [
     {
-      "key": "points_missing",
-      "name": "點數未入帳",
-      "risk": "medium",
+      "policy_id": "POL-001",
+      "intent": "點數未入帳",
+      "required_fields": "註冊手機、使用日期時間、站點名稱、投入品項、投入數量、成功或錯誤畫面截圖",
+      "allowed_response": "先同理，再請客戶補資料；可說明 3-5 天同步規則，但需以最新版 FAQ 為準",
+      "do_not_say": "不要保證補點；不要說點數終生有效；不要猜測原因",
       "automation_level": "draft_review",
-      "required_fields": [
-        "註冊手機",
-        "使用日期時間",
-        "站點名稱",
-        "投入品項",
-        "投入數量",
-        "成功或錯誤畫面截圖"
-      ],
-      "do_not_say": [
-        "保證補點",
-        "保證立即處理完成",
-        "自行猜測原因"
-      ],
-      "action": "蒐集資訊後轉客服或後端查詢"
+      "source": "Meta 指令 / FAQ / 社群回覆 API"
     },
     {
-      "key": "coupon_issue",
-      "name": "優惠券兌換或使用異常",
-      "risk": "high",
+      "policy_id": "POL-002",
+      "intent": "優惠券兌換或誤用",
+      "required_fields": "會員帳號、兌換日期、券名稱、使用店家、票券匣/扣點/消費截圖、錯誤畫面",
+      "allowed_response": "請客戶提供截圖與細節，轉客服人工確認",
+      "do_not_say": "不要直接承諾退點、退款、補發",
       "automation_level": "draft_review",
-      "required_fields": [
-        "會員帳號",
-        "兌換日期",
-        "券名稱",
-        "使用店家",
-        "消費截圖",
-        "錯誤畫面"
-      ],
-      "do_not_say": [
-        "直接承諾退點",
-        "直接承諾補發優惠券"
-      ],
-      "action": "蒐集證明後由人工審核"
+      "source": "FAQ / 社群回覆 API"
     },
     {
-      "key": "machine_issue",
-      "name": "機台異常或滿袋",
-      "risk": "medium",
+      "policy_id": "POL-003",
+      "intent": "機台故障、滿袋、清潔、退瓶",
+      "required_fields": "站點名稱、機台類型、發生時間、異常描述、照片或影片",
+      "allowed_response": "先道歉同理，提供 App 查站點狀態與客服表單",
+      "do_not_say": "不要保證維修完成時間；不要指責使用者",
       "automation_level": "draft_review",
-      "required_fields": [
-        "站點名稱",
-        "機台類型",
-        "發生時間",
-        "異常描述",
-        "照片或影片"
-      ],
-      "do_not_say": [
-        "保證維修時間",
-        "指責使用者操作錯誤"
-      ],
-      "action": "先同理，再提供 App 查詢或客服表單回報方式"
+      "source": "客訴週報 / FAQ / 社群回覆 API"
     },
     {
-      "key": "simple_faq",
-      "name": "一般 FAQ",
-      "risk": "low",
+      "policy_id": "POL-004",
+      "intent": "一般 FAQ",
+      "required_fields": "",
+      "allowed_response": "可根據高優先知識庫直接回答",
+      "do_not_say": "不要超出知識庫自行推測",
       "automation_level": "auto_reply_allowed",
-      "required_fields": [],
-      "do_not_say": [
-        "超出知識庫自行推測"
-      ],
-      "action": "可依知識庫直接回答"
+      "source": "官網 FAQ / FAQ API"
+    },
+    {
+      "policy_id": "POL-005",
+      "intent": "知識缺口",
+      "required_fields": "使用者原始問題、AI 回覆、缺口原因、來源分類",
+      "allowed_response": "這個問題我沒有確切資料，建議透過客服表單或 App 聯絡專人",
+      "do_not_say": "不要硬回答；不要編造政策",
+      "automation_level": "record_gap",
+      "source": "新版 AI 客服設計"
     }
   ]
 }
