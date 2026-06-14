@@ -2,6 +2,17 @@
 
 基於 Claude API 的 ECOCO 智慧客服，整合官方知識庫、對話紀錄、滿意度評分、知識缺口追蹤與後台儀表板。
 
+## 內部維護文件
+
+給 ECOCO 內部同仁、客服、營運與維護者閱讀的文件請從這裡開始：
+
+- [docs/README.md](docs/README.md)：內部文件入口與建議閱讀順序
+- [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md)：專案總覽與系統流程
+- [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)：AI 客服目前使用的資料來源
+- [docs/DATA_DICTIONARY.md](docs/DATA_DICTIONARY.md)：PostgreSQL 與 JSON 欄位說明
+- [docs/MAINTENANCE_GUIDE.md](docs/MAINTENANCE_GUIDE.md)：每週維護、知識缺口、回覆品質檢查
+- [docs/DEPLOYMENT_RUNBOOK.md](docs/DEPLOYMENT_RUNBOOK.md)：Render 部署與環境變數設定
+
 ## 功能
 
 - AI 回答以後台分類知識庫為主，避免自行編造資訊
