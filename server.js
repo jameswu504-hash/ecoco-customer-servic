@@ -175,6 +175,12 @@ async function syncKnowledgeFromImportFile() {
   console.log(`Knowledge auto-sync complete: mode=${mode} inserted=${inserted} updated=${updated}`);
 }
 
+function readJsonFile(relativePath) {
+  const filePath = path.join(__dirname, relativePath);
+  if (!fs.existsSync(filePath)) return null;
+  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+}
+
 let knowledgeCache = '';
 const DEFAULT_ANTHROPIC_MODEL = 'claude-opus-4-7';
 const KNOWLEDGE_GAP_MARKERS = [
@@ -377,6 +383,50 @@ app.get('/api/stats', requireAdminKey, async (req, res) => {
   } catch (dbErr) {
     console.error('DB 查詢失敗:', dbErr.message);
     res.status(500).json({ error: '資料庫查詢失敗' });
+  }
+});
+
+app.get('/api/knowledge/overview', requireAdminKey, async (req, res) => {
+  try {
+    const importPayload = readJsonFile(path.join('data', 'ecoco-knowledge-import.json')) || {};
+    const databasePayload = readJsonFile(path.join('data', 'ecoco-ai-customer-service-database.json')) || {};
+
+    const [{ rows: dbCounts }, { rows: latestRows }] = await Promise.all([
+      pool.query('SELECT COUNT(*) AS section_count, COALESCE(SUM(LENGTH(content)), 0) AS content_chars FROM knowledge_sections'),
+      pool.query('SELECT MAX(updated_at) AS latest_update FROM knowledge_sections'),
+    ]);
+
+    const summary = importPayload.summary || databasePayload.summary || {};
+    const sourceDocuments = Array.isArray(databasePayload.source_documents)
+      ? databasePayload.source_documents.map(source => ({
+          source_name: source.source_name || '',
+          source_type: source.source_type || '',
+          role: source.role || '',
+          recommended_ai_use: source.recommended_ai_use || '',
+          caution: source.caution || '',
+          records_used: source.records_used ?? '',
+        }))
+      : [];
+
+    const sections = Array.isArray(importPayload.sections) ? importPayload.sections : [];
+
+    res.json({
+      generatedAt: importPayload.generated_at || databasePayload.generated_at || '',
+      source: importPayload.source || databasePayload.source || '',
+      notes: importPayload.notes || '',
+      importSectionCount: sections.length,
+      dbSectionCount: Number(dbCounts[0].section_count),
+      dbContentChars: Number(dbCounts[0].content_chars),
+      latestDbUpdate: latestRows[0].latest_update || '',
+      autoSyncMode: process.env.KNOWLEDGE_AUTO_SYNC || 'enabled',
+      model: process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL,
+      counts: summary.counts || {},
+      topCategories: Array.isArray(summary.category_counts) ? summary.category_counts.slice(0, 10) : [],
+      sourceDocuments,
+    });
+  } catch (err) {
+    console.error('Knowledge overview error:', err.message);
+    res.status(500).json({ error: '知識庫總覽讀取失敗' });
   }
 });
 

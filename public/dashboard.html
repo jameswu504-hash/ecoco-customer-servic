@@ -105,6 +105,32 @@
     .rating-fill.negative { background:#e07070; }
     .rating-pct { font-size:12px; font-family:'Space Mono',monospace; width:36px; text-align:right; color:var(--gray-mid); }
 
+    .overview-card {
+      background:var(--white); border-radius:var(--radius); padding:20px;
+      box-shadow:var(--shadow); border:1px solid #dfe6ee; margin-bottom:28px;
+    }
+    .overview-grid {
+      display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+      gap:12px; margin-bottom:18px;
+    }
+    .overview-metric {
+      border:1px solid #e6ecf2; border-radius:8px; padding:12px;
+      background:var(--green-ghost);
+    }
+    .overview-value {
+      font-size:22px; font-weight:700; color:var(--green-main);
+      font-family:'Space Mono',monospace; overflow-wrap:anywhere;
+    }
+    .overview-label { font-size:12px; color:var(--gray-mid); margin-top:3px; }
+    .overview-columns { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .source-list, .category-list { display:flex; flex-direction:column; gap:8px; }
+    .source-item, .category-item {
+      border:1px solid #e6ecf2; border-radius:8px; padding:10px 12px;
+      background:white; font-size:13px; line-height:1.5;
+    }
+    .source-title, .category-title { font-weight:700; color:var(--green-dark); overflow-wrap:anywhere; }
+    .source-meta, .category-meta { color:var(--gray-mid); font-size:12px; margin-top:2px; overflow-wrap:anywhere; }
+
     /* 對話紀錄 */
     .sessions-card {
       background:var(--white); border-radius:var(--radius); padding:20px;
@@ -240,7 +266,10 @@
       border-radius:8px; font-size:13px; cursor:pointer; font-family:'Noto Sans TC',sans-serif;
     }
     .kb-del-btn:hover { background:#e07070; color:white; }
-    @media (max-width:768px) { .kb-layout { grid-template-columns:1fr; } }
+    @media (max-width:768px) {
+      .kb-layout { grid-template-columns:1fr; }
+      .overview-columns { grid-template-columns:1fr; }
+    }
 
     /* 搜尋 */
     .search-wrap { margin-bottom:14px; }
@@ -365,6 +394,12 @@
     <div class="loading">載入中...</div>
   </div>
 
+  <!-- AI 資料庫總覽 -->
+  <div class="overview-card">
+    <div class="section-title">🧭 AI 資料庫總覽</div>
+    <div id="knowledgeOverview"><div class="loading">載入中...</div></div>
+  </div>
+
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:28px" class="two-col">
 
     <!-- 熱門關鍵字 -->
@@ -478,7 +513,7 @@ async function submitLogin() {
 }
 
 async function loadAll() {
-  await Promise.all([loadStats(), loadKeywords(), loadSessions(), loadUnanswered(), loadRatingDetails(), loadKnowledge()]);
+  await Promise.all([loadStats(), loadKnowledgeOverview(), loadKeywords(), loadSessions(), loadUnanswered(), loadRatingDetails(), loadKnowledge()]);
 }
 
 // ── 知識庫分類管理 ────────────────────────────────────────
@@ -682,6 +717,68 @@ async function loadStats() {
     </div>
     <div style="margin-top:16px;font-size:12px;color:var(--gray-mid)">
       滿意率：<strong style="color:var(--green-main)">${posWidth}%</strong>
+    </div>
+  `;
+}
+
+async function loadKnowledgeOverview() {
+  const data = await adminFetch('/api/knowledge/overview');
+  const counts = data.counts || {};
+  const sourceItems = (data.sourceDocuments || []).slice(0, 6).map(source => `
+    <div class="source-item">
+      <div class="source-title">${escapeHtml(source.source_name || '未命名來源')}</div>
+      <div class="source-meta">${escapeHtml(source.role || '未提供用途')}</div>
+      <div class="source-meta">AI 用途：${escapeHtml(source.recommended_ai_use || '未標記')}</div>
+      ${source.caution ? `<div class="source-meta">注意：${escapeHtml(source.caution)}</div>` : ''}
+    </div>
+  `).join('');
+
+  const categoryItems = (data.topCategories || []).slice(0, 8).map(([name, count]) => `
+    <div class="category-item">
+      <div class="category-title">${escapeHtml(name)}</div>
+      <div class="category-meta">${count} 筆資料</div>
+    </div>
+  `).join('');
+
+  document.getElementById('knowledgeOverview').innerHTML = `
+    <div class="overview-grid">
+      <div class="overview-metric">
+        <div class="overview-value">${data.dbSectionCount ?? 0}</div>
+        <div class="overview-label">PostgreSQL 知識分類</div>
+      </div>
+      <div class="overview-metric">
+        <div class="overview-value">${data.importSectionCount ?? 0}</div>
+        <div class="overview-label">Git 匯入分類</div>
+      </div>
+      <div class="overview-metric">
+        <div class="overview-value">${counts.knowledge_rows ?? 0}</div>
+        <div class="overview-label">整理後知識筆數</div>
+      </div>
+      <div class="overview-metric">
+        <div class="overview-value">${counts.templates ?? 0}</div>
+        <div class="overview-label">社群回覆範本</div>
+      </div>
+      <div class="overview-metric">
+        <div class="overview-value">${counts.conflicts ?? 0}</div>
+        <div class="overview-label">待確認衝突</div>
+      </div>
+      <div class="overview-metric">
+        <div class="overview-value">${escapeHtml(data.autoSyncMode || 'enabled')}</div>
+        <div class="overview-label">知識同步模式</div>
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--gray-mid);line-height:1.7;margin-bottom:14px">
+      產生時間：${escapeHtml(data.generatedAt || '未提供')}｜模型：${escapeHtml(data.model || '未設定')}｜資料庫最後更新：${escapeHtml(data.latestDbUpdate || '尚無紀錄')}
+    </div>
+    <div class="overview-columns">
+      <div>
+        <div class="section-title" style="font-size:13px;margin-bottom:10px">資料來源</div>
+        <div class="source-list">${sourceItems || '<div class="empty-state">尚無資料來源摘要</div>'}</div>
+      </div>
+      <div>
+        <div class="section-title" style="font-size:13px;margin-bottom:10px">主要分類</div>
+        <div class="category-list">${categoryItems || '<div class="empty-state">尚無分類摘要</div>'}</div>
+      </div>
     </div>
   `;
 }
