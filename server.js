@@ -128,8 +128,20 @@ async function initDb() {
 }
 
 // ── 知識庫：用記憶體快取，避免每次對話都查 DB ──────────────
+function getKnowledgeAutoSyncMode() {
+  const rawMode = String(process.env.KNOWLEDGE_AUTO_SYNC || 'enabled').trim().toLowerCase();
+  if (rawMode === 'disable') return 'disable';
+  if (rawMode === 'replace') return 'replace';
+  if (rawMode === 'upsert') return 'upsert';
+  if (rawMode === 'insert_only') return 'insert_only';
+
+  // Keep Render dashboard edits persistent by default.
+  return 'insert_only';
+}
+
 async function syncKnowledgeFromImportFile() {
-  if (process.env.KNOWLEDGE_AUTO_SYNC === 'disable') {
+  const mode = getKnowledgeAutoSyncMode();
+  if (mode === 'disable') {
     console.log('Knowledge auto-sync skipped: KNOWLEDGE_AUTO_SYNC=disable');
     return;
   }
@@ -147,7 +159,6 @@ async function syncKnowledgeFromImportFile() {
     return;
   }
 
-  const mode = process.env.KNOWLEDGE_AUTO_SYNC === 'replace' ? 'replace' : 'upsert';
   if (mode === 'replace') {
     await pool.query('DELETE FROM knowledge_sections');
   }
@@ -156,6 +167,7 @@ async function syncKnowledgeFromImportFile() {
   let sortOrder = 0;
   let inserted = 0;
   let updated = 0;
+  let skipped = 0;
   for (const section of sections) {
     const category = String(section.category || '').trim();
     const content = String(section.content || '').trim();
@@ -175,11 +187,15 @@ async function syncKnowledgeFromImportFile() {
       [category]
     );
     if (existing.rowCount > 0) {
-      await pool.query(
-        'UPDATE knowledge_sections SET content = $1, updated_at = $2 WHERE id = $3',
-        [content, now, existing.rows[0].id]
-      );
-      updated++;
+      if (mode === 'upsert') {
+        await pool.query(
+          'UPDATE knowledge_sections SET content = $1, updated_at = $2 WHERE id = $3',
+          [content, now, existing.rows[0].id]
+        );
+        updated++;
+      } else {
+        skipped++;
+      }
     } else {
       const nextSort = await pool.query('SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM knowledge_sections');
       await pool.query(
@@ -189,7 +205,7 @@ async function syncKnowledgeFromImportFile() {
       inserted++;
     }
   }
-  console.log(`Knowledge auto-sync complete: mode=${mode} inserted=${inserted} updated=${updated}`);
+  console.log(`Knowledge auto-sync complete: mode=${mode} inserted=${inserted} updated=${updated} skipped=${skipped}`);
 }
 
 function readJsonFile(relativePath) {
@@ -604,6 +620,7 @@ app.get('/api/knowledge/overview', requireAdminKey, async (req, res) => {
       dbContentChars: Number(dbCounts[0].content_chars),
       latestDbUpdate: latestRows[0].latest_update || '',
       autoSyncMode: process.env.KNOWLEDGE_AUTO_SYNC || 'enabled',
+      effectiveAutoSyncMode: getKnowledgeAutoSyncMode(),
       model: process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL,
       counts: summary.counts || {},
       topCategories: Array.isArray(summary.category_counts) ? summary.category_counts.slice(0, 10) : [],

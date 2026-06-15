@@ -159,7 +159,7 @@ RAG 第一版使用的檢索片段表。這張表由 `knowledge_sections` 自動
 | `DATABASE_URL` | PostgreSQL 連線字串 |
 | `PGSSL` | PostgreSQL SSL 設定 |
 | `ADMIN_KEY` | 後台管理 key |
-| `KNOWLEDGE_AUTO_SYNC` | 啟動時是否同步知識 JSON |
+| `KNOWLEDGE_AUTO_SYNC` | 啟動時如何同步知識 JSON；`enabled`/`insert_only` 保留後台同名分類，`upsert` 會覆寫同名分類，`replace` 會重建 |
 | `PORT` | 本機或平台使用的 port |
 
 注意：

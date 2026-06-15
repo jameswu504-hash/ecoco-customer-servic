@@ -46,17 +46,23 @@ npm run import:knowledge -- data/ecoco-knowledge-import.json --replace
 
 ## 線上自動同步
 
-後端啟動時會自動讀取 `data/ecoco-knowledge-import.json`，並同步到 PostgreSQL 的 `knowledge_sections`。預設模式會更新同名分類、插入新分類，不會刪除資料庫裡其他分類。因此在 Render 這類會自動部署 GitHub main 分支的環境中，流程會變成：
+後端啟動時會自動讀取 `data/ecoco-knowledge-import.json`，並同步到 PostgreSQL 的 `knowledge_sections`。目前預設安全模式為 `enabled`，實際行為等同 `insert_only`：只新增 Git JSON 裡有、PostgreSQL 尚未存在的分類，不覆寫後台已編輯的同名分類。因此在 Render 這類會自動部署 GitHub main 分支的環境中，流程會變成：
 
 1. 更新 AI 客服資料。
 2. 執行 `npm run build:knowledge` 重產匯入 JSON。
 3. Commit 並 push 到 GitHub。
-4. Render 重新部署後，server 啟動時自動同步 PostgreSQL 知識庫。
+4. Render 重新部署後，server 啟動時自動補入 PostgreSQL 缺少的知識分類。
 
 如果未來想改成只在後台手動編輯知識庫，不希望每次部署都同步 Git 資料，可在環境變數設定：
 
 ```bash
 KNOWLEDGE_AUTO_SYNC=disable
+```
+
+如果確定要以 Git 內的 JSON 更新同名分類並新增新分類，可設定：
+
+```bash
+KNOWLEDGE_AUTO_SYNC=upsert
 ```
 
 如果確定要以 Git 內的 JSON 完全覆蓋 PostgreSQL 知識庫，可設定：

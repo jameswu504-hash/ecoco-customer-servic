@@ -790,7 +790,7 @@ async function loadKnowledgeOverview() {
         <div class="overview-label">待確認衝突</div>
       </div>
       <div class="overview-metric">
-        <div class="overview-value">${escapeHtml(data.autoSyncMode || 'enabled')}</div>
+        <div class="overview-value">${escapeHtml(data.effectiveAutoSyncMode || data.autoSyncMode || 'insert_only')}</div>
         <div class="overview-label">知識同步模式</div>
       </div>
     </div>
