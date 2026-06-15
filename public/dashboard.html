@@ -232,6 +232,16 @@
       max-height:460px; overflow-y:auto;
       border:1px solid #e0ede8; border-radius:10px; padding:8px; background:var(--green-ghost);
     }
+    .kb-search-input {
+      width:100%; border:1.5px solid #cce0d8; border-radius:8px;
+      padding:9px 12px; font-size:13px; outline:none; margin-bottom:6px;
+      font-family:'Noto Sans TC',sans-serif; background:var(--white);
+    }
+    .kb-search-input:focus { border-color:var(--green-mid); }
+    .kb-hint {
+      min-height:18px; font-size:11px; color:var(--gray-mid);
+      margin:0 2px 8px; overflow-wrap:anywhere;
+    }
     .kb-cat-btn {
       display:flex; justify-content:space-between; align-items:center; gap:8px;
       width:100%; text-align:left; padding:9px 12px; margin-bottom:4px;
@@ -253,6 +263,27 @@
       font-family:'Noto Sans TC',sans-serif;
     }
     .kb-name-input:focus { border-color:var(--green-mid); }
+    .kb-suggestions {
+      display:none; border:1px solid #e0ede8; border-radius:8px;
+      background:var(--green-ghost); padding:8px; margin:-6px 0 12px;
+    }
+    .kb-suggestions.open { display:block; }
+    .kb-suggestion-title {
+      font-size:12px; color:var(--green-dark); font-weight:700; margin-bottom:6px;
+    }
+    .kb-suggestion-item {
+      display:flex; justify-content:space-between; align-items:center; gap:8px;
+      border-top:1px solid #e6ecf2; padding:8px 0; font-size:12px;
+    }
+    .kb-suggestion-item:first-of-type { border-top:none; }
+    .kb-suggestion-name { font-weight:700; color:var(--black); overflow-wrap:anywhere; }
+    .kb-suggestion-meta { color:var(--gray-mid); font-family:'Space Mono',monospace; flex-shrink:0; }
+    .kb-suggestion-btn {
+      border:1px solid var(--green-main); color:var(--green-main); background:white;
+      border-radius:8px; padding:4px 8px; font-size:12px; cursor:pointer;
+      font-family:'Noto Sans TC',sans-serif; flex-shrink:0;
+    }
+    .kb-suggestion-btn:hover { background:var(--green-main); color:white; }
     .kb-content-input {
       width:100%; height:300px; border:1.5px solid #cce0d8; border-radius:8px;
       padding:12px; font-size:13px; font-family:'Space Mono',monospace;
@@ -446,12 +477,17 @@
       <button class="kb-add-btn" onclick="newSection()">＋ 新增分類</button>
     </div>
     <div class="kb-layout">
-      <div class="kb-sidebar" id="kbSidebar"><div class="loading">載入中...</div></div>
+      <div class="kb-sidebar">
+        <input class="kb-search-input" id="kbSearch" placeholder="搜尋分類或內容，例如：點數、優惠券、機台" oninput="renderKbSidebar()" />
+        <div class="kb-hint" id="kbSearchHint"></div>
+        <div id="kbSidebar"><div class="loading">載入中...</div></div>
+      </div>
       <div class="kb-editor">
         <div class="kb-empty" id="kbEmpty">← 從左邊點一個分類來檢視或編輯<br>或按右上角「＋ 新增分類」<br><br>修改後按「儲存」，AI 立即生效、永久保存</div>
         <div id="kbForm" style="display:none">
           <label class="kb-label">分類名稱</label>
-          <input class="kb-name-input" id="kbName" placeholder="例如：點數計算規則" />
+          <input class="kb-name-input" id="kbName" placeholder="例如：點數計算規則" oninput="renderCategorySuggestions()" />
+          <div class="kb-suggestions" id="kbCategorySuggestions"></div>
           <label class="kb-label">內容</label>
           <textarea class="kb-content-input" id="kbContent" spellcheck="false" oninput="kbCharCount()"></textarea>
           <div class="kb-actions">
@@ -550,18 +586,101 @@ async function loadKnowledge() {
   renderKbSidebar();
 }
 
+function normalizeKbText(value) {
+  return String(value || '').toLowerCase().replace(/\s+/g, '');
+}
+
+function getKbSearchQuery() {
+  const input = document.getElementById('kbSearch');
+  return input ? input.value.trim() : '';
+}
+
 function renderKbSidebar() {
   const el = document.getElementById('kbSidebar');
+  const hint = document.getElementById('kbSearchHint');
+  const query = getKbSearchQuery();
+  const normalizedQuery = normalizeKbText(query);
+  const sections = normalizedQuery
+    ? kbSections.filter(s =>
+        normalizeKbText(s.category).includes(normalizedQuery) ||
+        normalizeKbText(s.content).includes(normalizedQuery)
+      )
+    : kbSections;
+
+  if (hint) {
+    hint.textContent = query
+      ? `找到 ${sections.length} / ${kbSections.length} 個分類`
+      : '先搜尋既有分類，再決定要新增或編輯。';
+  }
+
   if (kbSections.length === 0) {
     el.innerHTML = '<div class="empty-state">尚無分類，按「＋ 新增分類」開始</div>';
     return;
   }
-  el.innerHTML = kbSections.map(s => `
+  if (sections.length === 0) {
+    el.innerHTML = '<div class="empty-state">找不到相近分類，可以按「＋ 新增分類」建立</div>';
+    return;
+  }
+  el.innerHTML = sections.map(s => `
     <button class="kb-cat-btn ${s.id === kbCurrentId ? 'active' : ''}" onclick="selectSection(${s.id})">
       <span class="kb-cat-name">${escapeHtml(s.category)}</span>
       <span class="kb-cat-size">${s.content.length}字</span>
     </button>
   `).join('');
+}
+
+function getCategoryMatches(category) {
+  const value = category.trim();
+  const normalized = normalizeKbText(value);
+  if (normalized.length < 2) return [];
+
+  const terms = value
+    .split(/[，,、／/｜|：:\s]+/)
+    .map(normalizeKbText)
+    .filter(term => term.length >= 2);
+
+  return kbSections
+    .filter(s => s.id !== kbCurrentId)
+    .map(s => {
+      const name = normalizeKbText(s.category);
+      let score = 0;
+      if (name === normalized) score += 100;
+      if (name.includes(normalized) || normalized.includes(name)) score += 40;
+      for (const term of terms) {
+        if (name.includes(term)) score += 12;
+      }
+      return { ...s, score };
+    })
+    .filter(s => s.score > 0)
+    .sort((a, b) => b.score - a.score || a.category.localeCompare(b.category, 'zh-Hant'))
+    .slice(0, 5);
+}
+
+function renderCategorySuggestions() {
+  const box = document.getElementById('kbCategorySuggestions');
+  if (!box) return;
+  const category = document.getElementById('kbName').value;
+  const matches = getCategoryMatches(category);
+  if (matches.length === 0) {
+    box.classList.remove('open');
+    box.innerHTML = '';
+    return;
+  }
+
+  const exact = matches.some(s => normalizeKbText(s.category) === normalizeKbText(category));
+  box.classList.add('open');
+  box.innerHTML = `
+    <div class="kb-suggestion-title">${exact ? '已有同名分類，建議直接編輯原分類' : '可能相關的既有分類'}</div>
+    ${matches.map(s => `
+      <div class="kb-suggestion-item">
+        <div>
+          <div class="kb-suggestion-name">${escapeHtml(s.category)}</div>
+          <div class="kb-suggestion-meta">${s.content.length.toLocaleString()} 字</div>
+        </div>
+        <button class="kb-suggestion-btn" type="button" onclick="selectSection(${s.id})">開啟</button>
+      </div>
+    `).join('')}
+  `;
 }
 
 function showKbForm() {
@@ -579,6 +698,7 @@ function selectSection(id) {
   document.getElementById('kbDelBtn').style.display = '';
   showKbForm();
   kbCharCount();
+  renderCategorySuggestions();
   renderKbSidebar();
 }
 
@@ -589,6 +709,7 @@ function newSection() {
   document.getElementById('kbDelBtn').style.display = 'none'; // 還沒存，不給刪
   showKbForm();
   kbCharCount();
+  renderCategorySuggestions();
   renderKbSidebar();
   document.getElementById('kbName').focus();
 }
@@ -604,6 +725,13 @@ async function saveSection() {
   const msg = document.getElementById('kbMsg');
   const btn = document.getElementById('kbSaveBtn');
   if (!category) { msg.textContent = '❌ 請填分類名稱'; msg.className = 'save-msg err'; return; }
+  const duplicate = kbSections.find(s => s.id !== kbCurrentId && normalizeKbText(s.category) === normalizeKbText(category));
+  if (duplicate) {
+    msg.textContent = '❌ 已有同名分類，請開啟原分類編輯，避免資料重複';
+    msg.className = 'save-msg err';
+    renderCategorySuggestions();
+    return;
+  }
 
   btn.disabled = true; btn.textContent = '儲存中...'; msg.textContent = '';
   try {
