@@ -8,6 +8,7 @@
 | `data/ecoco-knowledge-import.json` | 給 PostgreSQL `knowledge_sections` 使用的匯入檔 |
 | `data/ecoco-response-policies.json` | 高風險問題的回覆政策，例如點數、優惠券、機台、帳號、客訴 |
 | `knowledge.js` | 首次部署時的初始知識庫種子資料，後續以 PostgreSQL 為主 |
+| `docs/META_AI_INSTRUCTIONS.md` | Meta AI 指令的內部查閱文件；正式匯入仍以 JSON 資料庫為準 |
 
 ## 已整理進資料庫的來源類型
 
@@ -66,4 +67,3 @@
 - 回覆內容改用 `康達盛通`。
 - 站點名稱若包含 `家樂福`，目前先去除 `家樂福`。
 - 新站點名稱要等內部確認後再正式更新。
-

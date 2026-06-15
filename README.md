@@ -12,6 +12,7 @@
 - [docs/DATA_DICTIONARY.md](docs/DATA_DICTIONARY.md)：PostgreSQL 與 JSON 欄位說明
 - [docs/MAINTENANCE_GUIDE.md](docs/MAINTENANCE_GUIDE.md)：每週維護、知識缺口、回覆品質檢查
 - [docs/DEPLOYMENT_RUNBOOK.md](docs/DEPLOYMENT_RUNBOOK.md)：Render 部署與環境變數設定
+- [docs/META_AI_INSTRUCTIONS.md](docs/META_AI_INSTRUCTIONS.md)：Meta AI 指令來源整理與維護方式
 
 ## 功能
 

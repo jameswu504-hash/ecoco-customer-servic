@@ -9,8 +9,9 @@
 3. [DATA_DICTIONARY.md](DATA_DICTIONARY.md)：看懂 PostgreSQL 資料表與 JSON 檔案的用途。
 4. [MAINTENANCE_GUIDE.md](MAINTENANCE_GUIDE.md)：日常怎麼維護知識庫、知識缺口與回覆品質。
 5. [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md)：Render、環境變數、部署與更新流程。
-6. [knowledge-import.md](knowledge-import.md)：技術細節，說明如何產生與匯入知識庫 JSON。
-7. [security-keys.md](security-keys.md)：API key、token、`.env` 與 Render 環境變數的安全原則。
+6. [META_AI_INSTRUCTIONS.md](META_AI_INSTRUCTIONS.md)：Meta AI 指令來源整理與維護方式。
+7. [knowledge-import.md](knowledge-import.md)：技術細節，說明如何產生與匯入知識庫 JSON。
+8. [security-keys.md](security-keys.md)：API key、token、`.env` 與 Render 環境變數的安全原則。
 
 重要原則：
 
@@ -19,4 +20,3 @@
 - PostgreSQL 的 `knowledge_sections` 是 AI 實際回答時讀取的知識庫。
 - AI 無法確定的問題會進入 `unanswered_questions`，後續要由內部確認後補回知識庫。
 - 舊系統資料只能當參考，不能整包匯入。
-
