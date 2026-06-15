@@ -337,7 +337,7 @@
     }
     .unanswered-toggle:hover { background:var(--green-pale); }
     .gap-controls {
-      display:grid; grid-template-columns:150px 1fr auto; gap:8px; align-items:center;
+      display:grid; grid-template-columns:150px 1fr auto auto; gap:8px; align-items:center;
       margin-top:10px;
     }
     .gap-select, .gap-note {
@@ -351,6 +351,11 @@
       font-family:'Noto Sans TC',sans-serif;
     }
     .gap-save:hover { background:var(--green-mid); }
+    .gap-delete {
+      border:1px solid #e07070; border-radius:8px; padding:7px 12px; cursor:pointer;
+      background:white; color:#c0392b; font-size:12px; font-family:'Noto Sans TC',sans-serif;
+    }
+    .gap-delete:hover { background:#e07070; color:white; }
     .gap-status {
       display:inline-block; margin-top:6px; padding:2px 8px; border-radius:999px;
       font-size:11px; font-weight:700; background:var(--green-pale); color:var(--green-main);
@@ -951,6 +956,7 @@ async function loadUnanswered() {
             </select>
             <input class="gap-note" id="gap-note-${idx}" value="${escapeHtml(note)}" placeholder="備註：例如已補到哪個分類、等誰確認" />
             <button class="gap-save" type="button" onclick="saveGapStatus(${item.id}, ${idx})">儲存</button>
+            <button class="gap-delete" type="button" onclick="deleteGap(${item.id})">刪除</button>
           </div>
         </div>
         <div class="unanswered-meta">${date}</div>
@@ -988,6 +994,25 @@ async function saveGapStatus(id, idx) {
     return;
   }
   await loadUnanswered();
+}
+
+async function deleteGap(id) {
+  if (!confirm('確定要刪除這筆知識缺口嗎？\n刪除後不會再出現在後台列表。')) return;
+
+  const res = await fetch('/api/unanswered/' + id, {
+    method: 'DELETE',
+    headers: { 'x-admin-key': getAdminKey() },
+  });
+  if (res.status === 401) {
+    showLogin();
+    return;
+  }
+  if (!res.ok) {
+    alert('知識缺口刪除失敗');
+    return;
+  }
+  await loadUnanswered();
+  await loadStats();
 }
 
 function toggleGap(idx) {

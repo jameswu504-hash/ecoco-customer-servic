@@ -720,6 +720,20 @@ app.patch('/api/unanswered/:id', requireAdminKey, async (req, res) => {
   }
 });
 
+app.delete('/api/unanswered/:id', requireAdminKey, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'ID 格式錯誤' });
+
+  try {
+    const result = await pool.query('DELETE FROM unanswered_questions WHERE id = $1', [id]);
+    if (result.rowCount === 0) return res.status(404).json({ error: '找不到知識缺口紀錄' });
+    res.json({ success: true });
+  } catch (dbErr) {
+    console.error('DB 刪除知識缺口失敗:', dbErr.message);
+    res.status(500).json({ error: '知識缺口刪除失敗' });
+  }
+});
+
 // ── 知識庫（分類版）─────────────────────────────────────────
 
 // 取得所有分類（後台用）
