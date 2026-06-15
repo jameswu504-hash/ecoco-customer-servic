@@ -214,6 +214,50 @@ function readJsonFile(relativePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
+const RESPONSE_POLICY_PAYLOAD = readJsonFile(path.join('data', 'ecoco-response-policies.json')) || {};
+const RESPONSE_POLICIES = Array.isArray(RESPONSE_POLICY_PAYLOAD.policies)
+  ? RESPONSE_POLICY_PAYLOAD.policies
+  : [];
+
+function buildResponsePolicyPrompt() {
+  if (RESPONSE_POLICIES.length === 0) return '';
+
+  const lines = [
+    '## 高風險回覆政策',
+    '以下政策優先於一般語氣規則。遇到對應情境時，必須遵守 required_fields、allowed_response 與 do_not_say。',
+  ];
+
+  for (const policy of RESPONSE_POLICIES) {
+    lines.push(
+      `\n### ${policy.intent || policy.policy_id || '未命名政策'}`,
+      `- 自動化等級：${policy.automation_level || '未標示'}`,
+      `- 必收資料：${policy.required_fields || '無'}`,
+      `- 可說：${policy.allowed_response || '依知識庫回答'}`,
+      `- 不可說：${policy.do_not_say || '不可超出知識庫自行推測'}`,
+    );
+  }
+
+  return lines.join('\n');
+}
+
+function buildRuntimeGuardrails(question, rag) {
+  const text = `${question || ''}\n${rag?.context || ''}`;
+  const highRiskKeywords = [
+    '風險：High', '高風險', '補點', '退點', '退款', '補發', '優惠券',
+    '點數未入帳', '點數', '帳號', '登入', '驗證碼', '客訴', '投訴',
+    '機台故障', '滿袋', '清潔', '退瓶', '異常',
+  ];
+  const needsGuardrail = highRiskKeywords.some(keyword => text.includes(keyword));
+  if (!needsGuardrail) return '';
+
+  return `## 本次回答安全限制
+- 本次問題可能涉及點數、優惠券、帳號、客訴或機台異常等高風險情境。
+- 只能回答知識庫已明確提供的內容。
+- 不可承諾補點、退點、退款、補發、已完成處理、已通知人員、已安排維修或固定完成時間。
+- 必須先同理，再請使用者提供必要資訊，並引導官方客服表單：https://ecoco.tw/kWqgW。
+- 若需要後台查詢，請明確說明「需由客服人員確認」，不要推測原因。`;
+}
+
 const MAX_RAG_CHUNKS = 8;
 const MAX_CHUNK_CHARS = 1800;
 const CHUNK_OVERLAP_CHARS = 180;
@@ -227,11 +271,27 @@ const RAG_KEYWORDS = [
 ];
 
 function normalizeText(value) {
-  return String(value || '').replace(/\s+/g, ' ').trim();
+  return String(value || '')
+    .normalize('NFKC')
+    .replace(/\p{Extended_Pictographic}/gu, '')
+    .replace(/[ \t\u00a0]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizeKnowledgeContent(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .replace(/\p{Extended_Pictographic}/gu, '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t\u00a0]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/(?:^|\n)\s*(?:ECOCO\s*)?(?:客服團隊|宜可可循環經濟團隊|ECOCO Team)\s*$/gim, '')
+    .trim();
 }
 
 function splitLongText(text, maxChars = MAX_CHUNK_CHARS) {
-  const normalized = String(text || '').trim();
+  const normalized = normalizeKnowledgeContent(text);
   if (normalized.length <= maxChars) return [normalized].filter(Boolean);
 
   const chunks = [];
@@ -390,13 +450,17 @@ async function refreshKnowledgeCache() {
   console.log('知識庫快取已更新，長度：', knowledgeCache.length);
 }
 
-function buildSystemPrompt(ragContext = knowledgeCache) { return `你是 ECOCO 宜可可循環經濟的官方 AI 客服助理。
+function buildSystemPrompt(ragContext = knowledgeCache, runtimeGuardrails = '') { return `你是 ECOCO 宜可可循環經濟的官方 AI 客服助理。
 
 ## 你的任務
 根據以下知識庫，用友善、簡潔的方式回答用戶問題。
 
 ## 本次問題檢索到的相關知識庫
 ${ragContext || knowledgeCache}
+
+${buildResponsePolicyPrompt()}
+
+${runtimeGuardrails}
 
 ## 回答規則
 
@@ -486,10 +550,11 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
   try {
     const userMsg = history[history.length - 1];
     const rag = await retrieveKnowledgeForQuestion(userMsg.content);
+    const runtimeGuardrails = buildRuntimeGuardrails(userMsg.content, rag);
     const response = await client.messages.create({
       model: process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL,
       max_tokens: 1024,
-      system: [{ type: 'text', text: buildSystemPrompt(rag.context), cache_control: { type: 'ephemeral' } }],
+      system: [{ type: 'text', text: buildSystemPrompt(rag.context, runtimeGuardrails), cache_control: { type: 'ephemeral' } }],
       messages: history,
     });
 
@@ -746,6 +811,35 @@ app.get('/api/knowledge/sections', requireAdminKey, async (req, res) => {
   } catch (dbErr) {
     console.error('DB 查詢失敗:', dbErr.message);
     res.status(500).json({ error: '資料庫查詢失敗' });
+  }
+});
+
+// 匯出 PostgreSQL 知識庫，方便把後台編輯整理回 Git JSON
+app.get('/api/knowledge/export', requireAdminKey, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT category, content, sort_order, updated_at FROM knowledge_sections ORDER BY sort_order ASC, id ASC'
+    );
+    const totalChars = rows.reduce((sum, row) => sum + String(row.content || '').length, 0);
+    res.json({
+      generated_at: new Date().toISOString(),
+      source: 'PostgreSQL knowledge_sections export',
+      notes: '由後台實際運作資料匯出。若要成為正式版本，請人工檢查後回寫 data/ecoco-knowledge-import.json 或 data/ecoco-ai-customer-service-database.json。',
+      summary: {
+        section_count: rows.length,
+        content_chars: totalChars,
+      },
+      sections: rows.map(row => ({
+        category: row.category,
+        content: row.content,
+        source: 'PostgreSQL knowledge_sections',
+        visibility: 'public_knowledge_or_agent_assist',
+        updated_at: row.updated_at,
+      })),
+    });
+  } catch (dbErr) {
+    console.error('DB 匯出知識庫失敗:', dbErr.message);
+    res.status(500).json({ error: '知識庫匯出失敗' });
   }
 });
 

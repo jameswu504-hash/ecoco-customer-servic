@@ -135,8 +135,11 @@ npm run import:knowledge -- data/ecoco-knowledge-import.json --replace
 - `ratings`
 - `unanswered_questions`
 - `knowledge_sections`
+- `knowledge_chunks`
 
 如果 `knowledge_sections` 是空的，系統會從 `knowledge.js` 匯入初始分類，之後後台修改會寫回 PostgreSQL。
+
+後台修改若要整理回 Git JSON，可用 Admin API `GET /api/knowledge/export` 匯出 PostgreSQL 目前知識庫，再人工檢查後回寫到 `data/ecoco-knowledge-import.json`。
 
 ## 專案結構
 
@@ -144,9 +147,9 @@ npm run import:knowledge -- data/ecoco-knowledge-import.json --replace
 .
 ├── server.js              # Express + Claude API + PostgreSQL
 ├── knowledge.js           # 初始知識庫分類種子資料
-├── import-stations.js     # 從 CSV/XLSX 匯入站點資料到 knowledge.js
-├── parse-kml.js           # 從 KML 匯入站點資料到 knowledge.js
-├── migrate.js             # 舊 SQLite 遷移輔助腳本
+├── data/                  # AI 客服資料庫、匯入 JSON、回覆政策
+├── docs/                  # 內部維護文件、PRD、Flow 圖規劃
+├── scripts/               # 知識庫整理與匯入工具
 ├── package.json
 ├── .env.example
 └── public/

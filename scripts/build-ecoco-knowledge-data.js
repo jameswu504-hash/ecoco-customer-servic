@@ -11,7 +11,14 @@ const SOURCE_PRIORITY = {
 };
 
 function normalizeText(value) {
-  return String(value || '').trim();
+  return String(value || '')
+    .normalize('NFKC')
+    .replace(/\p{Extended_Pictographic}/gu, '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t\u00a0]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/(?:^|\n)\s*(?:ECOCO\s*)?(?:客服團隊|宜可可循環經濟團隊|ECOCO Team)\s*$/gim, '')
+    .trim();
 }
 
 function readJson(filePath) {

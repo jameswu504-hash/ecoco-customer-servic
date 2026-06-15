@@ -40,6 +40,28 @@
 
 如果只是臨時小修，也可以在後台修改 `knowledge_sections`，但長期仍建議回寫到 JSON，避免下次部署後被 Git 版本覆蓋。
 
+## 後台資料回寫 Git 的方式
+
+後台編輯會先存在 PostgreSQL，AI 會立即使用，但 Git JSON 不會自動更新。若要把後台資料整理回正式版本，可以在後台「知識庫管理」點選「匯出 JSON」，或使用 Admin API 匯出：
+
+```text
+GET /api/knowledge/export
+```
+
+這個 API 需要帶 `x-admin-key`，會把 PostgreSQL `knowledge_sections` 匯出成接近 `data/ecoco-knowledge-import.json` 的格式。匯出後請人工檢查，再回寫到：
+
+- `data/ecoco-knowledge-import.json`
+- 或完整底稿 `data/ecoco-ai-customer-service-database.json`
+
+建議流程：
+
+1. 後台緊急新增或修改知識。
+2. 在後台點「匯出 JSON」，或用 `/api/knowledge/export` 匯出 PostgreSQL 目前版本。
+3. 人工比對 Git JSON。
+4. 將確認後的內容整理回 Git。
+5. Commit、push、部署。
+6. 下次同步時 Git 與 PostgreSQL 內容就能保持一致。
+
 ## AI 回覆品質檢查
 
 每次資料更新後，建議測試以下問題：
@@ -100,4 +122,3 @@ AI 回覆不應該：
 - 未確認的舊站點名稱。
 - 舊合作方字眼。
 - 個資或歷史客訴內容。
-

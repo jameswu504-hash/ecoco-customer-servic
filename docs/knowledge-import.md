@@ -76,5 +76,34 @@ KNOWLEDGE_AUTO_SYNC=replace
 1. 低風險 FAQ 可讓 AI 直接回答。
 2. 點數、優惠券、帳號、客訴、機台異常屬高風險，但仍採全自動回覆；AI 只能用保守話術、收集必要資訊、引導 App 或客服表單，不可承諾補點、退款或已完成人工處理。
 3. `conflicts_pending_review` 內的資料不可直接變成正式答案，必須由主管或官方來源確認。
+
+## PostgreSQL 匯出回 JSON
+
+後台編輯會寫入 PostgreSQL。若要把後台新增或修改的資料整理回 Git，可以呼叫：
+
+```text
+GET /api/knowledge/export
+```
+
+此 API 需要 Admin Key，輸出格式包含：
+
+- `generated_at`
+- `source`
+- `notes`
+- `summary`
+- `sections`
+
+`sections` 內容可作為回寫 `data/ecoco-knowledge-import.json` 的人工整理來源。這不是自動覆蓋 Git 的功能，目的是避免後台資料遺失，同時保留人工審核與版本控管。
+
+## 回覆政策接入
+
+`data/ecoco-response-policies.json` 已接入後端 system prompt。AI 回答高風險問題時，會使用政策中的：
+
+- 必收資料
+- 可說內容
+- 不可說內容
+- 自動化等級
+
+若問題涉及點數、優惠券、帳號、客訴或機台異常，後端也會動態加入更嚴格的保守回答限制。
 4. `internal_ops_signals` 只供客服後台提示，不建議對客戶逐字揭露。
 5. 舊 CommandCenter ticket 只做流程理解，不匯入 AI 對客知識庫。

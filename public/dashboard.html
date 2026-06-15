@@ -227,6 +227,12 @@
       font-family:'Noto Sans TC',sans-serif;
     }
     .kb-add-btn:hover { background:var(--green-mid); }
+    .kb-export-btn {
+      padding:6px 14px; background:white; color:var(--green-main);
+      border:1.5px solid var(--green-main); border-radius:8px; font-size:13px; cursor:pointer;
+      font-family:'Noto Sans TC',sans-serif;
+    }
+    .kb-export-btn:hover { background:var(--green-pale); }
     .kb-layout { display:grid; grid-template-columns:240px 1fr; gap:16px; }
     .kb-sidebar {
       max-height:460px; overflow-y:auto;
@@ -440,7 +446,10 @@
   <div class="knowledge-card">
     <div class="section-title" style="justify-content:space-between">
       <span>📚 知識庫管理 <span id="kbCount" style="color:var(--gray-mid);font-weight:400;font-size:13px"></span></span>
-      <button class="kb-add-btn" onclick="newSection()">＋ 新增分類</button>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="kb-export-btn" onclick="exportKnowledgeJson()">匯出 JSON</button>
+        <button class="kb-add-btn" onclick="newSection()">＋ 新增分類</button>
+      </div>
     </div>
     <div class="kb-layout">
       <div class="kb-sidebar">
@@ -549,6 +558,32 @@ async function loadKnowledge() {
   kbSections = data;
   document.getElementById('kbCount').textContent = `（共 ${data.length} 個分類）`;
   renderKbSidebar();
+}
+
+async function exportKnowledgeJson() {
+  const res = await fetch('/api/knowledge/export', {
+    headers: { 'x-admin-key': getAdminKey() },
+  });
+  if (res.status === 401) {
+    showLogin();
+    return;
+  }
+  if (!res.ok) {
+    alert('知識庫匯出失敗');
+    return;
+  }
+
+  const payload = await res.json();
+  const blob = new Blob([JSON.stringify(payload, null, 2) + '\n'], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const date = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `ecoco-knowledge-export-${date}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 function normalizeKbText(value) {

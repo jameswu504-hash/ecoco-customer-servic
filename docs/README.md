@@ -13,8 +13,10 @@
 7. [RAG_WORKFLOW.md](RAG_WORKFLOW.md)：RAG 第一版如何用 PostgreSQL chunks 檢索知識。
 8. [CUSTOMER_SERVICE_FLOW.md](CUSTOMER_SERVICE_FLOW.md)：客服 Flow 圖規劃與 Whimsical 畫圖指引。
 9. [PRD_ECOCO_AI_CUSTOMER_SERVICE.md](PRD_ECOCO_AI_CUSTOMER_SERVICE.md)：ECOCO AI 客服系統 PRD。
-10. [knowledge-import.md](knowledge-import.md)：技術細節，說明如何產生與匯入知識庫 JSON。
-11. [security-keys.md](security-keys.md)：API key、token、`.env` 與 Render 環境變數的安全原則。
+10. [KNOWLEDGE_QUALITY_AUDIT.md](KNOWLEDGE_QUALITY_AUDIT.md)：重複問題與待確認衝突稽核清單。
+11. [REPO_FILE_AUDIT.md](REPO_FILE_AUDIT.md)：repo 檔案用途與已移除孤兒檔案。
+12. [knowledge-import.md](knowledge-import.md)：技術細節，說明如何產生與匯入知識庫 JSON。
+13. [security-keys.md](security-keys.md)：API key、token、`.env` 與 Render 環境變數的安全原則。
 
 重要原則：
 
