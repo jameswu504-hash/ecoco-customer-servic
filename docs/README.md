@@ -10,8 +10,9 @@
 4. [MAINTENANCE_GUIDE.md](MAINTENANCE_GUIDE.md)：日常怎麼維護知識庫、知識缺口與回覆品質。
 5. [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md)：Render、環境變數、部署與更新流程。
 6. [META_AI_INSTRUCTIONS.md](META_AI_INSTRUCTIONS.md)：Meta AI 指令來源整理與維護方式。
-7. [knowledge-import.md](knowledge-import.md)：技術細節，說明如何產生與匯入知識庫 JSON。
-8. [security-keys.md](security-keys.md)：API key、token、`.env` 與 Render 環境變數的安全原則。
+7. [RAG_WORKFLOW.md](RAG_WORKFLOW.md)：RAG 第一版如何用 PostgreSQL chunks 檢索知識。
+8. [knowledge-import.md](knowledge-import.md)：技術細節，說明如何產生與匯入知識庫 JSON。
+9. [security-keys.md](security-keys.md)：API key、token、`.env` 與 Render 環境變數的安全原則。
 
 重要原則：
 

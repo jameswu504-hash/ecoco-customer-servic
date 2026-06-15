@@ -78,6 +78,33 @@ AI 實際回答時讀取的主要知識庫。
 - 控制 AI 目前知道哪些 ECOCO 官方資訊。
 - 後台可新增、修改、刪除分類。
 
+### `knowledge_chunks`
+
+RAG 第一版使用的檢索片段表。這張表由 `knowledge_sections` 自動拆段產生，不是人工維護的主資料。
+
+| 欄位 | 說明 |
+| --- | --- |
+| `id` | chunk 流水號 |
+| `section_id` | 來源 `knowledge_sections.id` |
+| `category` | 來源分類 |
+| `title` | chunk 標題 |
+| `content` | chunk 內容 |
+| `search_text` | 給搜尋使用的合併文字 |
+| `sort_order` | 排序 |
+| `source_updated_at` | 來源 section 的更新時間 |
+| `updated_at` | chunk 建立/更新時間 |
+
+用途：
+
+- 使用者提問時，先從這張表找出相關知識片段。
+- 只把最相關的 chunks 交給 Claude，而不是每次都塞完整知識庫。
+- 後台資料庫總覽會顯示目前 RAG chunks 數量。
+
+注意：
+
+- 這張表是衍生資料，會在 server 啟動、知識庫同步、後台新增/修改/刪除分類時重建。
+- 不建議手動編輯這張表；要改知識內容，請改 `knowledge_sections` 或 GitHub JSON 來源。
+
 ## JSON 資料檔
 
 ### `data/ecoco-ai-customer-service-database.json`

@@ -85,12 +85,25 @@ const SCHEMA = [
       sort_order INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL
     )`,
+  `CREATE TABLE IF NOT EXISTS knowledge_chunks (
+      id                SERIAL PRIMARY KEY,
+      section_id        INTEGER,
+      category          TEXT NOT NULL,
+      title             TEXT NOT NULL DEFAULT '',
+      content           TEXT NOT NULL DEFAULT '',
+      search_text       TEXT NOT NULL DEFAULT '',
+      sort_order        INTEGER NOT NULL DEFAULT 0,
+      source_updated_at TEXT NOT NULL DEFAULT '',
+      updated_at        TEXT NOT NULL
+    )`,
   `CREATE INDEX IF NOT EXISTS idx_conv_session  ON conversations(session_id)`,
   `CREATE INDEX IF NOT EXISTS idx_conv_role     ON conversations(role)`,
   `CREATE INDEX IF NOT EXISTS idx_ratings_type  ON ratings(type)`,
   `CREATE INDEX IF NOT EXISTS idx_unanswered_ts ON unanswered_questions(timestamp)`,
   `CREATE INDEX IF NOT EXISTS idx_unanswered_status ON unanswered_questions(status)`,
   `CREATE INDEX IF NOT EXISTS idx_ks_sort       ON knowledge_sections(sort_order, id)`,
+  `CREATE INDEX IF NOT EXISTS idx_kc_section    ON knowledge_chunks(section_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_kc_sort       ON knowledge_chunks(sort_order, id)`,
 ];
 
 async function initDb() {
@@ -185,6 +198,164 @@ function readJsonFile(relativePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
+const MAX_RAG_CHUNKS = 8;
+const MAX_CHUNK_CHARS = 1800;
+const CHUNK_OVERLAP_CHARS = 180;
+const RAG_KEYWORDS = [
+  '點數', '轉贈', '轉移', '贈送', '入帳', '補點', '兌換', '優惠券',
+  '機台', '收瓶機', '電池機', '寶特瓶', '鋁罐', '塑膠杯', '牛奶瓶',
+  '瓶蓋', '膠膜', '封膜', '壓扁', '卡住', '紅燈', '藍燈',
+  'APP', 'App', '帳號', '登入', '註冊', '驗證碼', '簡訊',
+  '客服', '表單', '站點', '康達盛通', '可可粉', 'Meta', '社群',
+  '正義用戶', '黑名單', '檢舉', '違規', '巡檢', '異常', '通報',
+];
+
+function normalizeText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function splitLongText(text, maxChars = MAX_CHUNK_CHARS) {
+  const normalized = String(text || '').trim();
+  if (normalized.length <= maxChars) return [normalized].filter(Boolean);
+
+  const chunks = [];
+  let start = 0;
+  while (start < normalized.length) {
+    const end = Math.min(start + maxChars, normalized.length);
+    chunks.push(normalized.slice(start, end).trim());
+    if (end >= normalized.length) break;
+    start = Math.max(0, end - CHUNK_OVERLAP_CHARS);
+  }
+  return chunks.filter(Boolean);
+}
+
+function buildChunksFromSection(section) {
+  const category = String(section.category || '').trim();
+  const content = String(section.content || '').trim();
+  if (!category || !content) return [];
+
+  const parts = content.split(/\n(?=###\s+)/g);
+  const chunks = [];
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const titleMatch = trimmed.match(/^###\s*(.+)$/m);
+    const baseTitle = titleMatch ? titleMatch[1].trim() : category;
+    splitLongText(trimmed).forEach((chunk, idx) => {
+      chunks.push({
+        sectionId: section.id,
+        category,
+        title: idx === 0 ? baseTitle : `${baseTitle} (${idx + 1})`,
+        content: chunk,
+        searchText: normalizeText(`${category} ${baseTitle} ${chunk}`),
+        sourceUpdatedAt: section.updated_at || '',
+      });
+    });
+  }
+  return chunks;
+}
+
+async function rebuildKnowledgeChunks() {
+  const { rows } = await pool.query(
+    'SELECT id, category, content, sort_order, updated_at FROM knowledge_sections ORDER BY sort_order ASC, id ASC'
+  );
+
+  await pool.query('DELETE FROM knowledge_chunks');
+  const now = new Date().toISOString();
+  let sortOrder = 0;
+  let count = 0;
+  for (const section of rows) {
+    for (const chunk of buildChunksFromSection(section)) {
+      await pool.query(
+        `INSERT INTO knowledge_chunks
+          (section_id, category, title, content, search_text, sort_order, source_updated_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          chunk.sectionId,
+          chunk.category,
+          chunk.title,
+          chunk.content,
+          chunk.searchText,
+          sortOrder++,
+          chunk.sourceUpdatedAt,
+          now,
+        ]
+      );
+      count++;
+    }
+  }
+  console.log(`Knowledge chunks rebuilt: ${count} chunks`);
+}
+
+function buildSearchTerms(question) {
+  const text = normalizeText(question);
+  const terms = new Set();
+  for (const keyword of RAG_KEYWORDS) {
+    if (text.includes(keyword)) terms.add(keyword);
+  }
+  text
+    .split(/[^0-9A-Za-z\u4e00-\u9fff]+/g)
+    .map(term => term.trim())
+    .filter(term => term.length >= 2 && term.length <= 24)
+    .forEach(term => terms.add(term));
+  return [...terms].slice(0, 12);
+}
+
+function scoreChunk(chunk, terms) {
+  const category = String(chunk.category || '');
+  const title = String(chunk.title || '');
+  const content = String(chunk.content || '');
+  let score = 0;
+  for (const term of terms) {
+    if (category.includes(term)) score += 8;
+    if (title.includes(term)) score += 6;
+    if (content.includes(term)) score += 2;
+  }
+  return score;
+}
+
+async function retrieveKnowledgeForQuestion(question) {
+  const terms = buildSearchTerms(question);
+  let rows = [];
+
+  if (terms.length > 0) {
+    const clauses = terms.map((_, idx) => `search_text ILIKE $${idx + 1}`).join(' OR ');
+    const values = terms.map(term => `%${term}%`);
+    const result = await pool.query(
+      `SELECT id, category, title, content, sort_order
+       FROM knowledge_chunks
+       WHERE ${clauses}
+       ORDER BY sort_order ASC
+       LIMIT 120`,
+      values
+    );
+    rows = result.rows;
+  }
+
+  if (rows.length === 0) {
+    const fallback = await pool.query(
+      `SELECT id, category, title, content, sort_order
+       FROM knowledge_chunks
+       ORDER BY sort_order ASC
+       LIMIT 20`
+    );
+    rows = fallback.rows;
+  }
+
+  const ranked = rows
+    .map(row => ({ ...row, score: scoreChunk(row, terms) }))
+    .sort((a, b) => b.score - a.score || a.sort_order - b.sort_order)
+    .slice(0, MAX_RAG_CHUNKS);
+
+  return {
+    terms,
+    chunks: ranked,
+    context: ranked.map((row, idx) => (
+      `【RAG-${idx + 1}｜${row.category}｜${row.title}】\n${row.content}`
+    )).join('\n\n'),
+  };
+}
+
 let knowledgeCache = '';
 const DEFAULT_ANTHROPIC_MODEL = 'claude-opus-4-7';
 const KNOWLEDGE_GAP_MARKERS = [
@@ -203,13 +374,13 @@ async function refreshKnowledgeCache() {
   console.log('知識庫快取已更新，長度：', knowledgeCache.length);
 }
 
-function buildSystemPrompt() { return `你是 ECOCO 宜可可循環經濟的官方 AI 客服助理。
+function buildSystemPrompt(ragContext = knowledgeCache) { return `你是 ECOCO 宜可可循環經濟的官方 AI 客服助理。
 
 ## 你的任務
 根據以下知識庫，用友善、簡潔的方式回答用戶問題。
 
-## 知識庫
-${knowledgeCache}
+## 本次問題檢索到的相關知識庫
+${ragContext || knowledgeCache}
 
 ## 回答規則
 
@@ -297,10 +468,12 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
   }
 
   try {
+    const userMsg = history[history.length - 1];
+    const rag = await retrieveKnowledgeForQuestion(userMsg.content);
     const response = await client.messages.create({
       model: process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL,
       max_tokens: 1024,
-      system: [{ type: 'text', text: buildSystemPrompt(), cache_control: { type: 'ephemeral' } }],
+      system: [{ type: 'text', text: buildSystemPrompt(rag.context), cache_control: { type: 'ephemeral' } }],
       messages: history,
     });
 
@@ -310,7 +483,6 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
     // 寫入對話紀錄（DB 錯誤不影響回覆）
     try {
       const sessionId = req.headers['x-session-id'] || 'unknown';
-      const userMsg   = history[history.length - 1];
       const ts        = new Date().toISOString();
       await pool.query(
         'INSERT INTO conversations (session_id, role, content, timestamp) VALUES ($1, $2, $3, $4)',
@@ -332,7 +504,14 @@ app.post('/api/chat', chatLimiter, async (req, res) => {
       console.error('DB 寫入失敗（不影響回覆）:', dbErr.message);
     }
 
-    res.json({ reply });
+    res.json({
+      reply,
+      ragSources: rag.chunks.map(chunk => ({
+        category: chunk.category,
+        title: chunk.title,
+        score: chunk.score,
+      })),
+    });
   } catch (err) {
     console.error('Claude API 錯誤:', err.message);
     res.status(500).json({ error: '伺服器錯誤，請稍後再試' });
@@ -395,9 +574,10 @@ app.get('/api/knowledge/overview', requireAdminKey, async (req, res) => {
     const importPayload = readJsonFile(path.join('data', 'ecoco-knowledge-import.json')) || {};
     const databasePayload = readJsonFile(path.join('data', 'ecoco-ai-customer-service-database.json')) || {};
 
-    const [{ rows: dbCounts }, { rows: latestRows }] = await Promise.all([
+    const [{ rows: dbCounts }, { rows: latestRows }, { rows: chunkCounts }] = await Promise.all([
       pool.query('SELECT COUNT(*) AS section_count, COALESCE(SUM(LENGTH(content)), 0) AS content_chars FROM knowledge_sections'),
       pool.query('SELECT MAX(updated_at) AS latest_update FROM knowledge_sections'),
+      pool.query('SELECT COUNT(*) AS chunk_count FROM knowledge_chunks'),
     ]);
 
     const summary = importPayload.summary || databasePayload.summary || {};
@@ -420,6 +600,7 @@ app.get('/api/knowledge/overview', requireAdminKey, async (req, res) => {
       notes: importPayload.notes || '',
       importSectionCount: sections.length,
       dbSectionCount: Number(dbCounts[0].section_count),
+      ragChunkCount: Number(chunkCounts[0].chunk_count),
       dbContentChars: Number(dbCounts[0].content_chars),
       latestDbUpdate: latestRows[0].latest_update || '',
       autoSyncMode: process.env.KNOWLEDGE_AUTO_SYNC || 'enabled',
@@ -550,6 +731,7 @@ app.post('/api/knowledge/sections', requireAdminKey, async (req, res) => {
       [category.trim(), String(content || ''), sortOrder, new Date().toISOString()]
     );
     await refreshKnowledgeCache();
+    await rebuildKnowledgeChunks();
     res.json({ success: true, id: inserted[0].id });
   } catch (dbErr) {
     console.error('DB 寫入失敗:', dbErr.message);
@@ -571,6 +753,7 @@ app.put('/api/knowledge/sections/:id', requireAdminKey, async (req, res) => {
     );
     if (result.rowCount === 0) return res.status(404).json({ error: '找不到此分類' });
     await refreshKnowledgeCache();
+    await rebuildKnowledgeChunks();
     res.json({ success: true });
   } catch (dbErr) {
     console.error('DB 寫入失敗:', dbErr.message);
@@ -586,6 +769,7 @@ app.delete('/api/knowledge/sections/:id', requireAdminKey, async (req, res) => {
     const result = await pool.query('DELETE FROM knowledge_sections WHERE id = $1', [id]);
     if (result.rowCount === 0) return res.status(404).json({ error: '找不到此分類' });
     await refreshKnowledgeCache();
+    await rebuildKnowledgeChunks();
     res.json({ success: true });
   } catch (dbErr) {
     console.error('DB 寫入失敗:', dbErr.message);
@@ -630,6 +814,7 @@ const PORT = process.env.PORT || 3000;
     await initDb();
     await syncKnowledgeFromImportFile();
     await refreshKnowledgeCache();
+    await rebuildKnowledgeChunks();
     app.listen(PORT, () => {
       console.log(`✅ ECOCO 客服伺服器啟動：http://localhost:${PORT}`);
     });

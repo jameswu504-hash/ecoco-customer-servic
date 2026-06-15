@@ -774,6 +774,10 @@ async function loadKnowledgeOverview() {
         <div class="overview-label">Git 匯入分類</div>
       </div>
       <div class="overview-metric">
+        <div class="overview-value">${data.ragChunkCount ?? 0}</div>
+        <div class="overview-label">RAG 檢索片段</div>
+      </div>
+      <div class="overview-metric">
         <div class="overview-value">${counts.knowledge_rows ?? 0}</div>
         <div class="overview-label">整理後知識筆數</div>
       </div>

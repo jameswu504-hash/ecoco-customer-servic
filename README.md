@@ -13,10 +13,12 @@
 - [docs/MAINTENANCE_GUIDE.md](docs/MAINTENANCE_GUIDE.md)：每週維護、知識缺口、回覆品質檢查
 - [docs/DEPLOYMENT_RUNBOOK.md](docs/DEPLOYMENT_RUNBOOK.md)：Render 部署與環境變數設定
 - [docs/META_AI_INSTRUCTIONS.md](docs/META_AI_INSTRUCTIONS.md)：Meta AI 指令來源整理與維護方式
+- [docs/RAG_WORKFLOW.md](docs/RAG_WORKFLOW.md)：RAG 第一版與 PostgreSQL chunks 檢索流程
 
 ## 功能
 
 - AI 回答以後台分類知識庫為主，避免自行編造資訊
+- AI 回答前會先從 PostgreSQL `knowledge_chunks` 檢索相關知識片段，再交給 Claude 回答
 - 即時客服對話，支援 Markdown 回覆
 - 每則 AI 回答可送出滿意度評分
 - 後台可查看統計、對話紀錄、評分明細與知識缺口
