@@ -326,6 +326,28 @@
       font-family:'Noto Sans TC',sans-serif;
     }
     .unanswered-toggle:hover { background:var(--green-pale); }
+    .gap-controls {
+      display:grid; grid-template-columns:150px 1fr auto; gap:8px; align-items:center;
+      margin-top:10px;
+    }
+    .gap-select, .gap-note {
+      border:1px solid #cce0d8; border-radius:8px; padding:7px 9px;
+      font-size:12px; font-family:'Noto Sans TC',sans-serif; background:white;
+      min-width:0;
+    }
+    .gap-save {
+      border:none; border-radius:8px; padding:7px 12px; cursor:pointer;
+      background:var(--green-main); color:white; font-size:12px;
+      font-family:'Noto Sans TC',sans-serif;
+    }
+    .gap-save:hover { background:var(--green-mid); }
+    .gap-status {
+      display:inline-block; margin-top:6px; padding:2px 8px; border-radius:999px;
+      font-size:11px; font-weight:700; background:var(--green-pale); color:var(--green-main);
+    }
+    .gap-status.resolved { background:#e6f4ef; color:#007f5f; }
+    .gap-status.ignored { background:#f1f3f5; color:#6d7480; }
+    .gap-status.manual { background:#fff0e6; color:#c95200; }
     .unanswered-meta { font-size:11px; color:var(--gray-mid); font-family:'Space Mono',monospace; flex-shrink:0; white-space:nowrap; }
     .unanswered-icon { font-size:16px; flex-shrink:0; margin-top:1px; }
 
@@ -347,6 +369,7 @@
       .unanswered-meta {
         grid-column:2; white-space:normal; font-size:10px; margin-top:-4px;
       }
+      .gap-controls { grid-template-columns:1fr; }
       .back-link {
         width:28px; height:32px; overflow:hidden;
         color:transparent; position:relative; flex-shrink:0;
@@ -845,23 +868,68 @@ async function loadUnanswered() {
     });
     const reply = item.reply ? escapeHtml(item.reply) : '';
     const reason = item.reason ? escapeHtml(item.reason) : 'AI 回覆表示知識庫沒有明確答案';
+    const status = item.status || 'pending';
+    const statusText = gapStatusText(status);
+    const note = item.note || '';
     return `
       <div class="unanswered-item" id="gap-${idx}">
         <div class="unanswered-icon">❓</div>
         <div class="unanswered-body">
           <div class="unanswered-q">${escapeHtml(item.question)}</div>
           <div class="unanswered-reason">${reason}</div>
+          <div class="gap-status ${escapeHtml(status)}">${statusText}</div>
           ${reply ? `
             <div class="unanswered-actions">
               <button class="unanswered-toggle" id="gap-toggle-${idx}" type="button" onclick="toggleGap(${idx})">查看 AI 回覆</button>
             </div>
             <div class="unanswered-reply">AI 回覆：${reply}</div>
           ` : ''}
+          <div class="gap-controls">
+            <select class="gap-select" id="gap-status-${idx}">
+              <option value="pending" ${status === 'pending' ? 'selected' : ''}>待確認</option>
+              <option value="resolved" ${status === 'resolved' ? 'selected' : ''}>已補資料</option>
+              <option value="ignored" ${status === 'ignored' ? 'selected' : ''}>不需處理</option>
+              <option value="manual" ${status === 'manual' ? 'selected' : ''}>需人工處理</option>
+            </select>
+            <input class="gap-note" id="gap-note-${idx}" value="${escapeHtml(note)}" placeholder="備註：例如已補到哪個分類、等誰確認" />
+            <button class="gap-save" type="button" onclick="saveGapStatus(${item.id}, ${idx})">儲存</button>
+          </div>
         </div>
         <div class="unanswered-meta">${date}</div>
       </div>
     `;
   }).join('');
+}
+
+function gapStatusText(status) {
+  return {
+    pending: '待確認',
+    resolved: '已補資料',
+    ignored: '不需處理',
+    manual: '需人工處理',
+  }[status] || '待確認';
+}
+
+async function saveGapStatus(id, idx) {
+  const status = document.getElementById('gap-status-' + idx).value;
+  const note = document.getElementById('gap-note-' + idx).value;
+  const res = await fetch('/api/unanswered/' + id, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-key': getAdminKey(),
+    },
+    body: JSON.stringify({ status, note }),
+  });
+  if (res.status === 401) {
+    showLogin();
+    return;
+  }
+  if (!res.ok) {
+    alert('知識缺口狀態儲存失敗');
+    return;
+  }
+  await loadUnanswered();
 }
 
 function toggleGap(idx) {

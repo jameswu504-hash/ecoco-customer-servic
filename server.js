@@ -75,6 +75,9 @@ const SCHEMA = [
     )`,
   `ALTER TABLE unanswered_questions ADD COLUMN IF NOT EXISTS reply TEXT DEFAULT ''`,
   `ALTER TABLE unanswered_questions ADD COLUMN IF NOT EXISTS reason TEXT DEFAULT ''`,
+  `ALTER TABLE unanswered_questions ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending'`,
+  `ALTER TABLE unanswered_questions ADD COLUMN IF NOT EXISTS note TEXT DEFAULT ''`,
+  `ALTER TABLE unanswered_questions ADD COLUMN IF NOT EXISTS updated_at TEXT DEFAULT ''`,
   `CREATE TABLE IF NOT EXISTS knowledge_sections (
       id         SERIAL PRIMARY KEY,
       category   TEXT NOT NULL,
@@ -86,6 +89,7 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_conv_role     ON conversations(role)`,
   `CREATE INDEX IF NOT EXISTS idx_ratings_type  ON ratings(type)`,
   `CREATE INDEX IF NOT EXISTS idx_unanswered_ts ON unanswered_questions(timestamp)`,
+  `CREATE INDEX IF NOT EXISTS idx_unanswered_status ON unanswered_questions(status)`,
   `CREATE INDEX IF NOT EXISTS idx_ks_sort       ON knowledge_sections(sort_order, id)`,
 ];
 
@@ -482,12 +486,39 @@ app.get('/api/top-questions', requireAdminKey, async (req, res) => {
 app.get('/api/unanswered', requireAdminKey, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      'SELECT session_id, question, reply, reason, timestamp FROM unanswered_questions ORDER BY timestamp DESC LIMIT 100'
+      `SELECT id, session_id, question, reply, reason, timestamp,
+              COALESCE(status, 'pending') AS status,
+              COALESCE(note, '') AS note,
+              COALESCE(updated_at, '') AS updated_at
+       FROM unanswered_questions
+       ORDER BY timestamp DESC LIMIT 100`
     );
     res.json(rows);
   } catch (dbErr) {
     console.error('DB 查詢失敗:', dbErr.message);
     res.status(500).json({ error: '資料庫查詢失敗' });
+  }
+});
+
+app.patch('/api/unanswered/:id', requireAdminKey, async (req, res) => {
+  const id = Number(req.params.id);
+  const allowedStatuses = new Set(['pending', 'resolved', 'ignored', 'manual']);
+  const status = String(req.body.status || '').trim();
+  const note = String(req.body.note || '').trim();
+
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'ID 格式錯誤' });
+  if (!allowedStatuses.has(status)) return res.status(400).json({ error: '狀態格式錯誤' });
+
+  try {
+    const result = await pool.query(
+      'UPDATE unanswered_questions SET status = $1, note = $2, updated_at = $3 WHERE id = $4',
+      [status, note, new Date().toISOString(), id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: '找不到知識缺口紀錄' });
+    res.json({ success: true });
+  } catch (dbErr) {
+    console.error('DB 更新知識缺口狀態失敗:', dbErr.message);
+    res.status(500).json({ error: '知識缺口狀態更新失敗' });
   }
 });
 

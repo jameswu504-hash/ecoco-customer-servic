@@ -49,7 +49,10 @@
 | `question` | 使用者原始問題 |
 | `reply` | AI 當時的回覆 |
 | `reason` | 被判斷為知識缺口的原因 |
+| `status` | 處理狀態：`pending`、`resolved`、`ignored`、`manual` |
+| `note` | 內部備註，例如已補到哪個分類或等誰確認 |
 | `timestamp` | 記錄時間 |
+| `updated_at` | 最後更新狀態時間 |
 
 用途：
 
@@ -137,4 +140,3 @@ AI 實際回答時讀取的主要知識庫。
 - 本機用 `.env`。
 - Render 上線用 Environment Variables。
 - GitHub 只能放 `.env.example`，不能放真正 `.env`。
-

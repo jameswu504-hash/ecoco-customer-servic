@@ -78,6 +78,8 @@ npm start
 | `GET` | `/api/top-questions` | 熱門關鍵字 | Admin Key |
 | `GET` | `/api/ratings` | 評分明細 | Admin Key |
 | `GET` | `/api/unanswered` | 知識缺口紀錄 | Admin Key |
+| `PATCH` | `/api/unanswered/:id` | 更新知識缺口狀態與備註 | Admin Key |
+| `GET` | `/api/knowledge/overview` | 知識庫資料來源與同步狀態總覽 | Admin Key |
 | `GET` | `/api/knowledge/sections` | 取得知識庫分類 | Admin Key |
 | `POST` | `/api/knowledge/sections` | 新增知識庫分類 | Admin Key |
 | `PUT` | `/api/knowledge/sections/:id` | 更新知識庫分類 | Admin Key |
