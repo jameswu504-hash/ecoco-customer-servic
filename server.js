@@ -242,12 +242,13 @@ function buildResponsePolicyPrompt() {
 
 function buildRuntimeGuardrails(question, rag) {
   const text = `${question || ''}\n${rag?.context || ''}`;
+  const ragText = `${rag?.context || ''}`;
   const highRiskKeywords = [
-    '風險：High', '高風險', '補點', '退點', '退款', '補發', '優惠券',
-    '點數未入帳', '點數', '帳號', '登入', '驗證碼', '客訴', '投訴',
-    '機台故障', '滿袋', '清潔', '退瓶', '異常',
+    '補點', '退點', '退款', '補發', '賠償', '客訴賠償',
+    '帳號停權', '黑名單', '永久註銷', '個資', '臨時密碼',
   ];
-  const needsGuardrail = highRiskKeywords.some(keyword => text.includes(keyword));
+  const hasHighRiskChunk = ragText.includes('風險：High') || ragText.includes('風險: High');
+  const needsGuardrail = hasHighRiskChunk || highRiskKeywords.some(keyword => text.includes(keyword));
   if (!needsGuardrail) return '';
 
   return `## 本次回答安全限制
@@ -821,7 +822,7 @@ app.get('/api/knowledge/export', requireAdminKey, async (req, res) => {
       'SELECT category, content, sort_order, updated_at FROM knowledge_sections ORDER BY sort_order ASC, id ASC'
     );
     const totalChars = rows.reduce((sum, row) => sum + String(row.content || '').length, 0);
-    res.json({
+    const payload = {
       generated_at: new Date().toISOString(),
       source: 'PostgreSQL knowledge_sections export',
       notes: '由後台實際運作資料匯出。若要成為正式版本，請人工檢查後回寫 data/ecoco-knowledge-import.json 或 data/ecoco-ai-customer-service-database.json。',
@@ -836,7 +837,10 @@ app.get('/api/knowledge/export', requireAdminKey, async (req, res) => {
         visibility: 'public_knowledge_or_agent_assist',
         updated_at: row.updated_at,
       })),
-    });
+    };
+    const filename = `ecoco-knowledge-export-${new Date().toISOString().slice(0, 10)}.json`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.json(payload);
   } catch (dbErr) {
     console.error('DB 匯出知識庫失敗:', dbErr.message);
     res.status(500).json({ error: '知識庫匯出失敗' });

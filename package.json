@@ -8,7 +8,8 @@
     "dev": "node --watch server.js",
     "build:knowledge": "node scripts/build-ecoco-knowledge-data.js",
     "import:knowledge": "node scripts/import-knowledge-json.js",
-    "audit:knowledge": "node scripts/audit-knowledge-quality.js"
+    "audit:knowledge": "node scripts/audit-knowledge-quality.js",
+    "apply:knowledge-audit": "node scripts/apply-knowledge-audit.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "latest",

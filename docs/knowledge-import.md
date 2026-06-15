@@ -9,7 +9,7 @@
 | 檔案 | 用途 |
 | --- | --- |
 | `data/ecoco-ai-customer-service-database.json` | 完整 AI 客服資料庫，保留細項、來源、風險、自動化等級與衝突標記 |
-| `data/ecoco-knowledge-import.json` | 給 PostgreSQL `knowledge_sections` 匯入用，已依主分類整理成 53 個 section |
+| `data/ecoco-knowledge-import.json` | 給 PostgreSQL `knowledge_sections` 匯入用，已依主分類整理成 47 個 section |
 | `data/ecoco-response-policies.json` | 點數、優惠券、機台、帳號等高風險問題的處理規則 |
 
 ## 這次和 Git 舊資料的差異
@@ -17,7 +17,7 @@
 | 項目 | Git 舊資料 | 新版資料 |
 | --- | --- | --- |
 | 主資料格式 | 只有 `sections` 大段文字 | 新增完整細項資料庫，含 878 筆 knowledge records |
-| 匯入 section 數 | 42 個 section | 53 個 section，依主分類整理 |
+| 匯入 section 數 | 42 個 section | 47 個 section，依主分類整理，已排除 archived 重複資料與待確認衝突 |
 | 社群回覆資料 | 只放 Meta 指令與部分回覆問答 | 新增線上 reply helper 的 81 筆社群範本 |
 | FAQ 資料 | 主要來自 Excel | 同時整合 Excel 最新官網 FAQ 與線上 FAQ API |
 | 舊系統資料 | 容易混入舊草稿與舊設定 | 只保留品牌脈絡，不保留舊憑證與錯誤草稿 |
@@ -29,8 +29,12 @@
 如果 `data/ecoco-ai-customer-service-database.json` 更新，可重產 PostgreSQL 匯入檔：
 
 ```bash
+npm run audit:knowledge
+npm run apply:knowledge-audit
 npm run build:knowledge
 ```
+
+`audit:knowledge` 會列出仍會進 AI 的 active 重複資料，`apply:knowledge-audit` 會把建議剔除的重複資料標成 `status: archived`。這不是刪除資料，而是保留原始紀錄、避免重複內容進入 AI 知識庫。
 
 匯入 PostgreSQL：
 
@@ -49,9 +53,11 @@ npm run import:knowledge -- data/ecoco-knowledge-import.json --replace
 後端啟動時會自動讀取 `data/ecoco-knowledge-import.json`，並同步到 PostgreSQL 的 `knowledge_sections`。目前預設安全模式為 `enabled`，實際行為等同 `insert_only`：只新增 Git JSON 裡有、PostgreSQL 尚未存在的分類，不覆寫後台已編輯的同名分類。因此在 Render 這類會自動部署 GitHub main 分支的環境中，流程會變成：
 
 1. 更新 AI 客服資料。
-2. 執行 `npm run build:knowledge` 重產匯入 JSON。
-3. Commit 並 push 到 GitHub。
-4. Render 重新部署後，server 啟動時自動補入 PostgreSQL 缺少的知識分類。
+2. 執行 `npm run audit:knowledge` 檢查 active 重複。
+3. 執行 `npm run apply:knowledge-audit` 封存建議剔除的重複資料。
+4. 執行 `npm run build:knowledge` 重產匯入 JSON。
+5. Commit 並 push 到 GitHub。
+6. Render 重新部署後，server 啟動時自動補入 PostgreSQL 缺少的知識分類。
 
 如果未來想改成只在後台手動編輯知識庫，不希望每次部署都同步 Git 資料，可在環境變數設定：
 
@@ -74,8 +80,9 @@ KNOWLEDGE_AUTO_SYNC=replace
 ## 使用原則
 
 1. 低風險 FAQ 可讓 AI 直接回答。
-2. 點數、優惠券、帳號、客訴、機台異常屬高風險，但仍採全自動回覆；AI 只能用保守話術、收集必要資訊、引導 App 或客服表單，不可承諾補點、退款或已完成人工處理。
-3. `conflicts_pending_review` 內的資料不可直接變成正式答案，必須由主管或官方來源確認。
+2. 只有標記為 `風險：High` 的知識片段，或使用者明確要求補點、退款、賠償、帳號停權、臨時密碼等高風險動作時，才啟動更嚴格的保守回答限制。
+3. 一般 FAQ，例如點數效期、燈號說明、站點查詢、操作 SOP，仍應直接回答，不應過度保守。
+4. `conflicts_pending_review` 內的資料不可直接變成正式答案，必須由主管或官方來源確認；目前不匯入 AI 可檢索知識庫。
 
 ## PostgreSQL 匯出回 JSON
 
@@ -104,6 +111,12 @@ GET /api/knowledge/export
 - 不可說內容
 - 自動化等級
 
-若問題涉及點數、優惠券、帳號、客訴或機台異常，後端也會動態加入更嚴格的保守回答限制。
+後端也會依 RAG 片段中的 `風險：High` 或明確高風險意圖動態加入更嚴格的保守回答限制，避免「點數」「機台」「異常」這類常見詞讓所有問題都變得過度保守。
+
+## 不匯入 AI 的資料
+
+1. `status: archived` 的重複資料。
+2. `automation_level: internal_only` 的內部資料。
+3. `conflicts_pending_review` 的待確認衝突。
 4. `internal_ops_signals` 只供客服後台提示，不建議對客戶逐字揭露。
 5. 舊 CommandCenter ticket 只做流程理解，不匯入 AI 對客知識庫。

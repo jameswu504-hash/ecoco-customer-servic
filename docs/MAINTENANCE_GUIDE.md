@@ -32,11 +32,13 @@
 一般建議走 Git 版本管理：
 
 1. 修改 `data/ecoco-ai-customer-service-database.json`。
-2. 執行 `npm run build:knowledge`。
-3. 檢查 `data/ecoco-knowledge-import.json` 是否合理。
-4. Commit 並 push 到 GitHub。
-5. Render 自動部署。
-6. 系統啟動後自動同步到 PostgreSQL。
+2. 執行 `npm run audit:knowledge` 檢查仍會進 AI 的重複資料。
+3. 執行 `npm run apply:knowledge-audit`，把建議剔除的重複資料標成 `status: archived`。
+4. 執行 `npm run build:knowledge`。
+5. 檢查 `data/ecoco-knowledge-import.json` 是否合理。
+6. Commit 並 push 到 GitHub。
+7. Render 自動部署。
+8. 系統啟動後自動同步到 PostgreSQL。
 
 如果只是臨時小修，也可以在後台修改 `knowledge_sections`，但長期仍建議回寫到 JSON，避免下次部署後被 Git 版本覆蓋。
 
@@ -81,6 +83,7 @@ GET /api/knowledge/export
 - 有沒有講錯規則。
 - 有沒有使用舊名稱。
 - 有沒有承諾補點、退款或賠償。
+- 有沒有因為一般關鍵字，例如點數、機台、異常，就變得過度保守。
 - 有沒有要求使用者提供必要資訊。
 - 語氣是否符合 ECOCO 品牌。
 

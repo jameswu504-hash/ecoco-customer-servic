@@ -1207,8 +1207,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "最新版官網 FAQ；建議優先採用"
+      "status": "archived",
+      "notes": "最新版官網 FAQ；建議優先採用；dedupe 2026-06-15: archived as duplicate of KB-0059"
     },
     {
       "record_id": "KB-0061",
@@ -1224,8 +1224,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "最新版官網 FAQ；建議優先採用"
+      "status": "archived",
+      "notes": "最新版官網 FAQ；建議優先採用；dedupe 2026-06-15: archived as duplicate of KB-0059"
     },
     {
       "record_id": "KB-0062",
@@ -1241,8 +1241,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "最新版官網 FAQ；建議優先採用"
+      "status": "archived",
+      "notes": "最新版官網 FAQ；建議優先採用；dedupe 2026-06-15: archived as duplicate of KB-0059"
     },
     {
       "record_id": "KB-0063",
@@ -1428,8 +1428,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0075"
     },
     {
       "record_id": "KB-0074",
@@ -1445,8 +1445,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0075"
     },
     {
       "record_id": "KB-0075",
@@ -1683,8 +1683,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0089"
     },
     {
       "record_id": "KB-0089",
@@ -1938,8 +1938,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0104"
     },
     {
       "record_id": "KB-0104",
@@ -2227,8 +2227,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0121"
     },
     {
       "record_id": "KB-0121",
@@ -2669,8 +2669,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0147"
     },
     {
       "record_id": "KB-0147",
@@ -3230,8 +3230,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0178"
     },
     {
       "record_id": "KB-0180",
@@ -3281,8 +3281,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0075"
     },
     {
       "record_id": "KB-0183",
@@ -3315,8 +3315,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0075"
     },
     {
       "record_id": "KB-0185",
@@ -3332,8 +3332,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0075"
     },
     {
       "record_id": "KB-0186",
@@ -3383,8 +3383,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0075"
     },
     {
       "record_id": "KB-0189",
@@ -3417,8 +3417,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0415"
     },
     {
       "record_id": "KB-0191",
@@ -3434,8 +3434,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0415"
     },
     {
       "record_id": "KB-0192",
@@ -3451,8 +3451,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0415"
     },
     {
       "record_id": "KB-0193",
@@ -3468,8 +3468,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0415"
     },
     {
       "record_id": "KB-0194",
@@ -3706,8 +3706,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0208"
     },
     {
       "record_id": "KB-0208",
@@ -3842,8 +3842,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0216"
     },
     {
       "record_id": "KB-0216",
@@ -3910,8 +3910,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0220"
     },
     {
       "record_id": "KB-0220",
@@ -4046,8 +4046,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0228"
     },
     {
       "record_id": "KB-0228",
@@ -4097,8 +4097,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0231"
     },
     {
       "record_id": "KB-0231",
@@ -4148,8 +4148,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0234"
     },
     {
       "record_id": "KB-0234",
@@ -4182,8 +4182,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0238"
     },
     {
       "record_id": "KB-0236",
@@ -4199,8 +4199,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0238"
     },
     {
       "record_id": "KB-0237",
@@ -4284,8 +4284,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0242"
     },
     {
       "record_id": "KB-0242",
@@ -4352,8 +4352,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0244"
     },
     {
       "record_id": "KB-0246",
@@ -4369,8 +4369,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0247"
     },
     {
       "record_id": "KB-0247",
@@ -4624,8 +4624,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0262"
     },
     {
       "record_id": "KB-0262",
@@ -4913,8 +4913,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0279"
     },
     {
       "record_id": "KB-0279",
@@ -5117,8 +5117,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0294"
     },
     {
       "record_id": "KB-0291",
@@ -5134,8 +5134,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0294"
     },
     {
       "record_id": "KB-0292",
@@ -5151,8 +5151,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0294"
     },
     {
       "record_id": "KB-0293",
@@ -5168,8 +5168,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0294"
     },
     {
       "record_id": "KB-0294",
@@ -5202,8 +5202,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0296"
     },
     {
       "record_id": "KB-0296",
@@ -5423,8 +5423,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0314"
     },
     {
       "record_id": "KB-0309",
@@ -5474,8 +5474,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0312"
     },
     {
       "record_id": "KB-0312",
@@ -5712,8 +5712,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0326"
     },
     {
       "record_id": "KB-0326",
@@ -5831,8 +5831,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0331"
     },
     {
       "record_id": "KB-0333",
@@ -6018,8 +6018,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0344"
     },
     {
       "record_id": "KB-0344",
@@ -6681,8 +6681,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0388"
     },
     {
       "record_id": "KB-0383",
@@ -6698,8 +6698,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0385"
     },
     {
       "record_id": "KB-0384",
@@ -6715,8 +6715,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0385"
     },
     {
       "record_id": "KB-0385",
@@ -6749,8 +6749,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0385"
     },
     {
       "record_id": "KB-0387",
@@ -6817,8 +6817,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0391"
     },
     {
       "record_id": "KB-0391",
@@ -7140,8 +7140,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0410"
     },
     {
       "record_id": "KB-0410",
@@ -7174,8 +7174,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0410"
     },
     {
       "record_id": "KB-0412",
@@ -7395,8 +7395,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0425"
     },
     {
       "record_id": "KB-0425",
@@ -7463,8 +7463,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0787"
     },
     {
       "record_id": "KB-0429",
@@ -7497,8 +7497,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0431"
     },
     {
       "record_id": "KB-0431",
@@ -7599,8 +7599,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0594"
     },
     {
       "record_id": "KB-0437",
@@ -7633,8 +7633,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0431"
     },
     {
       "record_id": "KB-0439",
@@ -7650,8 +7650,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0788"
     },
     {
       "record_id": "KB-0440",
@@ -7667,8 +7667,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0002"
     },
     {
       "record_id": "KB-0441",
@@ -7684,8 +7684,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0004"
     },
     {
       "record_id": "KB-0442",
@@ -7701,8 +7701,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0006"
     },
     {
       "record_id": "KB-0443",
@@ -7718,8 +7718,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0007"
     },
     {
       "record_id": "KB-0444",
@@ -7735,8 +7735,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0008"
     },
     {
       "record_id": "KB-0445",
@@ -7752,8 +7752,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0026"
     },
     {
       "record_id": "KB-0446",
@@ -7769,8 +7769,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0028"
     },
     {
       "record_id": "KB-0447",
@@ -7786,8 +7786,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0029"
     },
     {
       "record_id": "KB-0448",
@@ -7803,8 +7803,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0030"
     },
     {
       "record_id": "KB-0449",
@@ -7820,8 +7820,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0031"
     },
     {
       "record_id": "KB-0450",
@@ -7837,8 +7837,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0032"
     },
     {
       "record_id": "KB-0451",
@@ -8500,8 +8500,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0680"
     },
     {
       "record_id": "KB-0490",
@@ -8517,8 +8517,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0680"
     },
     {
       "record_id": "KB-0491",
@@ -8551,8 +8551,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0694"
     },
     {
       "record_id": "KB-0493",
@@ -8653,8 +8653,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0709"
     },
     {
       "record_id": "KB-0499",
@@ -8721,8 +8721,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0699"
     },
     {
       "record_id": "KB-0503",
@@ -8755,8 +8755,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0715"
     },
     {
       "record_id": "KB-0505",
@@ -8772,8 +8772,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0716"
     },
     {
       "record_id": "KB-0506",
@@ -8823,8 +8823,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0510"
     },
     {
       "record_id": "KB-0509",
@@ -8840,8 +8840,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0510"
     },
     {
       "record_id": "KB-0510",
@@ -8925,8 +8925,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0725"
     },
     {
       "record_id": "KB-0515",
@@ -9044,8 +9044,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0506"
     },
     {
       "record_id": "KB-0522",
@@ -9299,8 +9299,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0795"
     },
     {
       "record_id": "KB-0537",
@@ -9350,8 +9350,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0667"
     },
     {
       "record_id": "KB-0540",
@@ -9367,8 +9367,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0667"
     },
     {
       "record_id": "KB-0541",
@@ -9452,8 +9452,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0672"
     },
     {
       "record_id": "KB-0546",
@@ -9503,8 +9503,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0749"
     },
     {
       "record_id": "KB-0549",
@@ -9537,8 +9537,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0751"
     },
     {
       "record_id": "KB-0551",
@@ -9605,8 +9605,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0755"
     },
     {
       "record_id": "KB-0555",
@@ -9622,8 +9622,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0756"
     },
     {
       "record_id": "KB-0556",
@@ -9639,8 +9639,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0757"
     },
     {
       "record_id": "KB-0557",
@@ -9690,8 +9690,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0760"
     },
     {
       "record_id": "KB-0560",
@@ -9792,8 +9792,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0766"
     },
     {
       "record_id": "KB-0566",
@@ -9809,8 +9809,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0767"
     },
     {
       "record_id": "KB-0567",
@@ -9911,8 +9911,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0772"
     },
     {
       "record_id": "KB-0573",
@@ -9996,8 +9996,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0532"
     },
     {
       "record_id": "KB-0578",
@@ -10081,8 +10081,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0781"
     },
     {
       "record_id": "KB-0583",
@@ -10132,8 +10132,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0451"
     },
     {
       "record_id": "KB-0586",
@@ -10217,8 +10217,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0789"
     },
     {
       "record_id": "KB-0591",
@@ -10234,8 +10234,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0417"
     },
     {
       "record_id": "KB-0592",
@@ -10370,8 +10370,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0001"
     },
     {
       "record_id": "KB-0600",
@@ -10387,8 +10387,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0002"
     },
     {
       "record_id": "KB-0601",
@@ -10404,8 +10404,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0003"
     },
     {
       "record_id": "KB-0602",
@@ -10421,8 +10421,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0004"
     },
     {
       "record_id": "KB-0603",
@@ -10438,8 +10438,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0005"
     },
     {
       "record_id": "KB-0604",
@@ -10455,8 +10455,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0006"
     },
     {
       "record_id": "KB-0605",
@@ -10472,8 +10472,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0007"
     },
     {
       "record_id": "KB-0606",
@@ -10489,8 +10489,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0008"
     },
     {
       "record_id": "KB-0607",
@@ -10506,8 +10506,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0009"
     },
     {
       "record_id": "KB-0608",
@@ -10523,8 +10523,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0010"
     },
     {
       "record_id": "KB-0609",
@@ -10540,8 +10540,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0011"
     },
     {
       "record_id": "KB-0610",
@@ -10557,8 +10557,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0012"
     },
     {
       "record_id": "KB-0611",
@@ -10574,8 +10574,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0013"
     },
     {
       "record_id": "KB-0612",
@@ -10591,8 +10591,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0014"
     },
     {
       "record_id": "KB-0613",
@@ -10608,8 +10608,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0015"
     },
     {
       "record_id": "KB-0614",
@@ -10625,8 +10625,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0016"
     },
     {
       "record_id": "KB-0615",
@@ -10642,8 +10642,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0017"
     },
     {
       "record_id": "KB-0616",
@@ -10659,8 +10659,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0018"
     },
     {
       "record_id": "KB-0617",
@@ -10676,8 +10676,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0019"
     },
     {
       "record_id": "KB-0618",
@@ -10693,8 +10693,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0020"
     },
     {
       "record_id": "KB-0619",
@@ -10710,8 +10710,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0021"
     },
     {
       "record_id": "KB-0620",
@@ -10727,8 +10727,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0022"
     },
     {
       "record_id": "KB-0621",
@@ -10744,8 +10744,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0023"
     },
     {
       "record_id": "KB-0622",
@@ -10761,8 +10761,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0024"
     },
     {
       "record_id": "KB-0623",
@@ -10778,8 +10778,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0025"
     },
     {
       "record_id": "KB-0624",
@@ -10795,8 +10795,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0026"
     },
     {
       "record_id": "KB-0625",
@@ -10812,8 +10812,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0027"
     },
     {
       "record_id": "KB-0626",
@@ -10829,8 +10829,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0028"
     },
     {
       "record_id": "KB-0627",
@@ -10846,8 +10846,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0029"
     },
     {
       "record_id": "KB-0628",
@@ -10863,8 +10863,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0030"
     },
     {
       "record_id": "KB-0629",
@@ -10880,8 +10880,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0031"
     },
     {
       "record_id": "KB-0630",
@@ -10897,8 +10897,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0032"
     },
     {
       "record_id": "KB-0631",
@@ -10914,8 +10914,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0033"
     },
     {
       "record_id": "KB-0632",
@@ -10931,8 +10931,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0034"
     },
     {
       "record_id": "KB-0633",
@@ -10948,8 +10948,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0035"
     },
     {
       "record_id": "KB-0634",
@@ -10965,8 +10965,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0036"
     },
     {
       "record_id": "KB-0635",
@@ -10982,8 +10982,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0037"
     },
     {
       "record_id": "KB-0636",
@@ -10999,8 +10999,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0038"
     },
     {
       "record_id": "KB-0637",
@@ -11016,8 +11016,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0039"
     },
     {
       "record_id": "KB-0638",
@@ -11033,8 +11033,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0040"
     },
     {
       "record_id": "KB-0639",
@@ -11050,8 +11050,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0041"
     },
     {
       "record_id": "KB-0640",
@@ -11067,8 +11067,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0042"
     },
     {
       "record_id": "KB-0641",
@@ -11084,8 +11084,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0043"
     },
     {
       "record_id": "KB-0642",
@@ -11101,8 +11101,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0044"
     },
     {
       "record_id": "KB-0643",
@@ -11118,8 +11118,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0045"
     },
     {
       "record_id": "KB-0644",
@@ -11135,8 +11135,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0046"
     },
     {
       "record_id": "KB-0645",
@@ -11152,8 +11152,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0047"
     },
     {
       "record_id": "KB-0646",
@@ -11169,8 +11169,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0048"
     },
     {
       "record_id": "KB-0647",
@@ -11186,8 +11186,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0049"
     },
     {
       "record_id": "KB-0648",
@@ -11203,8 +11203,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0050"
     },
     {
       "record_id": "KB-0649",
@@ -11220,8 +11220,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0051"
     },
     {
       "record_id": "KB-0650",
@@ -11237,8 +11237,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0052"
     },
     {
       "record_id": "KB-0651",
@@ -11254,8 +11254,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0053"
     },
     {
       "record_id": "KB-0652",
@@ -11271,8 +11271,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0054"
     },
     {
       "record_id": "KB-0653",
@@ -11288,8 +11288,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0055"
     },
     {
       "record_id": "KB-0654",
@@ -11305,8 +11305,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0056"
     },
     {
       "record_id": "KB-0655",
@@ -11322,8 +11322,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0057"
     },
     {
       "record_id": "KB-0656",
@@ -11339,8 +11339,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0058"
     },
     {
       "record_id": "KB-0657",
@@ -11373,8 +11373,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0657"
     },
     {
       "record_id": "KB-0659",
@@ -11390,8 +11390,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "客服回覆素材；高風險問題建議人工審核後使用"
+      "status": "archived",
+      "notes": "客服回覆素材；高風險問題建議人工審核後使用；dedupe 2026-06-15: archived as duplicate of KB-0657"
     },
     {
       "record_id": "KB-0660",
@@ -11475,8 +11475,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0698"
     },
     {
       "record_id": "KB-0665",
@@ -11543,8 +11543,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0667"
     },
     {
       "record_id": "KB-0669",
@@ -11628,8 +11628,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "2026-06-04陶朗：超出設定的700次(含reject)，由於機器在去年底更新此設定"
+      "status": "archived",
+      "notes": "2026-06-04陶朗：超出設定的700次(含reject)，由於機器在去年底更新此設定；dedupe 2026-06-15: archived as duplicate of KB-0670"
     },
     {
       "record_id": "KB-0674",
@@ -11696,8 +11696,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0684"
     },
     {
       "record_id": "KB-0678",
@@ -11713,8 +11713,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0667"
     },
     {
       "record_id": "KB-0679",
@@ -11764,8 +11764,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0680"
     },
     {
       "record_id": "KB-0682",
@@ -11781,8 +11781,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0787"
     },
     {
       "record_id": "KB-0683",
@@ -11798,8 +11798,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0684"
     },
     {
       "record_id": "KB-0684",
@@ -11866,8 +11866,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0684"
     },
     {
       "record_id": "KB-0688",
@@ -11883,8 +11883,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0680"
     },
     {
       "record_id": "KB-0689",
@@ -11917,8 +11917,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0698"
     },
     {
       "record_id": "KB-0691",
@@ -11968,8 +11968,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0670"
     },
     {
       "record_id": "KB-0694",
@@ -12019,8 +12019,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0680"
     },
     {
       "record_id": "KB-0697",
@@ -12036,8 +12036,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0680"
     },
     {
       "record_id": "KB-0698",
@@ -12138,8 +12138,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0684"
     },
     {
       "record_id": "KB-0704",
@@ -12223,8 +12223,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0680"
     },
     {
       "record_id": "KB-0709",
@@ -12274,8 +12274,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "5/11 23:00起~23:54"
+      "status": "archived",
+      "notes": "5/11 23:00起~23:54；dedupe 2026-06-15: archived as duplicate of KB-0676"
     },
     {
       "record_id": "KB-0712",
@@ -12308,8 +12308,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0699"
     },
     {
       "record_id": "KB-0714",
@@ -12376,8 +12376,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0731"
     },
     {
       "record_id": "KB-0718",
@@ -12393,8 +12393,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0684"
     },
     {
       "record_id": "KB-0719",
@@ -12427,8 +12427,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0684"
     },
     {
       "record_id": "KB-0721",
@@ -12444,8 +12444,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0684"
     },
     {
       "record_id": "KB-0722",
@@ -12546,8 +12546,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0731"
     },
     {
       "record_id": "KB-0728",
@@ -12563,8 +12563,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0731"
     },
     {
       "record_id": "KB-0729",
@@ -12580,8 +12580,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0731"
     },
     {
       "record_id": "KB-0730",
@@ -12597,8 +12597,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0731"
     },
     {
       "record_id": "KB-0731",
@@ -12648,8 +12648,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0710"
     },
     {
       "record_id": "KB-0734",
@@ -12665,8 +12665,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "20260602水晶：現在app都已經變更名字和圖片了，新序號應該是7/1（沒有問題是前提）"
+      "status": "archived",
+      "notes": "20260602水晶：現在app都已經變更名字和圖片了，新序號應該是7/1（沒有問題是前提）；dedupe 2026-06-15: archived as duplicate of KB-0705"
     },
     {
       "record_id": "KB-0735",
@@ -12733,8 +12733,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0705"
     },
     {
       "record_id": "KB-0739",
@@ -12767,8 +12767,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0667"
     },
     {
       "record_id": "KB-0741",
@@ -12784,8 +12784,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0667"
     },
     {
       "record_id": "KB-0742",
@@ -12852,8 +12852,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0744"
     },
     {
       "record_id": "KB-0746",
@@ -12869,8 +12869,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0672"
     },
     {
       "record_id": "KB-0747",
@@ -12886,8 +12886,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0719"
     },
     {
       "record_id": "KB-0748",
@@ -12903,8 +12903,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0670"
     },
     {
       "record_id": "KB-0749",
@@ -12988,8 +12988,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0752"
     },
     {
       "record_id": "KB-0754",
@@ -13073,8 +13073,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0705"
     },
     {
       "record_id": "KB-0759",
@@ -13141,8 +13141,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0761"
     },
     {
       "record_id": "KB-0763",
@@ -13243,8 +13243,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "High",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0793"
     },
     {
       "record_id": "KB-0769",
@@ -13498,8 +13498,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_allowed",
       "risk": "Low",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0679"
     },
     {
       "record_id": "KB-0784",
@@ -13549,8 +13549,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0787"
     },
     {
       "record_id": "KB-0787",
@@ -13634,8 +13634,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0731"
     },
     {
       "record_id": "KB-0792",
@@ -13651,8 +13651,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "線上 FAQ 管理系統資料"
+      "status": "archived",
+      "notes": "線上 FAQ 管理系統資料；dedupe 2026-06-15: archived as duplicate of KB-0787"
     },
     {
       "record_id": "KB-0793",
@@ -14314,8 +14314,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "社群回覆範本；用於生成草稿，非最高事實來源"
+      "status": "archived",
+      "notes": "社群回覆範本；用於生成草稿，非最高事實來源；dedupe 2026-06-15: archived as duplicate of KB-0676"
     },
     {
       "record_id": "KB-0832",
@@ -14433,8 +14433,8 @@
       "use_in_ai": "yes",
       "automation_level": "auto_reply_with_guardrails",
       "risk": "Medium",
-      "status": "active",
-      "notes": "社群回覆範本；用於生成草稿，非最高事實來源"
+      "status": "archived",
+      "notes": "社群回覆範本；用於生成草稿，非最高事實來源；dedupe 2026-06-15: archived as duplicate of KB-0832"
     },
     {
       "record_id": "KB-0839",
@@ -16665,5 +16665,15 @@
     "description": "AI directly replies to customers. High-risk topics must use conservative wording, collect required fields, and avoid promises such as completed compensation, refund, points adjustment, or manual handling.",
     "high_risk_rule": "For points, coupons, accounts, complaints, machine issues, and unknown policies, answer only with confirmed knowledge, collect the required fields, and route the customer to the official App/contact form when backend lookup is needed.",
     "knowledge_gap_rule": "If the knowledge base cannot answer confidently, log the original question, attempted answer, gap reason, and source category, then give a safe reply instead of inventing policy."
+  },
+  "dedupe_applied": {
+    "applied_at": "2026-06-15T09:29:14.415Z",
+    "source": "data/knowledge-quality-audit.json",
+    "method": "Archived duplicate candidates recommended by audit; original records are retained for traceability.",
+    "audit_duplicate_candidates": 0,
+    "archived_this_run": 0,
+    "already_archived": 0,
+    "archived_duplicate_records_total": 199,
+    "active_ai_records_after_apply": 677
   }
 }

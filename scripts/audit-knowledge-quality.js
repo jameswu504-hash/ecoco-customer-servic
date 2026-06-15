@@ -50,9 +50,14 @@ function preview(value, length = 180) {
 function main() {
   const database = JSON.parse(fs.readFileSync(databasePath, 'utf8'));
   const records = Array.isArray(database.knowledge_records) ? database.knowledge_records : [];
+  const activeAiRecords = records.filter(row =>
+    row.status === 'active' &&
+    String(row.use_in_ai || '').toLowerCase() === 'yes' &&
+    row.automation_level !== 'internal_only'
+  );
   const groups = new Map();
 
-  for (const row of records) {
+  for (const row of activeAiRecords) {
     const key = normalizeQuestion(row.question_or_trigger);
     if (!key) continue;
     if (!groups.has(key)) groups.set(key, []);
@@ -93,6 +98,8 @@ function main() {
     source: 'data/ecoco-ai-customer-service-database.json',
     summary: {
       knowledge_records: records.length,
+      active_ai_records: activeAiRecords.length,
+      archived_records: records.filter(row => row.status === 'archived').length,
       duplicate_groups: duplicateGroups.length,
       duplicate_records: duplicateGroups.reduce((sum, group) => sum + group.duplicate_count, 0),
       conflicts_pending_review: conflicts.length,
@@ -121,7 +128,7 @@ function main() {
 
   const conflictLines = conflicts.map((conflict, index) => (
     [
-      `### ${index + 1}. ${conflict.topic || conflict.title || '未命名衝突'}`,
+      `### ${index + 1}. ${conflict.topic || conflict.title || conflict.issue || '未命名衝突'}`,
       '',
       `- 狀態：${conflict.status || 'pending_review'}`,
       `- 說明：${conflict.description || conflict.issue || '需人工確認'}`,
@@ -131,13 +138,15 @@ function main() {
 
   const markdown = `# ECOCO 知識庫品質稽核
 
-本文件由 \`npm run audit:knowledge\` 產生，用來找出重複問題與待確認衝突。這不是自動清資料的腳本，而是給人工審核使用的清單。
+本文件由 \`npm run audit:knowledge\` 產生，用來找出仍會進 AI 的重複問題與待確認衝突。已標成 \`archived\` 的歷史資料會保留在主檔，但不列入 active 重複統計。
 
 ## 摘要
 
 - 知識筆數：${audit.summary.knowledge_records}
-- 重複問題組數：${audit.summary.duplicate_groups}
-- 重複涉及筆數：${audit.summary.duplicate_records}
+- 目前會進 AI 的筆數：${audit.summary.active_ai_records}
+- 已封存筆數：${audit.summary.archived_records}
+- active 重複問題組數：${audit.summary.duplicate_groups}
+- active 重複涉及筆數：${audit.summary.duplicate_records}
 - 待確認衝突：${audit.summary.conflicts_pending_review}
 
 ## 去重原則
@@ -151,7 +160,7 @@ function main() {
 5. 舊 Meta / system prompt
 6. 真人客服話術
 
-真人客服話術可保留語氣參考，但若和官方 FAQ 衝突，應以官方 FAQ 為準。
+真人客服話術可保留語氣參考，但若和官方 FAQ 衝突，應以官方 FAQ 為準。\`npm run apply:knowledge-audit\` 會把建議剔除的 active 重複資料標成 \`archived\`，不會刪除原始資料。
 
 ## 重複問題清單（前 40 組）
 

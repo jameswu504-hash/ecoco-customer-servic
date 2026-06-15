@@ -101,30 +101,6 @@ function buildPolicySection(database) {
   };
 }
 
-function buildConflictSection(database) {
-  const lines = [
-    '以下內容不可直接給 AI 當事實回答，必須先由主管或官方來源確認後再更新正式知識庫。',
-    '',
-  ];
-
-  for (const conflict of database.conflicts_pending_review || []) {
-    const topic = conflict.topic || conflict.issue || '未命名衝突';
-    const observed = conflict.conflict_found || conflict.observed_conflict || '';
-    lines.push(`## ${topic}`);
-    lines.push(`- 優先級：${conflict.priority || ''}`);
-    lines.push(`- 目前觀察到的衝突：${observed}`);
-    lines.push(`- 建議處理方式：${conflict.recommended_resolution || ''}`);
-    lines.push('');
-  }
-
-  return {
-    category: '資料衝突與待確認事項',
-    content: lines.join('\n').trim(),
-    source: 'ECOCO AI 客服資料庫整合版 / 07_衝突待確認',
-    visibility: 'internal_review',
-  };
-}
-
 function buildKnowledgeSections(database) {
   const records = (database.knowledge_records || [])
     .filter(row =>
@@ -163,7 +139,6 @@ function buildKnowledgeSections(database) {
     });
   }
 
-  sections.push(buildConflictSection(database));
   return sections;
 }
 
@@ -171,7 +146,7 @@ function buildImportPayload(database) {
   return {
     generated_at: new Date().toISOString(),
     source: database.source,
-    notes: 'Generated from the consolidated ECOCO AI customer service database. Legacy credentials and old API settings are intentionally excluded. Only active, latest-source records are used for AI import sections.',
+    notes: 'Generated from the consolidated ECOCO AI customer service database. Legacy credentials, old API settings, archived duplicates, and conflicts pending review are intentionally excluded from AI import sections.',
     summary: database.summary || {},
     sections: buildKnowledgeSections(database),
   };
