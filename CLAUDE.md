@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file is for Claude, Codex, and other AI coding agents working on the ECOCO AI customer service project.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Purpose
 
@@ -59,13 +59,22 @@ There are two important layers:
 2. PostgreSQL
    - Live runtime database used by the deployed service.
    - Important tables:
-     - `knowledge_sections`
-     - `knowledge_chunks`
+     - `knowledge_sections` — 可編輯的知識分類，產生 Claude system prompt
+     - `knowledge_chunks` — 從 `knowledge_sections` 自動切分的 RAG 搜尋片段，**不要手動編輯**，每次知識更新後自動重建
      - `conversations`
      - `ratings`
      - `unanswered_questions`
 
 PostgreSQL is not a file in Git. It is the online database connected through `DATABASE_URL`.
+
+## Server Startup Sequence
+
+`server.js` 啟動時依序執行：
+
+1. `initDb()` — 逐一執行 SCHEMA 建表（雲端 Postgres 不接受多語句，故分開跑）
+2. `KNOWLEDGE_AUTO_SYNC` 模式決定是否從 Git JSON 同步進 PostgreSQL
+3. `refreshKnowledgeCache()` — 把 `knowledge_sections` 全部載入記憶體字串 `knowledgeCache`
+4. 開始接請求
 
 ## Knowledge Update Flow
 
@@ -91,6 +100,16 @@ Then inspect the generated files before committing:
 ```
 
 The build process only imports active AI-usable records.
+
+## RAG Flow
+
+`/api/chat` 收到問題後：
+
+1. 對 `knowledge_chunks` 做 PostgreSQL 全文搜尋，取前 8 筆相關片段
+2. 把片段嵌入 system prompt（標記 `cache_control: ephemeral` 啟用 prompt caching）
+3. 呼叫 Claude（`claude-opus-4-7`，`max_tokens: 1024`）
+
+目前使用 PostgreSQL 文字搜尋（非 embedding 向量），中文語意匹配精度有限，未來可升級為 pgvector。
 
 ## Knowledge Sync Behavior
 
