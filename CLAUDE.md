@@ -86,7 +86,7 @@ KNOWLEDGE_AUTO_SYNC=insert_only   # 見下方說明
 | 頁面 | 路徑 |
 |---|---|
 | 客服前台 | `public/index.html` |
-| 後台儀表板 | `dashboard.html`（根目錄，非 public/） |
+| 後台儀表板 | `public/dashboard.html` |
 
 ## 部署
 
