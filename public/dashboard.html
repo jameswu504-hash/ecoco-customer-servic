@@ -131,6 +131,51 @@
     .source-title, .category-title { font-weight:700; color:var(--green-dark); overflow-wrap:anywhere; }
     .source-meta, .category-meta { color:var(--gray-mid); font-size:12px; margin-top:2px; overflow-wrap:anywhere; }
 
+    .report-card {
+      background:var(--white); border-radius:var(--radius); padding:20px;
+      box-shadow:var(--shadow); border:1px solid #dfe6ee; margin-bottom:28px;
+    }
+    .report-head {
+      display:flex; justify-content:space-between; align-items:flex-start; gap:12px;
+      margin-bottom:14px; flex-wrap:wrap;
+    }
+    .report-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .report-toggle {
+      border:1.5px solid var(--green-main); background:white; color:var(--green-main);
+      border-radius:8px; padding:6px 12px; font-size:12px; cursor:pointer;
+      font-family:'Noto Sans TC',sans-serif;
+    }
+    .report-toggle.active, .report-toggle:hover { background:var(--green-main); color:white; }
+    .report-grid {
+      display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+      gap:12px; margin-bottom:14px;
+    }
+    .report-metric {
+      border:1px solid #e6ecf2; border-radius:8px; padding:12px;
+      background:var(--green-ghost);
+    }
+    .report-value {
+      font-size:24px; font-weight:700; color:var(--green-main);
+      font-family:'Space Mono',monospace; overflow-wrap:anywhere;
+    }
+    .report-label { font-size:12px; color:var(--gray-mid); margin-top:3px; }
+    .report-columns { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:12px; }
+    .report-list { display:flex; flex-direction:column; gap:8px; }
+    .report-row {
+      border:1px solid #e6ecf2; border-radius:8px; padding:10px 12px;
+      background:white; display:flex; justify-content:space-between; gap:10px;
+      font-size:13px; line-height:1.5;
+    }
+    .report-row strong { color:var(--green-dark); overflow-wrap:anywhere; }
+    .report-row span { color:var(--gray-mid); font-family:'Space Mono',monospace; flex-shrink:0; }
+    .report-textarea {
+      width:100%; min-height:230px; border:1.5px solid #cce0d8; border-radius:8px;
+      padding:12px; font-size:12px; font-family:'Space Mono',monospace;
+      resize:vertical; outline:none; line-height:1.7; color:var(--black);
+      background:var(--green-ghost); margin-top:12px;
+    }
+    .report-textarea:focus { border-color:var(--green-mid); background:white; }
+
     /* 對話紀錄 */
     .sessions-card {
       background:var(--white); border-radius:var(--radius); padding:20px;
@@ -420,6 +465,22 @@
     <div class="loading">載入中...</div>
   </div>
 
+  <div class="report-card">
+    <div class="report-head">
+      <div>
+        <div class="section-title" style="margin-bottom:6px">📊 營運報表</div>
+        <div style="font-size:12px;color:var(--gray-mid)">給主管 / 總經理室看的客服量、分類、處理狀態與知識庫優化摘要。</div>
+      </div>
+      <div class="report-actions">
+        <button class="report-toggle active" id="reportWeekBtn" onclick="loadOperationsReport('week')">本週</button>
+        <button class="report-toggle" id="reportMonthBtn" onclick="loadOperationsReport('month')">本月</button>
+        <button class="kb-export-btn" onclick="copyReportMarkdown()">複製週/月報</button>
+        <button class="kb-export-btn" onclick="downloadReportMarkdown()">下載 MD</button>
+      </div>
+    </div>
+    <div id="operationsReport"><div class="loading">載入中...</div></div>
+  </div>
+
   <!-- AI 資料庫總覽 -->
   <div class="overview-card">
     <div class="section-title">🧭 AI 資料庫總覽</div>
@@ -546,7 +607,107 @@ async function submitLogin() {
 }
 
 async function loadAll() {
-  await Promise.all([loadStats(), loadKnowledgeOverview(), loadKeywords(), loadSessions(), loadUnanswered(), loadRatingDetails(), loadKnowledge()]);
+  await Promise.all([loadStats(), loadOperationsReport(reportPeriod), loadKnowledgeOverview(), loadKeywords(), loadSessions(), loadUnanswered(), loadRatingDetails(), loadKnowledge()]);
+}
+
+let reportPeriod = 'week';
+let currentReport = null;
+
+async function loadOperationsReport(period = 'week') {
+  reportPeriod = period === 'month' ? 'month' : 'week';
+  document.getElementById('reportWeekBtn').classList.toggle('active', reportPeriod === 'week');
+  document.getElementById('reportMonthBtn').classList.toggle('active', reportPeriod === 'month');
+  const data = await adminFetch(`/api/reports/operations?period=${reportPeriod}`);
+  currentReport = data;
+  renderOperationsReport(data);
+}
+
+function renderOperationsReport(data) {
+  const summary = data.summary || {};
+  const knowledge = data.knowledge || {};
+  const categories = (data.categories || []).slice(0, 7).map(item => `
+    <div class="report-row">
+      <strong>${escapeHtml(item.category)}</strong>
+      <span>${item.count} 則</span>
+    </div>
+  `).join('');
+  const gapStatuses = (data.gapStatuses || []).map(item => `
+    <div class="report-row">
+      <strong>${escapeHtml(item.statusLabel || item.status)}</strong>
+      <span>${item.count} 則</span>
+    </div>
+  `).join('');
+
+  document.getElementById('operationsReport').innerHTML = `
+    <div style="font-size:12px;color:var(--gray-mid);line-height:1.7;margin-bottom:12px">
+      期間：${escapeHtml(data.range?.startDate || '')} 至 ${escapeHtml(data.range?.endDate || '')}
+    </div>
+    <div class="report-grid">
+      <div class="report-metric">
+        <div class="report-value">${summary.sessions ?? 0}</div>
+        <div class="report-label">客服案件</div>
+      </div>
+      <div class="report-metric">
+        <div class="report-value">${summary.userMessages ?? 0}</div>
+        <div class="report-label">用戶訊息</div>
+      </div>
+      <div class="report-metric">
+        <div class="report-value">${summary.aiReplies ?? 0}</div>
+        <div class="report-label">AI 回覆</div>
+      </div>
+      <div class="report-metric">
+        <div class="report-value">${summary.knowledgeGaps ?? 0}</div>
+        <div class="report-label">知識缺口</div>
+      </div>
+      <div class="report-metric">
+        <div class="report-value">${summary.satisfactionRate ?? 0}%</div>
+        <div class="report-label">評分滿意度</div>
+      </div>
+      <div class="report-metric">
+        <div class="report-value">${knowledge.activeDuplicateGroups ?? 0}</div>
+        <div class="report-label">active 重複問題</div>
+      </div>
+    </div>
+    <div class="report-columns">
+      <div>
+        <div class="section-title" style="font-size:13px;margin-bottom:10px">問題分類</div>
+        <div class="report-list">${categories || '<div class="empty-state">本期尚無用戶問題</div>'}</div>
+      </div>
+      <div>
+        <div class="section-title" style="font-size:13px;margin-bottom:10px">處理與優化</div>
+        <div class="report-list">
+          <div class="report-row"><strong>已解決知識缺口</strong><span>${summary.resolvedGaps ?? 0} 則</span></div>
+          <div class="report-row"><strong>需人工處理</strong><span>${summary.manualGaps ?? 0} 則</span></div>
+          <div class="report-row"><strong>已封存重複知識</strong><span>${knowledge.archivedDuplicates ?? 0} 筆</span></div>
+          <div class="report-row"><strong>待確認衝突</strong><span>${knowledge.conflictsPendingReview ?? 0} 筆</span></div>
+          ${gapStatuses ? `<div style="margin-top:6px">${gapStatuses}</div>` : ''}
+        </div>
+      </div>
+    </div>
+    <textarea class="report-textarea" id="reportMarkdown" spellcheck="false">${escapeHtml(data.reportMarkdown || '')}</textarea>
+  `;
+}
+
+async function copyReportMarkdown() {
+  const text = currentReport?.reportMarkdown || document.getElementById('reportMarkdown')?.value || '';
+  if (!text) return;
+  await navigator.clipboard.writeText(text);
+  alert('已複製報表 Markdown');
+}
+
+function downloadReportMarkdown() {
+  const text = currentReport?.reportMarkdown || document.getElementById('reportMarkdown')?.value || '';
+  if (!text) return;
+  const label = reportPeriod === 'month' ? 'monthly' : 'weekly';
+  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `ecoco-ai-customer-service-${label}-report.md`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 // ── 知識庫分類管理 ────────────────────────────────────────

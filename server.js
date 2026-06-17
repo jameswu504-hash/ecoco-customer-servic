@@ -651,6 +651,222 @@ app.get('/api/stats', requireAdminKey, async (req, res) => {
   }
 });
 
+const REPORT_CATEGORIES = [
+  { name: '點數問題', keywords: ['點數', '補點', '入帳', '期限', '效期', '轉贈', '兌換點'] },
+  { name: '優惠券 / 兌換', keywords: ['優惠券', '兌換', '抵用', '核銷', '條碼', '券'] },
+  { name: 'APP / 帳號', keywords: ['App', 'APP', '帳號', '登入', '註冊', '驗證碼', '密碼', '手機號碼'] },
+  { name: '機台 / 維修', keywords: ['機台', '故障', '紅燈', '藍燈', '滿袋', '退瓶', '卡住', '黑屏'] },
+  { name: '站點 / 地點', keywords: ['站點', '地點', '門市', '據點', '營業時間', '康達盛通'] },
+  { name: '回收規則', keywords: ['寶特瓶', '鋁罐', '電池', '瓶蓋', '膠膜', '壓扁', '回收物', '牛奶瓶'] },
+  { name: '客訴 / 高風險', keywords: ['客訴', '投訴', '賠償', '退款', '黑名單', '停權', '個資'] },
+];
+
+function getReportRange(period) {
+  const now = new Date();
+  const end = now;
+  const start = new Date(now);
+  const normalized = period === 'month' ? 'month' : 'week';
+  if (normalized === 'month') {
+    start.setDate(1);
+    start.setHours(0, 0, 0, 0);
+  } else {
+    start.setDate(now.getDate() - 6);
+    start.setHours(0, 0, 0, 0);
+  }
+  return { period: normalized, start, end };
+}
+
+function classifyQuestion(content) {
+  const text = String(content || '');
+  const matched = REPORT_CATEGORIES.find(category =>
+    category.keywords.some(keyword => text.includes(keyword))
+  );
+  return matched ? matched.name : '其他';
+}
+
+function buildOperationsReportMarkdown(payload) {
+  const title = payload.range.period === 'month' ? '月報' : '週報';
+  const categories = payload.categories
+    .map((item, index) => `${index + 1}. ${item.category}：${item.count} 則`)
+    .join('\n') || '尚無分類資料';
+  const gaps = payload.gapStatuses
+    .map(item => `- ${item.statusLabel}：${item.count} 則`)
+    .join('\n') || '- 本期無知識缺口';
+  const topQuestions = payload.topQuestions
+    .map((item, index) => `${index + 1}. ${item.preview}`)
+    .join('\n') || '本期無可列出的問題樣本';
+
+  return `# ECOCO AI 客服${title}
+
+期間：${payload.range.startDate} 至 ${payload.range.endDate}
+
+## 一、客服量總覽
+- 對話案件數：${payload.summary.sessions} 件
+- 用戶訊息數：${payload.summary.userMessages} 則
+- AI 回覆數：${payload.summary.aiReplies} 則
+- 總訊息數：${payload.summary.totalMessages} 則
+
+## 二、問題分類
+${categories}
+
+## 三、處理與品質
+- AI 已回覆訊息：${payload.summary.aiReplies} 則
+- 知識缺口：${payload.summary.knowledgeGaps} 則
+- 已解決知識缺口：${payload.summary.resolvedGaps} 則
+- 需人工處理：${payload.summary.manualGaps} 則
+- 好評：${payload.summary.positiveRatings} 則
+- 負評：${payload.summary.negativeRatings} 則
+- 滿意度：${payload.summary.satisfactionRate}%
+
+## 四、知識庫優化
+- 目前正式知識分類：${payload.knowledge.dbSections} 個
+- RAG 檢索片段：${payload.knowledge.ragChunks} 個
+- 已封存重複知識：${payload.knowledge.archivedDuplicates} 筆
+- active 重複問題組數：${payload.knowledge.activeDuplicateGroups} 組
+- 待確認衝突：${payload.knowledge.conflictsPendingReview} 筆
+
+## 五、知識缺口狀態
+${gaps}
+
+## 六、代表問題樣本
+${topQuestions}
+
+## 七、下週建議
+- 優先補強高頻分類的 FAQ。
+- 檢查負評回覆是否需要補充知識庫或調整回覆策略。
+- 持續清理重複與衝突資料，避免 AI 回答不一致。
+`;
+}
+
+app.get('/api/reports/operations', requireAdminKey, async (req, res) => {
+  const { period, start, end } = getReportRange(String(req.query.period || 'week'));
+  const startIso = start.toISOString();
+  const endIso = end.toISOString();
+
+  try {
+    const databasePayload = readJsonFile(path.join('data', 'ecoco-ai-customer-service-database.json')) || {};
+    const auditPayload = readJsonFile(path.join('data', 'knowledge-quality-audit.json')) || {};
+
+    const [
+      conversationCounts,
+      userMessagesResult,
+      ratingCounts,
+      gapCounts,
+      gapStatusCounts,
+      knowledgeCounts,
+      chunkCounts,
+    ] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(DISTINCT session_id) AS sessions,
+                COUNT(*) AS total_messages,
+                COUNT(*) FILTER (WHERE role = 'user') AS user_messages,
+                COUNT(*) FILTER (WHERE role = 'assistant') AS ai_replies
+         FROM conversations
+         WHERE timestamp >= $1 AND timestamp <= $2`,
+        [startIso, endIso]
+      ),
+      pool.query(
+        `SELECT content, timestamp
+         FROM conversations
+         WHERE role = 'user' AND timestamp >= $1 AND timestamp <= $2
+         ORDER BY timestamp DESC
+         LIMIT 500`,
+        [startIso, endIso]
+      ),
+      pool.query(
+        `SELECT
+           COUNT(*) FILTER (WHERE type = 'positive') AS positive,
+           COUNT(*) FILTER (WHERE type = 'negative') AS negative
+         FROM ratings
+         WHERE timestamp >= $1 AND timestamp <= $2`,
+        [startIso, endIso]
+      ),
+      pool.query(
+        `SELECT
+           COUNT(*) AS total,
+           COUNT(*) FILTER (WHERE COALESCE(status, 'pending') = 'resolved') AS resolved,
+           COUNT(*) FILTER (WHERE COALESCE(status, 'pending') = 'manual') AS manual
+         FROM unanswered_questions
+         WHERE timestamp >= $1 AND timestamp <= $2`,
+        [startIso, endIso]
+      ),
+      pool.query(
+        `SELECT COALESCE(status, 'pending') AS status, COUNT(*) AS count
+         FROM unanswered_questions
+         WHERE timestamp >= $1 AND timestamp <= $2
+         GROUP BY COALESCE(status, 'pending')
+         ORDER BY count DESC`,
+        [startIso, endIso]
+      ),
+      pool.query('SELECT COUNT(*) AS count FROM knowledge_sections'),
+      pool.query('SELECT COUNT(*) AS count FROM knowledge_chunks'),
+    ]);
+
+    const userMessages = userMessagesResult.rows;
+    const categories = {};
+    for (const row of userMessages) {
+      const category = classifyQuestion(row.content);
+      categories[category] = (categories[category] || 0) + 1;
+    }
+
+    const positive = Number(ratingCounts.rows[0].positive || 0);
+    const negative = Number(ratingCounts.rows[0].negative || 0);
+    const ratingTotal = positive + negative;
+    const payload = {
+      generatedAt: new Date().toISOString(),
+      range: {
+        period,
+        start: startIso,
+        end: endIso,
+        startDate: start.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' }),
+        endDate: end.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' }),
+      },
+      summary: {
+        sessions: Number(conversationCounts.rows[0].sessions || 0),
+        totalMessages: Number(conversationCounts.rows[0].total_messages || 0),
+        userMessages: Number(conversationCounts.rows[0].user_messages || 0),
+        aiReplies: Number(conversationCounts.rows[0].ai_replies || 0),
+        knowledgeGaps: Number(gapCounts.rows[0].total || 0),
+        resolvedGaps: Number(gapCounts.rows[0].resolved || 0),
+        manualGaps: Number(gapCounts.rows[0].manual || 0),
+        positiveRatings: positive,
+        negativeRatings: negative,
+        satisfactionRate: ratingTotal > 0 ? Math.round((positive / ratingTotal) * 100) : 0,
+      },
+      categories: Object.entries(categories)
+        .map(([category, count]) => ({ category, count }))
+        .sort((a, b) => b.count - a.count),
+      gapStatuses: gapStatusCounts.rows.map(row => ({
+        status: row.status,
+        statusLabel: {
+          pending: '待確認',
+          resolved: '已補資料',
+          ignored: '不需處理',
+          manual: '需人工處理',
+        }[row.status] || row.status,
+        count: Number(row.count),
+      })),
+      topQuestions: userMessages.slice(0, 8).map(row => ({
+        preview: String(row.content || '').replace(/\s+/g, ' ').trim().slice(0, 80),
+        timestamp: row.timestamp,
+      })),
+      knowledge: {
+        dbSections: Number(knowledgeCounts.rows[0].count || 0),
+        ragChunks: Number(chunkCounts.rows[0].count || 0),
+        archivedDuplicates: Number(databasePayload.dedupe_applied?.archived_duplicate_records_total || 0),
+        activeDuplicateGroups: Number(auditPayload.summary?.duplicate_groups || 0),
+        conflictsPendingReview: Number(auditPayload.summary?.conflicts_pending_review || 0),
+      },
+    };
+
+    payload.reportMarkdown = buildOperationsReportMarkdown(payload);
+    res.json(payload);
+  } catch (err) {
+    console.error('Operations report error:', err.message);
+    res.status(500).json({ error: '營運報表產生失敗' });
+  }
+});
+
 app.get('/api/knowledge/overview', requireAdminKey, async (req, res) => {
   try {
     const importPayload = readJsonFile(path.join('data', 'ecoco-knowledge-import.json')) || {};
