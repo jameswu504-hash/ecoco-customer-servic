@@ -168,6 +168,26 @@
     }
     .report-row strong { color:var(--green-dark); overflow-wrap:anywhere; }
     .report-row span { color:var(--gray-mid); font-family:'Space Mono',monospace; flex-shrink:0; }
+    .report-detail { border:1px solid #e6ecf2; border-radius:8px; background:white; overflow:hidden; }
+    .report-detail summary {
+      list-style:none; cursor:pointer; display:flex; justify-content:space-between;
+      gap:10px; padding:10px 12px; font-size:13px; line-height:1.5;
+    }
+    .report-detail summary::-webkit-details-marker { display:none; }
+    .report-detail summary strong { color:var(--green-dark); overflow-wrap:anywhere; }
+    .report-detail summary span { color:var(--gray-mid); font-family:'Space Mono',monospace; flex-shrink:0; }
+    .report-detail summary::after {
+      content:'▼'; color:var(--green-main); font-size:11px; margin-left:6px;
+      align-self:center;
+    }
+    .report-detail[open] summary { background:var(--green-ghost); border-bottom:1px solid #e6ecf2; }
+    .report-detail[open] summary::after { content:'▲'; }
+    .report-samples { padding:10px 12px; display:flex; flex-direction:column; gap:8px; }
+    .report-sample {
+      font-size:12px; line-height:1.6; color:var(--black); background:var(--gray-soft);
+      border-radius:6px; padding:8px 10px; overflow-wrap:anywhere;
+    }
+    .report-sample-note { color:var(--gray-mid); margin-top:3px; }
     .report-textarea {
       width:100%; min-height:230px; border:1.5px solid #cce0d8; border-radius:8px;
       padding:12px; font-size:12px; font-family:'Space Mono',monospace;
@@ -625,18 +645,23 @@ async function loadOperationsReport(period = 'week') {
 function renderOperationsReport(data) {
   const summary = data.summary || {};
   const knowledge = data.knowledge || {};
-  const categories = (data.categories || []).slice(0, 7).map(item => `
-    <div class="report-row">
-      <strong>${escapeHtml(item.category)}</strong>
-      <span>${item.count} 則</span>
-    </div>
-  `).join('');
-  const gapStatuses = (data.gapStatuses || []).map(item => `
-    <div class="report-row">
-      <strong>${escapeHtml(item.statusLabel || item.status)}</strong>
-      <span>${item.count} 則</span>
-    </div>
-  `).join('');
+  const categories = renderReportDetailRows(
+    (data.categories || []).slice(0, 8).map(item => ({
+      label: item.category,
+      count: item.count,
+      unit: '則',
+      samples: item.samples || [],
+    }))
+  );
+  const optimizationRows = renderReportDetailRows(data.optimizations || []);
+  const gapStatuses = renderReportDetailRows(
+    (data.gapStatuses || []).map(item => ({
+      label: item.statusLabel || item.status,
+      count: item.count,
+      unit: '則',
+      samples: item.samples || [],
+    }))
+  );
 
   document.getElementById('operationsReport').innerHTML = `
     <div style="font-size:12px;color:var(--gray-mid);line-height:1.7;margin-bottom:12px">
@@ -676,16 +701,40 @@ function renderOperationsReport(data) {
       <div>
         <div class="section-title" style="font-size:13px;margin-bottom:10px">處理與優化</div>
         <div class="report-list">
-          <div class="report-row"><strong>已解決知識缺口</strong><span>${summary.resolvedGaps ?? 0} 則</span></div>
-          <div class="report-row"><strong>需人工處理</strong><span>${summary.manualGaps ?? 0} 則</span></div>
-          <div class="report-row"><strong>已封存重複知識</strong><span>${knowledge.archivedDuplicates ?? 0} 筆</span></div>
-          <div class="report-row"><strong>待確認衝突</strong><span>${knowledge.conflictsPendingReview ?? 0} 筆</span></div>
+          ${optimizationRows || '<div class="empty-state">本期尚無優化明細</div>'}
           ${gapStatuses ? `<div style="margin-top:6px">${gapStatuses}</div>` : ''}
         </div>
       </div>
     </div>
     <textarea class="report-textarea" id="reportMarkdown" spellcheck="false">${escapeHtml(data.reportMarkdown || '')}</textarea>
   `;
+}
+
+function renderReportDetailRows(rows) {
+  return rows.map(item => `
+    <details class="report-detail">
+      <summary>
+        <strong>${escapeHtml(item.label || item.category || '未分類')}</strong>
+        <span>${item.count ?? 0} ${escapeHtml(item.unit || '則')}</span>
+      </summary>
+      <div class="report-samples">
+        ${renderReportSamples(item.samples || [])}
+      </div>
+    </details>
+  `).join('');
+}
+
+function renderReportSamples(samples) {
+  if (!samples.length) {
+    return '<div class="report-sample">目前沒有可展開的明細。</div>';
+  }
+  return samples.map(sample => `
+    <div class="report-sample">
+      <div>${escapeHtml(sample.preview || sample.question || '（無內容）')}</div>
+      ${sample.note ? `<div class="report-sample-note">${escapeHtml(sample.note)}</div>` : ''}
+      ${sample.priority ? `<div class="report-sample-note">優先級：${escapeHtml(sample.priority)}</div>` : ''}
+    </div>
+  `).join('');
 }
 
 async function copyReportMarkdown() {

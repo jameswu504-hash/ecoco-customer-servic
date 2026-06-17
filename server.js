@@ -652,10 +652,15 @@ app.get('/api/stats', requireAdminKey, async (req, res) => {
 });
 
 const REPORT_CATEGORIES = [
+  { name: '無效訊息', keywords: ['hi', 'hello', '嗨', '哈囉', '你好', '測試', 'test'] },
+  { name: '合作商家', keywords: ['合作商家', '商家', '品牌', '漢堡王', '康是美', '全家', '萊爾富', '合作店家'] },
+  { name: '活動 / 任務', keywords: ['活動', '任務', '抽獎', '加碼', '優惠活動', '最近有什麼', '最近有甚麼'] },
   { name: '點數問題', keywords: ['點數', '補點', '入帳', '期限', '效期', '轉贈', '兌換點'] },
   { name: '優惠券 / 兌換', keywords: ['優惠券', '兌換', '抵用', '核銷', '條碼', '券'] },
   { name: 'APP / 帳號', keywords: ['App', 'APP', '帳號', '登入', '註冊', '驗證碼', '密碼', '手機號碼'] },
   { name: '機台 / 維修', keywords: ['機台', '故障', '紅燈', '藍燈', '滿袋', '退瓶', '卡住', '黑屏'] },
+  { name: '現場環境 / 清潔', keywords: ['垃圾', '髒', '髒亂', '清潔', '環境', '滿地', '旁邊都是', '異味'] },
+  { name: '站點建議', keywords: ['設點', '新增站點', '新竹設點', '可以在', '希望設', '建議設'] },
   { name: '站點 / 地點', keywords: ['站點', '地點', '門市', '據點', '營業時間', '康達盛通'] },
   { name: '回收規則', keywords: ['寶特瓶', '鋁罐', '電池', '瓶蓋', '膠膜', '壓扁', '回收物', '牛奶瓶'] },
   { name: '客訴 / 高風險', keywords: ['客訴', '投訴', '賠償', '退款', '黑名單', '停權', '個資'] },
@@ -678,10 +683,19 @@ function getReportRange(period) {
 
 function classifyQuestion(content) {
   const text = String(content || '');
+  const compact = text.replace(/\s+/g, '').toLowerCase();
+  if (!compact || ['hi', 'hello', '嗨', '哈囉', '你好', '測試', 'test'].includes(compact) || compact.length <= 2) {
+    return '無效訊息';
+  }
   const matched = REPORT_CATEGORIES.find(category =>
-    category.keywords.some(keyword => text.includes(keyword))
+    category.keywords.some(keyword => text.toLowerCase().includes(String(keyword).toLowerCase()))
   );
   return matched ? matched.name : '其他';
+}
+
+function makePreview(text, maxLength = 80) {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
 }
 
 function buildOperationsReportMarkdown(payload) {
@@ -692,9 +706,9 @@ function buildOperationsReportMarkdown(payload) {
   const gaps = payload.gapStatuses
     .map(item => `- ${item.statusLabel}：${item.count} 則`)
     .join('\n') || '- 本期無知識缺口';
-  const topQuestions = payload.topQuestions
-    .map((item, index) => `${index + 1}. ${item.preview}`)
-    .join('\n') || '本期無可列出的問題樣本';
+  const improvements = payload.optimizations
+    .map(item => `- ${item.label}：${item.count} ${item.unit}`)
+    .join('\n') || '- 本期無優化項目';
 
   return `# ECOCO AI 客服${title}
 
@@ -721,17 +735,14 @@ ${categories}
 ## 四、知識庫優化
 - 目前正式知識分類：${payload.knowledge.dbSections} 個
 - RAG 檢索片段：${payload.knowledge.ragChunks} 個
-- 已封存重複知識：${payload.knowledge.archivedDuplicates} 筆
 - active 重複問題組數：${payload.knowledge.activeDuplicateGroups} 組
 - 待確認衝突：${payload.knowledge.conflictsPendingReview} 筆
+${improvements}
 
 ## 五、知識缺口狀態
 ${gaps}
 
-## 六、代表問題樣本
-${topQuestions}
-
-## 七、下週建議
+## 六、下週建議
 - 優先補強高頻分類的 FAQ。
 - 檢查負評回覆是否需要補充知識庫或調整回覆策略。
 - 持續清理重複與衝突資料，避免 AI 回答不一致。
@@ -753,6 +764,7 @@ app.get('/api/reports/operations', requireAdminKey, async (req, res) => {
       ratingCounts,
       gapCounts,
       gapStatusCounts,
+      gapRowsResult,
       knowledgeCounts,
       chunkCounts,
     ] = await Promise.all([
@@ -798,6 +810,14 @@ app.get('/api/reports/operations', requireAdminKey, async (req, res) => {
          ORDER BY count DESC`,
         [startIso, endIso]
       ),
+      pool.query(
+        `SELECT id, question, reply, reason, status, note, timestamp
+         FROM unanswered_questions
+         WHERE timestamp >= $1 AND timestamp <= $2
+         ORDER BY timestamp DESC
+         LIMIT 200`,
+        [startIso, endIso]
+      ),
       pool.query('SELECT COUNT(*) AS count FROM knowledge_sections'),
       pool.query('SELECT COUNT(*) AS count FROM knowledge_chunks'),
     ]);
@@ -806,8 +826,39 @@ app.get('/api/reports/operations', requireAdminKey, async (req, res) => {
     const categories = {};
     for (const row of userMessages) {
       const category = classifyQuestion(row.content);
-      categories[category] = (categories[category] || 0) + 1;
+      if (!categories[category]) {
+        categories[category] = { category, count: 0, samples: [] };
+      }
+      categories[category].count += 1;
+      if (categories[category].samples.length < 8) {
+        categories[category].samples.push({
+          preview: makePreview(row.content),
+          timestamp: row.timestamp,
+        });
+      }
     }
+
+    const gapRowsByStatus = {};
+    for (const row of gapRowsResult.rows) {
+      const status = row.status || 'pending';
+      if (!gapRowsByStatus[status]) gapRowsByStatus[status] = [];
+      if (gapRowsByStatus[status].length < 8) {
+        gapRowsByStatus[status].push({
+          id: row.id,
+          preview: makePreview(row.question),
+          note: makePreview(row.note || row.reason || ''),
+          timestamp: row.timestamp,
+        });
+      }
+    }
+
+    const conflictItems = Array.isArray(auditPayload.conflicts_pending_review)
+      ? auditPayload.conflicts_pending_review.slice(0, 8).map(item => ({
+          preview: item.issue || '未命名衝突',
+          note: makePreview(item.recommended_resolution || item.observed_conflict || '', 120),
+          priority: item.priority || '',
+        }))
+      : [];
 
     const positive = Number(ratingCounts.rows[0].positive || 0);
     const negative = Number(ratingCounts.rows[0].negative || 0);
@@ -833,8 +884,7 @@ app.get('/api/reports/operations', requireAdminKey, async (req, res) => {
         negativeRatings: negative,
         satisfactionRate: ratingTotal > 0 ? Math.round((positive / ratingTotal) * 100) : 0,
       },
-      categories: Object.entries(categories)
-        .map(([category, count]) => ({ category, count }))
+      categories: Object.values(categories)
         .sort((a, b) => b.count - a.count),
       gapStatuses: gapStatusCounts.rows.map(row => ({
         status: row.status,
@@ -845,10 +895,7 @@ app.get('/api/reports/operations', requireAdminKey, async (req, res) => {
           manual: '需人工處理',
         }[row.status] || row.status,
         count: Number(row.count),
-      })),
-      topQuestions: userMessages.slice(0, 8).map(row => ({
-        preview: String(row.content || '').replace(/\s+/g, ' ').trim().slice(0, 80),
-        timestamp: row.timestamp,
+        samples: gapRowsByStatus[row.status] || [],
       })),
       knowledge: {
         dbSections: Number(knowledgeCounts.rows[0].count || 0),
@@ -858,6 +905,42 @@ app.get('/api/reports/operations', requireAdminKey, async (req, res) => {
         conflictsPendingReview: Number(auditPayload.summary?.conflicts_pending_review || 0),
       },
     };
+
+    payload.optimizations = [
+      {
+        key: 'resolved-gaps',
+        label: '已解決知識缺口',
+        count: payload.summary.resolvedGaps,
+        unit: '則',
+        samples: gapRowsByStatus.resolved || [],
+      },
+      {
+        key: 'manual-gaps',
+        label: '需人工處理',
+        count: payload.summary.manualGaps,
+        unit: '則',
+        samples: gapRowsByStatus.manual || [],
+      },
+      {
+        key: 'archived-duplicates',
+        label: '已封存重複知識',
+        count: payload.knowledge.archivedDuplicates,
+        unit: '筆',
+        samples: [
+          {
+            preview: '重複知識已在主資料庫標記 archived，不再進入 AI 回答知識庫。',
+            note: databasePayload.dedupe_applied?.method || '',
+          },
+        ],
+      },
+      {
+        key: 'pending-conflicts',
+        label: '待確認衝突',
+        count: payload.knowledge.conflictsPendingReview,
+        unit: '筆',
+        samples: conflictItems,
+      },
+    ];
 
     payload.reportMarkdown = buildOperationsReportMarkdown(payload);
     res.json(payload);
