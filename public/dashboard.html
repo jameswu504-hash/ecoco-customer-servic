@@ -350,6 +350,17 @@
       font-family:'Noto Sans TC',sans-serif;
     }
     .kb-export-btn:hover { background:var(--green-pale); }
+    .kb-export-note {
+      margin:-4px 0 12px;
+      padding:8px 10px;
+      border:1px solid #e0ede8;
+      border-radius:8px;
+      background:var(--green-ghost);
+      color:var(--gray-mid);
+      font-size:12px;
+      line-height:1.6;
+    }
+    .kb-export-note strong { color:var(--green-main); }
     .kb-layout { display:grid; grid-template-columns:240px 1fr; gap:16px; }
     .kb-sidebar {
       max-height:460px; overflow-y:auto;
@@ -673,6 +684,9 @@
         <button class="kb-export-btn" onclick="exportKnowledgeJson()">下載 JSON</button>
         <button class="kb-add-btn" onclick="newSection()">＋ 新增分類</button>
       </div>
+    </div>
+    <div class="kb-export-note">
+      <strong>提醒：</strong>下載 JSON 只會把目前 PostgreSQL 知識庫存成檔案，不會自動寫回 GitHub。要成為正式版本，仍需人工檢查後 commit / push。
     </div>
     <div class="kb-layout">
       <div class="kb-sidebar">
