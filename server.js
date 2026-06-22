@@ -65,14 +65,14 @@ async function initDb() {
 
 // ── 知識庫：用記憶體快取，避免每次對話都查 DB ──────────────
 function getKnowledgeAutoSyncMode() {
-  const rawMode = String(process.env.KNOWLEDGE_AUTO_SYNC || 'enabled').trim().toLowerCase();
+  const rawMode = String(process.env.KNOWLEDGE_AUTO_SYNC || 'disable').trim().toLowerCase();
   if (rawMode === 'disable') return 'disable';
   if (rawMode === 'replace') return 'replace';
   if (rawMode === 'upsert') return 'upsert';
   if (rawMode === 'insert_only') return 'insert_only';
 
-  // Keep Render dashboard edits persistent by default.
-  return 'insert_only';
+  // Default to dashboard/PostgreSQL as the daily source of truth.
+  return 'disable';
 }
 
 async function syncKnowledgeFromImportFile() {

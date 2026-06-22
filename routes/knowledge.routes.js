@@ -49,7 +49,7 @@ function createKnowledgeRouter({
         ragChunkCount: Number(chunkCounts[0].chunk_count),
         dbContentChars: Number(dbCounts[0].content_chars),
         latestDbUpdate: latestRows[0].latest_update || '',
-        autoSyncMode: process.env.KNOWLEDGE_AUTO_SYNC || 'enabled',
+        autoSyncMode: process.env.KNOWLEDGE_AUTO_SYNC || 'disable',
         effectiveAutoSyncMode: getKnowledgeAutoSyncMode(),
         model: process.env.ANTHROPIC_MODEL || defaultAnthropicModel,
         counts: summary.counts || {},

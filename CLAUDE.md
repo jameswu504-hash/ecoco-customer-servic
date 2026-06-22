@@ -20,7 +20,7 @@ npm run import:knowledge    # 把 ecoco-knowledge-import.json 匯入 PostgreSQL
 ANTHROPIC_API_KEY=...
 ADMIN_KEY=...
 DATABASE_URL=postgresql://...
-KNOWLEDGE_AUTO_SYNC=insert_only   # 見下方說明
+KNOWLEDGE_AUTO_SYNC=disable       # 日常維護只用後台 PostgreSQL；大改版才匯出 JSON 回 Git
 # PGSSL=disable                   # Render 內部連線時啟用
 ```
 
@@ -64,10 +64,10 @@ KNOWLEDGE_AUTO_SYNC=insert_only   # 見下方說明
 
 | 模式 | 行為 |
 |---|---|
-| `insert_only`（預設） | 只新增 Git JSON 裡沒有的分類，保留後台編輯 |
+| `disable`（預設） | 不同步 Git JSON；日常以後台 PostgreSQL 為準 |
+| `insert_only` | 只新增 Git JSON 裡沒有的分類，保留後台編輯 |
 | `upsert` | 新增 + 更新已存在的分類 |
 | `replace` | 清空 PostgreSQL 知識，完整以 Git JSON 取代 |
-| `disable` | 不同步，PostgreSQL 完全由後台維護 |
 
 ### Admin 保護
 

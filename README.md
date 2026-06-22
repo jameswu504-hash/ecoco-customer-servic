@@ -143,6 +143,8 @@ npm run import:knowledge -- data/ecoco-knowledge-import.json --replace
 
 後台修改若要整理回 Git JSON，可用 Admin API `GET /api/knowledge/export` 匯出 PostgreSQL 目前知識庫，再人工檢查後回寫到 `data/ecoco-knowledge-import.json`。
 
+目前建議的簡易維護模式是：日常只在後台修改知識庫，Render 設定 `KNOWLEDGE_AUTO_SYNC=disable`。大改版、交接或備份前，記得從後台下載 JSON，人工確認後放回 GitHub 並 commit / push。
+
 ## 專案結構
 
 ```text

@@ -686,7 +686,7 @@
       </div>
     </div>
     <div class="kb-export-note">
-      <strong>提醒：</strong>下載 JSON 只會把目前 PostgreSQL 知識庫存成檔案，不會自動寫回 GitHub。要成為正式版本，仍需人工檢查後 commit / push。
+      <strong>提醒：</strong>下載 JSON 只會把目前 PostgreSQL 知識庫存成檔案，不會自動寫回 GitHub。大改版、交接或備份前，請下載 JSON，人工確認後放回 GitHub 並 commit / push。
     </div>
     <div class="kb-layout">
       <div class="kb-sidebar">
@@ -1398,7 +1398,7 @@ async function loadKnowledgeOverview() {
         <div class="overview-label">待確認衝突</div>
       </div>
       <div class="overview-metric">
-        <div class="overview-value">${escapeHtml(data.effectiveAutoSyncMode || data.autoSyncMode || 'insert_only')}</div>
+        <div class="overview-value">${escapeHtml(data.effectiveAutoSyncMode || data.autoSyncMode || 'disable')}</div>
         <div class="overview-label">知識同步模式</div>
       </div>
     </div>

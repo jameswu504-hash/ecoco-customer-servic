@@ -38,7 +38,7 @@ npm start
 
 | 值 | 行為 |
 | --- | --- |
-| 未設定或 `enabled` | 安全模式，等同 `insert_only`：只新增 Git JSON 裡有、PostgreSQL 尚未存在的分類，不覆寫同名分類 |
+| 未設定或 `disable` | 簡易維護模式：不自動同步 Git JSON，日常以後台 PostgreSQL 為準 |
 | `insert_only` | 只新增缺少的分類，不覆寫後台已編輯的分類 |
 | `upsert` | 讀取 `data/ecoco-knowledge-import.json`，更新同名分類並新增新分類，會覆寫後台同名分類 |
 | `disable` | 不自動同步 Git 裡的知識 JSON |
@@ -46,7 +46,8 @@ npm start
 
 一般建議：
 
-- 平常使用 `enabled` 或 `insert_only`，讓後台新增/修改資料可以保留。
+- 平常使用 `disable`，讓客服只需要在後台維護 PostgreSQL。
+- 大改版、交接或備份時，才從後台下載 JSON，人工確認後放回 GitHub。
 - 只有確認要用 Git JSON 覆蓋同名分類時，才用 `upsert`。
 - 若後台是唯一主要編輯入口，可用 `disable` 完全停止開機同步。
 - 只有確認要以 Git 資料為唯一正式版本時，才用 `replace`。

@@ -48,16 +48,28 @@ npm run import:knowledge
 npm run import:knowledge -- data/ecoco-knowledge-import.json --replace
 ```
 
+## 目前建議的簡易維護模式
+
+日常知識庫維護以後台 PostgreSQL 為準，Render 建議設定：
+
+```bash
+KNOWLEDGE_AUTO_SYNC=disable
+```
+
+這代表伺服器重開時，不會拿 Git 裡的 `data/ecoco-knowledge-import.json` 覆蓋或同步 PostgreSQL。
+
+平常客服或維護者只需要在後台新增、修改、刪除知識；只有大改版、交接或備份時，才從後台下載 JSON，人工確認後再放回 GitHub。
+
 ## 線上自動同步
 
-後端啟動時會自動讀取 `data/ecoco-knowledge-import.json`，並同步到 PostgreSQL 的 `knowledge_sections`。目前預設安全模式為 `enabled`，實際行為等同 `insert_only`：只新增 Git JSON 裡有、PostgreSQL 尚未存在的分類，不覆寫後台已編輯的同名分類。因此在 Render 這類會自動部署 GitHub main 分支的環境中，流程會變成：
+後端啟動時預設不會同步 `data/ecoco-knowledge-import.json` 到 PostgreSQL。若真的要讓 Git JSON 影響線上資料，需明確設定 `KNOWLEDGE_AUTO_SYNC`。因此在 Render 這類會自動部署 GitHub main 分支的環境中，建議流程是：
 
 1. 更新 AI 客服資料。
 2. 執行 `npm run audit:knowledge` 檢查 active 重複。
 3. 執行 `npm run apply:knowledge-audit` 封存建議剔除的重複資料。
 4. 執行 `npm run build:knowledge` 重產匯入 JSON。
 5. Commit 並 push 到 GitHub。
-6. Render 重新部署後，server 啟動時自動補入 PostgreSQL 缺少的知識分類。
+6. Render 重新部署後，server 啟動時不會自動覆蓋 PostgreSQL；若要更新 DB，請走後台或手動匯入。
 
 如果未來想改成只在後台手動編輯知識庫，不希望每次部署都同步 Git 資料，可在環境變數設定：
 
