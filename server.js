@@ -5,6 +5,7 @@ const path      = require('path');
 const fs        = require('fs');
 const { Pool }  = require('pg');
 const rateLimit = require('express-rate-limit');
+const helmet    = require('helmet');
 const { SCHEMA } = require('./db/schema');
 const { requireAdminKey } = require('./middleware/admin-auth');
 const { createDashboardRouter } = require('./routes/dashboard.routes');
@@ -19,6 +20,11 @@ const {
 } = require('./config/rag-config');
 
 const app = express();
+app.set('trust proxy', 1);
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+}));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -257,21 +263,19 @@ function buildChunksFromSection(section) {
 }
 
 async function rebuildKnowledgeChunks() {
-  const { rows } = await pool.query(
-    "SELECT id, category, content, sort_order, updated_at FROM knowledge_sections WHERE COALESCE(archived_at, '') = '' ORDER BY sort_order ASC, id ASC"
-  );
+  const db = await pool.connect();
+  try {
+    await db.query('BEGIN');
+    const { rows } = await db.query(
+      "SELECT id, category, content, sort_order, updated_at FROM knowledge_sections WHERE COALESCE(archived_at, '') = '' ORDER BY sort_order ASC, id ASC"
+    );
 
-  await pool.query('DELETE FROM knowledge_chunks');
-  const now = new Date().toISOString();
-  let sortOrder = 0;
-  let count = 0;
-  for (const section of rows) {
-    for (const chunk of buildChunksFromSection(section)) {
-      await pool.query(
-        `INSERT INTO knowledge_chunks
-          (section_id, category, title, content, search_text, sort_order, source_updated_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [
+    const now = new Date().toISOString();
+    let sortOrder = 0;
+    const insertRows = [];
+    for (const section of rows) {
+      for (const chunk of buildChunksFromSection(section)) {
+        insertRows.push([
           chunk.sectionId,
           chunk.category,
           chunk.title,
@@ -280,12 +284,36 @@ async function rebuildKnowledgeChunks() {
           sortOrder++,
           chunk.sourceUpdatedAt,
           now,
-        ]
-      );
-      count++;
+        ]);
+      }
     }
+
+    await db.query('DELETE FROM knowledge_chunks');
+    const batchSize = 400;
+    for (let i = 0; i < insertRows.length; i += batchSize) {
+      const batch = insertRows.slice(i, i + batchSize);
+      const values = [];
+      const placeholders = batch.map((row, rowIndex) => {
+        const base = rowIndex * 8;
+        values.push(...row);
+        return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8})`;
+      });
+      await db.query(
+        `INSERT INTO knowledge_chunks
+          (section_id, category, title, content, search_text, sort_order, source_updated_at, updated_at)
+         VALUES ${placeholders.join(', ')}`,
+        values
+      );
+    }
+
+    await db.query('COMMIT');
+    console.log(`Knowledge chunks rebuilt: ${insertRows.length} chunks`);
+  } catch (err) {
+    await db.query('ROLLBACK');
+    throw err;
+  } finally {
+    db.release();
   }
-  console.log(`Knowledge chunks rebuilt: ${count} chunks`);
 }
 
 function buildSearchTerms(question) {
@@ -364,7 +392,7 @@ async function retrieveKnowledgeForQuestion(question) {
 }
 
 let knowledgeCache = '';
-const DEFAULT_ANTHROPIC_MODEL = 'claude-opus-4-7';
+const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
 const KNOWLEDGE_GAP_MARKERS = [
   '沒有確切資料',
   '沒有明確答案',

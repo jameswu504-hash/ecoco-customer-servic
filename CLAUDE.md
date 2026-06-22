@@ -51,9 +51,9 @@ KNOWLEDGE_AUTO_SYNC=disable       # 日常維護只用後台 PostgreSQL；大改
 ### RAG 流程
 
 `/api/chat` 收到問題後：
-1. 對 `knowledge_chunks` 做 PostgreSQL 全文搜尋，取前 8 筆相關片段
+1. 對 `knowledge_chunks` 做 PostgreSQL 關鍵字與同義詞檢索，取前 8 筆相關片段
 2. 把片段嵌入 system prompt（標記 `cache_control: ephemeral` 啟用 prompt caching）
-3. 呼叫 Claude（`claude-opus-4-7`，`max_tokens: 1024`）
+3. 呼叫 Claude（`claude-sonnet-4-6`，`max_tokens: 1024`）
 
 `knowledge_chunks` 是從 `knowledge_sections` 自動切分的衍生資料，**不要手動編輯**。每次後台修改分類或伺服器重啟都會重建。
 
