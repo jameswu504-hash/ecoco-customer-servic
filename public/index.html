@@ -4,562 +4,1081 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ECOCO 智慧客服</title>
-  <!-- Markdown 渲染 + XSS 防護 -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --ecoco-orange:#FF5000;
-      --ecoco-blue:  #060E9F;
-      --ecoco-yellow:#FFCE00;
-      --ecoco-sky:   #8EB9C9;
-      --ecoco-beige: #FAE0B8;
-      --ecoco-teal:  #0076A9;
-      --ink:         #20242c;
-      --gray-dark:   #303642;
-      --gray-mid:    #6d7480;
-      --gray-light:  #c9d4dc;
-      --white:       #ffffff;
-      --bg:          #f7f8fb;
-      --bubble-user: #060E9F;
-      --bubble-bot:  #ffffff;
-      --radius-lg:   8px;
-      --radius-md:   8px;
-      --radius-sm:   8px;
-      --shadow:      0 12px 30px rgba(6,14,159,0.10);
-      --shadow-sm:   0 3px 12px rgba(6,14,159,0.08);
+      --ecoco-orange: #ff5000;
+      --ecoco-blue: #060e9f;
+      --ecoco-yellow: #ffce00;
+      --ecoco-sky: #8eb9c9;
+      --ecoco-teal: #0076a9;
+      --ink: #172033;
+      --muted: #667085;
+      --line: #dbe4ef;
+      --panel: #ffffff;
+      --page: #f4f7fb;
+      --soft-yellow: #fff6cf;
+      --soft-orange: #fff0e8;
+      --radius: 8px;
+      --shadow: 0 18px 44px rgba(6, 14, 159, 0.14);
+      --shadow-sm: 0 8px 24px rgba(6, 14, 159, 0.10);
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: 'Noto Sans TC', sans-serif;
-      background: var(--bg);
-      color: var(--ink);
+      min-height: 100vh;
       height: 100vh;
-      display: flex;
-      flex-direction: column;
       overflow: hidden;
+      background: var(--page);
+      color: var(--ink);
+      font-family: "Noto Sans TC", sans-serif;
+      letter-spacing: 0;
     }
 
-    /* ── Header ── */
-    .header {
+    button,
+    textarea {
+      font: inherit;
+    }
+
+    .app-shell {
+      min-height: 100vh;
+      height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    .topbar {
       background: var(--ecoco-blue);
-      padding: 0 24px;
-      height: 68px;
+      border-top: 6px solid var(--ecoco-orange);
+      color: #fff;
+      box-shadow: 0 6px 22px rgba(6, 14, 159, 0.22);
+      z-index: 3;
+    }
+
+    .topbar-inner {
+      width: min(1180px, calc(100vw - 32px));
+      min-height: 74px;
+      margin: 0 auto;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      flex-shrink: 0;
-      box-shadow: 0 2px 18px rgba(6,14,159,0.26);
-      border-top: 6px solid var(--ecoco-orange);
+      gap: 20px;
+      padding: 10px 0;
     }
-    .header-left { display: flex; align-items: center; gap: 12px; }
-    .logo-icon {
-      width: 150px; height: 48px;
-      flex-shrink: 0;
-      display: block;
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .brand-logo {
+      width: 154px;
+      height: 50px;
       object-fit: contain;
-      background: var(--white);
-      border-radius: 8px;
-      padding: 4px 6px;
-    }
-    .header-title { color: var(--white); font-size: 13px; font-weight: 700; margin-top: 3px; }
-    .header-sub { color: var(--ecoco-yellow); font-size: 11px; font-family: 'Space Mono', monospace; margin-top: 1px; }
-    .status-dot {
-      width: 8px; height: 8px;
-      background: var(--ecoco-yellow); border-radius: 50%;
-      animation: pulse 2s infinite; flex-shrink: 0;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.6; transform: scale(1.2); }
-    }
-    .header-right { display: flex; align-items: center; gap: 8px; color: var(--ecoco-yellow); font-size: 12px; font-family: 'Space Mono', monospace; }
-
-    /* ── 快速問題列 ── */
-    .quick-bar {
-      background: var(--white); border-bottom: 1px solid #dfe6ee;
-      padding: 10px 16px; display: flex; gap: 8px;
-      overflow-x: auto; flex-shrink: 0; scrollbar-width: none;
-    }
-    .quick-bar::-webkit-scrollbar { display: none; }
-    .quick-chip {
-      flex-shrink: 0; padding: 6px 14px; border-radius: 20px;
-      border: 1.5px solid var(--ecoco-blue); color: var(--ecoco-blue);
-      font-size: 12px; font-weight: 500; cursor: pointer;
-      background: transparent; transition: all 0.18s; white-space: nowrap;
-      font-family: 'Noto Sans TC', sans-serif;
-    }
-    .quick-chip:hover { background: var(--ecoco-yellow); color: var(--ecoco-blue); border-color: var(--ecoco-yellow); }
-
-    /* ── 訊息區 ── */
-    .messages {
-      flex: 1; overflow-y: auto; padding: 20px 16px;
-      display: flex; flex-direction: column; gap: 16px; scroll-behavior: smooth;
-    }
-    .messages::-webkit-scrollbar { width: 4px; }
-    .messages::-webkit-scrollbar-track { background: transparent; }
-    .messages::-webkit-scrollbar-thumb { background: var(--gray-light); border-radius: 4px; }
-
-    /* ── 訊息泡泡 ── */
-    .msg-row { display: flex; gap: 10px; align-items: flex-end; }
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(10px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    .msg-row.user { flex-direction: row-reverse; }
-    .avatar {
-      width: 32px; height: 32px; border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 15px; flex-shrink: 0;
-    }
-    .avatar.bot  {
-      background: var(--white);
-      border: 1px solid #ffd0bf;
-      overflow: hidden;
-      box-shadow: var(--shadow-sm);
-    }
-    .avatar.bot img { width: 100%; height: 100%; object-fit: cover; display:block; }
-    .avatar.user { background: var(--ecoco-blue); color: var(--white); }
-    .bubble {
-      max-width: 72%; padding: 12px 16px; border-radius: var(--radius-lg);
-      font-size: 14px; line-height: 1.65; box-shadow: var(--shadow-sm);
-    }
-    .bubble.bot  { background: var(--bubble-bot); color: var(--ink); border-bottom-left-radius: 4px; border: 1px solid #dfe6ee; }
-    .bubble.user { background: var(--bubble-user); color: var(--white); border-bottom-right-radius: 4px; }
-    .bubble-time { font-size: 10px; color: var(--gray-mid); margin-top: 4px; font-family: 'Space Mono', monospace; }
-    .msg-row.user .bubble-time { text-align: right; }
-
-    /* ── 打字動畫 ── */
-    .typing-indicator { display: flex; gap: 4px; align-items: center; padding: 14px 16px; }
-    .typing-dot { width: 7px; height: 7px; background: var(--ecoco-orange); border-radius: 50%; animation: typing 1.2s infinite; }
-    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
-    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
-    @keyframes typing {
-      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-      30% { transform: translateY(-6px); opacity: 1; }
+      background: #fff;
+      border-radius: var(--radius);
+      padding: 5px 8px;
+      flex: 0 0 auto;
     }
 
-    /* ── 來源標籤 ── */
-    .source-tag {
-      display: inline-block; margin-top: 8px; padding: 3px 10px;
-      background: #fff7de; border: 1px solid var(--ecoco-yellow);
-      border-radius: 12px; font-size: 11px; color: var(--ecoco-blue);
-      font-family: 'Space Mono', monospace;
+    .brand-copy {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
     }
-    .source-detail {
-      margin-top: 8px; border: 1px solid #dfe6ee; border-radius: 8px;
-      background: #fffdf6; overflow: hidden; max-width: 100%;
-    }
-    .source-detail summary {
-      cursor: pointer; padding: 6px 10px; font-size: 11px; color: var(--ecoco-blue);
-      font-weight: 700; list-style: none; user-select: none;
-    }
-    .source-detail summary::-webkit-details-marker { display: none; }
-    .source-detail summary::after { content: ' ▼'; font-size: 10px; color: var(--gray-mid); }
-    .source-detail[open] summary::after { content: ' ▲'; }
-    .source-list {
-      display: flex; flex-direction: column; gap: 6px; padding: 0 10px 8px;
-      font-size: 11px; color: var(--gray-mid);
-    }
-    .source-item {
-      padding: 6px 8px; border-radius: 6px; background: var(--white);
-      border: 1px solid #edf1f5; line-height: 1.5; overflow-wrap: anywhere;
-    }
-    .source-item strong { color: var(--ecoco-blue); }
 
-    /* ── 優化二：評分按鈕 ── */
-    .rating-bar { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
-    .rating-btn {
-      background: none; border: 1.5px solid var(--gray-light);
-      border-radius: 20px; padding: 3px 12px; font-size: 12px;
-      cursor: pointer; color: var(--gray-mid); transition: all 0.18s;
-      font-family: 'Noto Sans TC', sans-serif;
+    .brand-title {
+      font-size: 15px;
+      font-weight: 900;
+      line-height: 1.25;
+      white-space: nowrap;
     }
-    .rating-btn:hover { border-color: var(--ecoco-orange); color: var(--ecoco-orange); }
-    .rating-btn.selected { background: #fff7de; border-color: var(--ecoco-yellow); color: var(--ecoco-blue); }
-    .rating-text { font-size: 11px; color: var(--gray-mid); font-family: 'Space Mono', monospace; }
 
-    /* ── 優化三：客服聯絡按鈕 ── */
-    .contact-btn {
-      display: inline-flex; align-items: center; gap: 6px;
-      margin-top: 10px; padding: 8px 16px;
-      background: var(--ecoco-blue); color: white;
-      border: none; border-radius: 20px; font-size: 12px;
-      font-family: 'Noto Sans TC', sans-serif; cursor: pointer;
-      text-decoration: none; transition: background 0.18s;
+    .brand-subtitle {
+      color: var(--ecoco-yellow);
+      font-family: "Space Mono", monospace;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.3;
     }
-    .contact-btn:hover { background: var(--ecoco-orange); }
 
-    /* ── 優化四：Markdown 樣式 ── */
-    .bubble.bot table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
-    .bubble.bot th,
-    .bubble.bot td { border: 1px solid #dfe6ee; padding: 6px 10px; text-align: left; }
-    .bubble.bot th { background: #fff7de; color: var(--ecoco-blue); font-weight: 500; }
-    .bubble.bot ul,
-    .bubble.bot ol { padding-left: 18px; margin: 6px 0; }
-    .bubble.bot li { margin: 3px 0; }
-    .bubble.bot strong { color: var(--ecoco-blue); font-weight: 700; }
-    .bubble.bot code { background: #fff7de; padding: 1px 6px; border-radius: 4px; font-size: 12px; font-family: 'Space Mono', monospace; }
-    .bubble.bot p { margin: 4px 0; }
-    .bubble.bot h1, .bubble.bot h2, .bubble.bot h3 { font-size: 14px; margin: 6px 0 4px; color: var(--ecoco-blue); }
+    .service-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border: 1px solid rgba(255,255,255,0.28);
+      border-radius: 999px;
+      color: var(--ecoco-yellow);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
 
-    /* ── 輸入區 ── */
-    .input-area {
-      background: var(--white); border-top: 1px solid #dfe6ee;
-      padding: 12px 16px; display: flex; gap: 10px; align-items: flex-end; flex-shrink: 0;
-    }
-    .input-box {
-      flex: 1; border: 1.5px solid #c7d4e2; border-radius: var(--radius-md);
-      padding: 11px 16px; font-size: 14px; font-family: 'Noto Sans TC', sans-serif;
-      resize: none; outline: none; line-height: 1.5;
-      max-height: 120px; overflow-y: auto; transition: border-color 0.2s;
-      color: var(--ink); background: var(--bg);
-    }
-    .input-box:focus { border-color: var(--ecoco-orange); background: var(--white); }
-    .input-box::placeholder { color: var(--gray-mid); }
-    .send-btn {
-      width: 44px; height: 44px; background: var(--ecoco-orange); border: none;
-      border-radius: var(--radius-md); cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0; transition: all 0.18s;
-    }
-    .send-btn:hover { background: var(--ecoco-blue); transform: scale(1.05); }
-    .send-btn:active { transform: scale(0.97); }
-    .send-btn:disabled { background: var(--gray-light); cursor: not-allowed; transform: none; }
-    .send-btn svg { width: 18px; height: 18px; fill: white; }
-
-    /* ── 歡迎卡片 ── */
-    .welcome-card {
-      background: var(--ecoco-blue);
-      border-radius: var(--radius-lg); padding: 20px;
-      color: white; text-align: center; margin: 8px 0 4px;
-      border-top: 6px solid var(--ecoco-orange);
-      position: relative;
-      overflow: hidden;
-    }
-    .welcome-card::after {
-      content: "";
-      position: absolute;
-      right: -34px; top: 16px;
-      width: 110px; height: 110px;
+    .status-light {
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
       background: var(--ecoco-yellow);
-      opacity: 0.9;
+      box-shadow: 0 0 0 5px rgba(255, 206, 0, 0.18);
     }
-    .welcome-card .emoji {
-      width: 54px; height: 54px; margin: 0 auto 10px;
-      position: relative; z-index: 1;
-      display:block;
-      object-fit: contain;
-    }
-    .welcome-card h2 { font-size: 16px; font-weight: 700; margin-bottom: 6px; position: relative; z-index: 1; }
-    .welcome-card p { font-size: 13px; opacity: 0.9; line-height: 1.6; position: relative; z-index: 1; }
 
-    /* ── 底部提示 ── */
+    .main {
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    .quick-area {
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .quick-inner {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 0 auto;
+      display: flex;
+      gap: 8px;
+      padding: 12px 0;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .quick-inner::-webkit-scrollbar { display: none; }
+
+    .quick-chip {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      min-height: 36px;
+      padding: 8px 14px;
+      border: 1.5px solid var(--ecoco-blue);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--ecoco-blue);
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform .16s ease, background .16s ease, border-color .16s ease;
+      white-space: nowrap;
+    }
+
+    .quick-chip:hover {
+      transform: translateY(-1px);
+      background: var(--ecoco-yellow);
+      border-color: var(--ecoco-yellow);
+    }
+
+    .workspace {
+      width: min(1180px, calc(100vw - 32px));
+      min-height: 0;
+      margin: 18px auto;
+      display: grid;
+      grid-template-columns: 340px minmax(0, 1fr);
+      gap: 18px;
+    }
+
+    .brand-panel {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 14px;
+    }
+
+    .hero-card {
+      position: relative;
+      overflow: hidden;
+      background: var(--ecoco-blue);
+      color: #fff;
+      border-radius: var(--radius);
+      border-top: 6px solid var(--ecoco-orange);
+      padding: 24px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .hero-card::before {
+      content: "";
+      position: absolute;
+      inset: auto 0 0 0;
+      height: 12px;
+      background: repeating-linear-gradient(
+        90deg,
+        var(--ecoco-orange) 0 28px,
+        var(--ecoco-yellow) 28px 42px,
+        transparent 42px 54px
+      );
+      opacity: .95;
+    }
+
+    .hero-mark-badge {
+      width: 72px;
+      height: 72px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 18px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 12px 20px rgba(0,0,0,.18);
+      border: 3px solid rgba(255,255,255,.72);
+    }
+
+    .hero-mark {
+      width: 58px;
+      height: 58px;
+      object-fit: contain;
+      display: block;
+    }
+
+    .hero-card h1 {
+      font-size: 24px;
+      line-height: 1.25;
+      font-weight: 900;
+      margin-bottom: 10px;
+    }
+
+    .hero-card p {
+      color: rgba(255,255,255,.9);
+      font-size: 14px;
+      line-height: 1.75;
+    }
+
+    .hero-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+      padding-bottom: 8px;
+    }
+
+    .hero-tag {
+      border-radius: 999px;
+      background: rgba(255,255,255,.12);
+      border: 1px solid rgba(255,255,255,.25);
+      padding: 6px 10px;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .tip-card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-sm);
+      padding: 18px;
+      overflow: auto;
+    }
+
+    .tip-title {
+      color: var(--ecoco-blue);
+      font-size: 14px;
+      font-weight: 900;
+      margin-bottom: 12px;
+    }
+
+    .tip-list {
+      display: grid;
+      gap: 10px;
+      list-style: none;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .tip-list li {
+      padding-left: 12px;
+      border-left: 4px solid var(--ecoco-yellow);
+    }
+
+    .chat-panel {
+      min-width: 0;
+      min-height: 0;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    .chat-head {
+      min-height: 62px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .chat-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .chat-title img {
+      width: 38px;
+      height: 38px;
+      object-fit: contain;
+      flex: 0 0 auto;
+    }
+
+    .chat-title strong {
+      display: block;
+      color: var(--ecoco-blue);
+      font-size: 16px;
+      font-weight: 900;
+      line-height: 1.25;
+    }
+
+    .chat-title span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .chat-badge {
+      background: var(--soft-yellow);
+      border: 1px solid var(--ecoco-yellow);
+      color: var(--ecoco-blue);
+      border-radius: 999px;
+      padding: 7px 11px;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .messages {
+      min-height: 0;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background:
+        linear-gradient(180deg, rgba(142,185,201,.14), transparent 180px),
+        #f8fbff;
+      scroll-behavior: smooth;
+    }
+
+    .messages::-webkit-scrollbar { width: 8px; }
+    .messages::-webkit-scrollbar-track { background: transparent; }
+    .messages::-webkit-scrollbar-thumb { background: #c8d6e4; border-radius: 999px; }
+
+    .msg-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+      animation: fadeUp .2s ease;
+    }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .msg-row.user { flex-direction: row-reverse; }
+
+    .avatar {
+      width: 34px;
+      height: 34px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .avatar.bot {
+      background: #fff;
+      border: 1px solid #ffd0bf;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .avatar.bot img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      padding: 3px;
+    }
+
+    .avatar.user {
+      background: var(--ecoco-blue);
+      color: #fff;
+    }
+
+    .message-stack {
+      min-width: 0;
+      max-width: min(640px, 82%);
+    }
+
+    .msg-row.user .message-stack {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+    }
+
+    .bubble {
+      border-radius: var(--radius);
+      padding: 13px 15px;
+      font-size: 14px;
+      line-height: 1.75;
+      box-shadow: var(--shadow-sm);
+      overflow-wrap: anywhere;
+    }
+
+    .bubble.bot {
+      background: #fff;
+      color: var(--ink);
+      border: 1px solid #dfe8f2;
+      border-bottom-left-radius: 4px;
+    }
+
+    .bubble.user {
+      background: var(--ecoco-blue);
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+
+    .bubble-time {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 11px;
+      font-family: "Space Mono", monospace;
+    }
+
+    .typing-indicator {
+      display: flex;
+      gap: 5px;
+      align-items: center;
+      padding: 3px 2px;
+    }
+
+    .typing-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--ecoco-orange);
+      animation: typing 1.2s infinite;
+    }
+
+    .typing-dot:nth-child(2) { animation-delay: .18s; }
+    .typing-dot:nth-child(3) { animation-delay: .36s; }
+
+    @keyframes typing {
+      0%, 60%, 100% { transform: translateY(0); opacity: .35; }
+      30% { transform: translateY(-5px); opacity: 1; }
+    }
+
+    .source-tag {
+      display: inline-flex;
+      margin-top: 8px;
+      padding: 4px 9px;
+      background: var(--soft-yellow);
+      border: 1px solid var(--ecoco-yellow);
+      border-radius: 999px;
+      color: var(--ecoco-blue);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .source-detail {
+      margin-top: 8px;
+      border: 1px solid #dfe8f2;
+      border-radius: var(--radius);
+      background: #fffdf5;
+      overflow: hidden;
+    }
+
+    .source-detail summary {
+      cursor: pointer;
+      padding: 8px 10px;
+      color: var(--ecoco-blue);
+      font-size: 12px;
+      font-weight: 900;
+      list-style: none;
+      user-select: none;
+    }
+
+    .source-detail summary::-webkit-details-marker { display: none; }
+    .source-detail summary::after {
+      content: " 展開";
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .source-detail[open] summary::after { content: " 收起"; }
+
+    .source-list {
+      display: grid;
+      gap: 7px;
+      padding: 0 10px 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .source-item {
+      background: #fff;
+      border: 1px solid #edf2f7;
+      border-radius: 6px;
+      padding: 7px 8px;
+      line-height: 1.5;
+    }
+
+    .source-item strong { color: var(--ecoco-blue); }
+
+    .rating-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 9px;
+      flex-wrap: wrap;
+    }
+
+    .rating-btn {
+      border: 1.5px solid #cbd6e4;
+      border-radius: 999px;
+      background: #fff;
+      color: var(--muted);
+      padding: 5px 11px;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: border-color .16s ease, color .16s ease, background .16s ease;
+    }
+
+    .rating-btn:hover {
+      border-color: var(--ecoco-orange);
+      color: var(--ecoco-orange);
+    }
+
+    .rating-btn.selected {
+      background: var(--soft-yellow);
+      border-color: var(--ecoco-yellow);
+      color: var(--ecoco-blue);
+    }
+
+    .rating-text {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .contact-btn {
+      display: inline-flex;
+      align-items: center;
+      margin-top: 10px;
+      padding: 9px 13px;
+      background: var(--ecoco-blue);
+      color: #fff;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 900;
+      text-decoration: none;
+    }
+
+    .contact-btn:hover { background: var(--ecoco-orange); }
+
+    .bubble.bot table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+    .bubble.bot th,
+    .bubble.bot td { border: 1px solid #dfe8f2; padding: 7px 9px; text-align: left; }
+    .bubble.bot th { background: var(--soft-yellow); color: var(--ecoco-blue); font-weight: 800; }
+    .bubble.bot ul,
+    .bubble.bot ol { padding-left: 18px; margin: 7px 0; }
+    .bubble.bot li { margin: 3px 0; }
+    .bubble.bot strong { color: var(--ecoco-blue); font-weight: 900; }
+    .bubble.bot code { background: var(--soft-yellow); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+    .bubble.bot p { margin: 4px 0; }
+    .bubble.bot h1,
+    .bubble.bot h2,
+    .bubble.bot h3 { color: var(--ecoco-blue); font-size: 15px; margin: 6px 0 4px; }
+
+    .input-area {
+      border-top: 1px solid var(--line);
+      background: #fff;
+      padding: 14px 16px;
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+    }
+
+    .input-box {
+      min-height: 46px;
+      max-height: 128px;
+      flex: 1;
+      resize: none;
+      overflow-y: auto;
+      border: 1.5px solid #c8d6e4;
+      border-radius: var(--radius);
+      background: #f7faff;
+      color: var(--ink);
+      padding: 12px 14px;
+      outline: none;
+      line-height: 1.5;
+      font-size: 14px;
+      transition: background .16s ease, border-color .16s ease;
+    }
+
+    .input-box:focus {
+      background: #fff;
+      border-color: var(--ecoco-orange);
+    }
+
+    .input-box::placeholder { color: #8b98aa; }
+
+    .send-btn {
+      min-width: 68px;
+      height: 46px;
+      border: 0;
+      border-radius: var(--radius);
+      background: var(--ecoco-orange);
+      color: #fff;
+      font-weight: 900;
+      cursor: pointer;
+      transition: transform .16s ease, background .16s ease;
+    }
+
+    .send-btn:hover {
+      transform: translateY(-1px);
+      background: var(--ecoco-blue);
+    }
+
+    .send-btn:active { transform: translateY(0); }
+    .send-btn:disabled {
+      background: #b8c4d2;
+      cursor: not-allowed;
+      transform: none;
+    }
+
     .footer-hint {
-      text-align: center; font-size: 11px; color: var(--gray-mid);
-      padding: 6px 16px 10px; flex-shrink: 0; font-family: 'Space Mono', monospace;
+      padding: 7px 16px 10px;
+      text-align: center;
+      color: var(--muted);
+      background: #fff;
+      border-top: 1px solid var(--line);
+      font-size: 11px;
+    }
+
+    @media (max-width: 900px) {
+      body { overflow: auto; height: auto; }
+      .app-shell { min-height: 100vh; height: auto; }
+      .workspace {
+        grid-template-columns: 1fr;
+        margin: 14px auto;
+      }
+      .brand-panel {
+        grid-template-columns: 1fr;
+      }
+      .tip-card { display: none; }
+      .chat-panel { min-height: 620px; }
+    }
+
+    @media (max-width: 640px) {
+      .topbar-inner,
+      .quick-inner,
+      .workspace {
+        width: min(100vw - 20px, 1180px);
+      }
+
+      .topbar-inner {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .brand-logo {
+        width: 136px;
+        height: 44px;
+      }
+
+      .brand-title {
+        font-size: 14px;
+        white-space: normal;
+      }
+
+      .service-status {
+        align-self: flex-start;
+      }
+
+      .workspace { margin: 10px auto; gap: 10px; }
+      .hero-card { padding: 18px; }
+      .hero-mark-badge { width: 58px; height: 58px; margin-bottom: 12px; }
+      .hero-mark { width: 46px; height: 46px; }
+      .hero-card h1 { font-size: 20px; }
+      .chat-head {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+      .chat-badge { align-self: flex-start; }
+      .messages { padding: 14px 12px; }
+      .message-stack { max-width: calc(100vw - 94px); }
+      .bubble { font-size: 14px; padding: 12px 13px; }
+      .input-area { padding: 10px; }
+      .send-btn { min-width: 58px; }
     }
   </style>
 </head>
 <body>
-
-<div class="header">
-  <div class="header-left">
-    <img class="logo-icon" src="ecoco-logo.png" alt="ECOCO 宜可可循環經濟" />
-    <div>
-      <div class="header-title">宜可可智慧客服</div>
-      <div class="header-sub">AI-POWERED · 24/7</div>
-    </div>
-  </div>
-  <div class="header-right">
-    <div class="status-dot"></div>
-    線上服務中
-  </div>
-</div>
-
-<div class="quick-bar" id="quickBar">
-  <button class="quick-chip" onclick="quickAsk('每種回收物可以得幾點？')">💰 回收點數</button>
-  <button class="quick-chip" onclick="quickAsk('點數有效期限是多久？')">⏰ 點數期限</button>
-  <button class="quick-chip" onclick="quickAsk('ECOCO 有哪些合作商家？')">🏪 合作商家</button>
-  <button class="quick-chip" onclick="quickAsk('瓶子可以壓扁再投嗎？')">🍶 投瓶規則</button>
-  <button class="quick-chip" onclick="quickAsk('怎麼查詢附近的 ECOCO 站點？')">📍 找站點</button>
-  <button class="quick-chip" onclick="quickAsk('如何聯絡 ECOCO 客服？')">📞 聯絡客服</button>
-</div>
-
-<div class="messages" id="messages">
-  <div class="welcome-card">
-    <img class="emoji" src="ecoco-mark.png" alt="" />
-    <h2>嗨！我是 ECOCO 智慧客服</h2>
-    <p>我可以回答關於回收、點數兌換、<br>站點查詢、App 使用等各種問題！</p>
-  </div>
-  <div class="msg-row bot">
-    <div class="avatar bot"><img src="ecoco-mark.png" alt="ECOCO" /></div>
-    <div>
-      <div class="bubble bot">
-        Hi 可可粉 💚 歡迎加入 ECOCO 循環經濟。<br><br>
-        我們透過 ECOCO 智慧回收機，讓資源回收變得更有趣！<br><br>
-        只要將寶特瓶或鋁罐投入，就能累積點數折抵消費喔。<br><br>
-        為了能更精準推薦您使用，請問您手邊有想回收的資源嗎？<br><br>
-        例如寶特瓶或鋁罐？或者您已經下載好 APP 了嗎？
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="brand">
+          <img class="brand-logo" src="ecoco-logo.png" alt="ECOCO 宜可可循環經濟" />
+          <div class="brand-copy">
+            <div class="brand-title">宜可可智慧客服</div>
+            <div class="brand-subtitle">AI-POWERED · 24/7</div>
+          </div>
+        </div>
+        <div class="service-status">
+          <span class="status-light" aria-hidden="true"></span>
+          線上服務中
+        </div>
       </div>
-      <div class="bubble-time" id="initTime"></div>
-    </div>
+    </header>
+
+    <main class="main">
+      <section class="quick-area" aria-label="常見問題快捷列">
+        <div class="quick-inner" id="quickBar">
+          <button class="quick-chip" type="button" onclick="quickAsk('每種回收物可以得幾點？')">回收點數</button>
+          <button class="quick-chip" type="button" onclick="quickAsk('點數有效期限是多久？')">點數期限</button>
+          <button class="quick-chip" type="button" onclick="quickAsk('ECOCO 有哪些合作商家？')">合作商家</button>
+          <button class="quick-chip" type="button" onclick="quickAsk('瓶子可以壓扁再投嗎？')">投瓶規則</button>
+          <button class="quick-chip" type="button" onclick="quickAsk('怎麼查詢附近的 ECOCO 站點？')">找站點</button>
+          <button class="quick-chip" type="button" onclick="quickAsk('如何聯絡 ECOCO 客服？')">聯絡客服</button>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <aside class="brand-panel" aria-label="ECOCO 服務說明">
+          <section class="hero-card">
+            <div class="hero-mark-badge" aria-hidden="true">
+              <img class="hero-mark" src="ecoco-mark.png" alt="" />
+            </div>
+            <h1>讓回收變成一件有趣的事</h1>
+            <p>我可以協助查詢回收規則、點數效期、優惠券兌換、站點與 App 使用問題。</p>
+            <div class="hero-tags" aria-label="客服主題">
+              <span class="hero-tag">回收規則</span>
+              <span class="hero-tag">點數兌換</span>
+              <span class="hero-tag">站點查詢</span>
+              <span class="hero-tag">App 協助</span>
+            </div>
+          </section>
+          <section class="tip-card">
+            <div class="tip-title">詢問時可以附上這些資訊</div>
+            <ul class="tip-list">
+              <li>點數或優惠券問題：註冊手機、發生時間、截圖。</li>
+              <li>機台或站點問題：站點名稱、時間、現場狀況。</li>
+              <li>帳號或個案問題：請依客服表單流程，由人工協助確認。</li>
+            </ul>
+          </section>
+        </aside>
+
+        <section class="chat-panel" aria-label="ECOCO AI 客服聊天室">
+          <div class="chat-head">
+            <div class="chat-title">
+              <img src="ecoco-mark.png" alt="" />
+              <div>
+                <strong>Hi 可可粉，歡迎來到 ECOCO</strong>
+                <span>把想問的問題丟給我，我會依官方知識庫回答。</span>
+              </div>
+            </div>
+            <div class="chat-badge">官方知識庫回答</div>
+          </div>
+
+          <div class="messages" id="messages">
+            <div class="msg-row bot">
+              <div class="avatar bot"><img src="ecoco-mark.png" alt="ECOCO" /></div>
+              <div class="message-stack">
+                <div class="bubble bot">
+                  Hi 可可粉，歡迎加入 ECOCO 循環經濟。<br><br>
+                  我們透過 ECOCO 智慧回收機，讓資源回收變得更有趣。<br><br>
+                  只要將寶特瓶或鋁罐投入，就能累積點數折抵消費。<br><br>
+                  為了能更精準推薦您使用，請問您手邊有想回收的資源嗎？例如寶特瓶或鋁罐，或者您已經下載好 APP 了嗎？
+                </div>
+                <div class="bubble-time" id="initTime"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="input-area">
+            <textarea
+              class="input-box"
+              id="inputBox"
+              placeholder="請輸入你的問題，例如：點數多久到期？"
+              rows="1"
+              onkeydown="handleKey(event)"
+              oninput="autoResize(this)"
+            ></textarea>
+            <button class="send-btn" id="sendBtn" type="button" onclick="sendMessage()">送出</button>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <footer class="footer-hint">回答內容來自 ECOCO 官方知識庫，如涉及個案處理，請依客服表單或 App 聯絡專人。</footer>
   </div>
-</div>
 
-<div class="input-area">
-  <textarea
-    class="input-box" id="inputBox"
-    placeholder="請輸入您的問題..."
-    rows="1"
-    onkeydown="handleKey(event)"
-    oninput="autoResize(this)"
-  ></textarea>
-  <button class="send-btn" id="sendBtn" onclick="sendMessage()">
-    <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg>
-  </button>
-</div>
+  <script>
+    const SESSION_ID = "session_" + Date.now();
+    let chatHistory = [];
 
-<div class="footer-hint">回答內容來自 ECOCO 官方知識庫 · 如有疑問請洽官方客服</div>
+    document.getElementById("initTime").textContent = getTime();
 
-<script>
-// 優化五：Session ID（識別這次對話）
-const SESSION_ID = 'session_' + Date.now();
-
-let chatHistory = [];
-
-document.getElementById('initTime').textContent = getTime();
-
-function getTime() {
-  return new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
-}
-
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function autoResize(el) {
-  el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-}
-
-function handleKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-}
-
-function quickAsk(text) {
-  document.getElementById('inputBox').value = text;
-  sendMessage();
-}
-
-function appendMessage(role, text, options = {}) {
-  const messages = document.getElementById('messages');
-  const row = document.createElement('div');
-  row.className = `msg-row ${role}`;
-
-  const avatar = document.createElement('div');
-  avatar.className = `avatar ${role}`;
-  if (role === 'bot') {
-    const img = document.createElement('img');
-    img.src = 'ecoco-mark.png';
-    img.alt = 'ECOCO';
-    avatar.appendChild(img);
-  } else {
-    avatar.textContent = '您';
-  }
-
-  const wrapper = document.createElement('div');
-
-  const bubble = document.createElement('div');
-  bubble.className = `bubble ${role}`;
-
-  // bot 訊息：Markdown 渲染 + DOMPurify 防 XSS
-  if (role === 'bot') {
-    bubble.innerHTML = DOMPurify.sanitize(marked.parse(text));
-  } else {
-    bubble.innerHTML = text.replace(/\n/g, '<br>');
-  }
-
-  const time = document.createElement('div');
-  time.className = 'bubble-time';
-  time.textContent = getTime();
-
-  if (role === 'bot') {
-    const tag = document.createElement('div');
-    tag.innerHTML = '<span class="source-tag">📚 ECOCO 知識庫</span>';
-    wrapper.appendChild(bubble);
-    wrapper.appendChild(tag);
-    if (Array.isArray(options.ragSources) && options.ragSources.length > 0) {
-      wrapper.appendChild(renderRagSources(options.ragSources));
+    function getTime() {
+      return new Date().toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" });
     }
-    wrapper.appendChild(time);
 
-    // 優化二：滿意度評分按鈕
-    const ratingBar = document.createElement('div');
-    ratingBar.className = 'rating-bar';
-
-    const msgId = Date.now();
-
-    // 取得這輪對話的用戶問題和 AI 回答，一起送出供後台分析
-    const question = chatHistory.length >= 2 ? chatHistory[chatHistory.length - 2].content : '';
-    const reply    = text;
-
-    const thumbUp = document.createElement('button');
-    thumbUp.className = 'rating-btn';
-    thumbUp.textContent = '👍 有幫助';
-
-    const thumbDown = document.createElement('button');
-    thumbDown.className = 'rating-btn';
-    thumbDown.textContent = '👎 沒幫助';
-
-    const ratingText = document.createElement('span');
-    ratingText.className = 'rating-text';
-
-    thumbUp.onclick   = () => submitRating(msgId, 'positive', thumbUp,   thumbDown, ratingText, question, reply);
-    thumbDown.onclick = () => submitRating(msgId, 'negative', thumbDown, thumbUp,   ratingText, question, reply);
-
-    ratingBar.appendChild(thumbUp);
-    ratingBar.appendChild(thumbDown);
-    ratingBar.appendChild(ratingText);
-    wrapper.appendChild(ratingBar);
-
-    // 優化三：自動偵測是否需要聯絡客服按鈕
-    const needsContact = text.includes('客服') || text.includes('不確定') || text.includes('沒有確切');
-    if (needsContact) {
-      const contactWrapper = document.createElement('div');
-      contactWrapper.style.marginTop = '8px';
-      const contactBtn = document.createElement('a');
-      contactBtn.className = 'contact-btn';
-      contactBtn.href = 'mailto:info@ecoco.xyz';
-      contactBtn.innerHTML = '📧 聯絡 ECOCO 客服';
-      contactWrapper.appendChild(contactBtn);
-      wrapper.appendChild(contactWrapper);
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
     }
-  } else {
-    wrapper.appendChild(bubble);
-    wrapper.appendChild(time);
-  }
 
-  row.appendChild(avatar);
-  row.appendChild(wrapper);
-  messages.appendChild(row);
-  messages.scrollTop = messages.scrollHeight;
+    function autoResize(el) {
+      el.style.height = "auto";
+      el.style.height = Math.min(el.scrollHeight, 128) + "px";
+    }
 
-  return bubble;
-}
+    function handleKey(e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    }
 
-function renderRagSources(sources) {
-  const detail = document.createElement('details');
-  detail.className = 'source-detail';
-  const summary = document.createElement('summary');
-  summary.textContent = `引用知識 ${sources.length} 筆`;
-  detail.appendChild(summary);
+    function quickAsk(text) {
+      const input = document.getElementById("inputBox");
+      input.value = text;
+      sendMessage();
+    }
 
-  const list = document.createElement('div');
-  list.className = 'source-list';
-  sources.slice(0, 5).forEach(source => {
-    const item = document.createElement('div');
-    item.className = 'source-item';
-    const score = typeof source.score === 'number' ? `｜分數 ${source.score}` : '';
-    item.innerHTML = `<strong>${escapeHtml(source.category || '未分類')}</strong><br>${escapeHtml(source.title || '未命名片段')}${escapeHtml(score)}`;
-    list.appendChild(item);
-  });
-  detail.appendChild(list);
-  return detail;
-}
+    function appendMessage(role, text, options = {}) {
+      const messages = document.getElementById("messages");
+      const row = document.createElement("div");
+      row.className = `msg-row ${role}`;
 
-function showTyping() {
-  const messages = document.getElementById('messages');
-  const row = document.createElement('div');
-  row.className = 'msg-row bot';
-  row.id = 'typingRow';
-  const avatar = document.createElement('div');
-  avatar.className = 'avatar bot';
-  avatar.innerHTML = '<img src="ecoco-mark.png" alt="ECOCO" />';
-  const bubble = document.createElement('div');
-  bubble.className = 'bubble bot';
-  bubble.innerHTML = '<div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>';
-  row.appendChild(avatar);
-  row.appendChild(bubble);
-  messages.appendChild(row);
-  messages.scrollTop = messages.scrollHeight;
-}
+      const avatar = document.createElement("div");
+      avatar.className = `avatar ${role}`;
+      if (role === "bot") {
+        const img = document.createElement("img");
+        img.src = "ecoco-mark.png";
+        img.alt = "ECOCO";
+        avatar.appendChild(img);
+      } else {
+        avatar.textContent = "我";
+      }
 
-function removeTyping() {
-  const row = document.getElementById('typingRow');
-  if (row) row.remove();
-}
+      const wrapper = document.createElement("div");
+      wrapper.className = "message-stack";
 
-// 優化二：滿意度評分送出
-async function submitRating(msgId, type, clickedBtn, otherBtn, textEl, question, reply) {
-  clickedBtn.classList.add('selected');
-  otherBtn.disabled = true;
-  otherBtn.style.opacity = '0.4';
-  textEl.textContent = type === 'positive' ? '謝謝您的回饋！😊' : '感謝告知，我們會持續改善！';
+      const bubble = document.createElement("div");
+      bubble.className = `bubble ${role}`;
 
-  try {
-    await fetch('/api/rating', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ msgId, type, question, reply })
-    });
-  } catch (e) {
-    // 記錄失敗不影響使用者體驗
-  }
-}
+      if (role === "bot") {
+        bubble.innerHTML = DOMPurify.sanitize(marked.parse(text));
+      } else {
+        bubble.innerHTML = escapeHtml(text).replace(/\n/g, "<br>");
+      }
 
-// 送出訊息
-async function sendMessage() {
-  const input = document.getElementById('inputBox');
-  const sendBtn = document.getElementById('sendBtn');
-  const text = input.value.trim();
-  if (!text) return;
+      const time = document.createElement("div");
+      time.className = "bubble-time";
+      time.textContent = getTime();
 
-  input.value = '';
-  input.style.height = 'auto';
-  sendBtn.disabled = true;
+      if (role === "bot") {
+        const tag = document.createElement("div");
+        tag.innerHTML = '<span class="source-tag">ECOCO 知識庫</span>';
+        wrapper.appendChild(bubble);
+        wrapper.appendChild(tag);
 
-  appendMessage('user', text);
-  chatHistory.push({ role: 'user', content: text });
+        if (Array.isArray(options.ragSources) && options.ragSources.length > 0) {
+          wrapper.appendChild(renderRagSources(options.ragSources));
+        }
 
-  showTyping();
+        wrapper.appendChild(time);
+        wrapper.appendChild(renderRatingBar(text));
 
-  try {
-    const response = await fetch('/api/chat', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-session-id': SESSION_ID       // 優化五：傳入 session ID
-      },
-      body: JSON.stringify({ history: chatHistory })
-    });
+        if (shouldShowContact(text)) {
+          const contactWrapper = document.createElement("div");
+          const contactBtn = document.createElement("a");
+          contactBtn.className = "contact-btn";
+          contactBtn.href = "mailto:info@ecoco.xyz";
+          contactBtn.textContent = "聯絡 ECOCO 客服";
+          contactWrapper.appendChild(contactBtn);
+          wrapper.appendChild(contactWrapper);
+        }
+      } else {
+        wrapper.appendChild(bubble);
+        wrapper.appendChild(time);
+      }
 
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || '伺服器錯誤');
+      row.appendChild(avatar);
+      row.appendChild(wrapper);
+      messages.appendChild(row);
+      messages.scrollTop = messages.scrollHeight;
 
-    const reply = data.reply;
-    chatHistory.push({ role: 'assistant', content: reply });
+      return bubble;
+    }
 
-    removeTyping();
-    appendMessage('bot', reply, { ragSources: data.ragSources || [] });
-  } catch (err) {
-    removeTyping();
-    appendMessage('bot', '抱歉，連線發生問題 😢\n請稍後再試，或直接聯絡客服：info@ecoco.xyz');
-  }
+    function renderRatingBar(reply) {
+      const ratingBar = document.createElement("div");
+      ratingBar.className = "rating-bar";
 
-  sendBtn.disabled = false;
-  input.focus();
-}
-</script>
+      const msgId = Date.now();
+      const question = chatHistory.length >= 2 ? chatHistory[chatHistory.length - 2].content : "";
 
+      const thumbUp = document.createElement("button");
+      thumbUp.className = "rating-btn";
+      thumbUp.type = "button";
+      thumbUp.textContent = "有幫助";
+
+      const thumbDown = document.createElement("button");
+      thumbDown.className = "rating-btn";
+      thumbDown.type = "button";
+      thumbDown.textContent = "需改善";
+
+      const ratingText = document.createElement("span");
+      ratingText.className = "rating-text";
+
+      thumbUp.onclick = () => submitRating(msgId, "positive", thumbUp, thumbDown, ratingText, question, reply);
+      thumbDown.onclick = () => submitRating(msgId, "negative", thumbDown, thumbUp, ratingText, question, reply);
+
+      ratingBar.appendChild(thumbUp);
+      ratingBar.appendChild(thumbDown);
+      ratingBar.appendChild(ratingText);
+      return ratingBar;
+    }
+
+    function renderRagSources(sources) {
+      const detail = document.createElement("details");
+      detail.className = "source-detail";
+
+      const summary = document.createElement("summary");
+      summary.textContent = `引用知識 ${sources.length} 筆`;
+      detail.appendChild(summary);
+
+      const list = document.createElement("div");
+      list.className = "source-list";
+      sources.slice(0, 5).forEach(source => {
+        const item = document.createElement("div");
+        item.className = "source-item";
+        const score = typeof source.score === "number" ? `｜分數 ${source.score}` : "";
+        item.innerHTML = `<strong>${escapeHtml(source.category || "未分類")}</strong><br>${escapeHtml(source.title || "未命名片段")}${escapeHtml(score)}`;
+        list.appendChild(item);
+      });
+
+      detail.appendChild(list);
+      return detail;
+    }
+
+    function shouldShowContact(text) {
+      return [
+        "客服表單",
+        "聯絡我們",
+        "人工協助",
+        "專人",
+        "沒有確切資料"
+      ].some(keyword => text.includes(keyword));
+    }
+
+    function showTyping() {
+      const messages = document.getElementById("messages");
+      const row = document.createElement("div");
+      row.className = "msg-row bot";
+      row.id = "typingRow";
+
+      const avatar = document.createElement("div");
+      avatar.className = "avatar bot";
+      avatar.innerHTML = '<img src="ecoco-mark.png" alt="ECOCO" />';
+
+      const bubble = document.createElement("div");
+      bubble.className = "bubble bot";
+      bubble.innerHTML = '<div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>';
+
+      row.appendChild(avatar);
+      row.appendChild(bubble);
+      messages.appendChild(row);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function removeTyping() {
+      const row = document.getElementById("typingRow");
+      if (row) row.remove();
+    }
+
+    async function submitRating(msgId, type, clickedBtn, otherBtn, textEl, question, reply) {
+      clickedBtn.classList.add("selected");
+      clickedBtn.disabled = true;
+      otherBtn.disabled = true;
+      otherBtn.style.opacity = "0.45";
+      textEl.textContent = type === "positive" ? "謝謝你的回饋" : "已收到，我們會用來改善回答";
+
+      try {
+        await fetch("/api/rating", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ msgId, type, question, reply })
+        });
+      } catch (e) {
+        textEl.textContent = "評分暫時無法送出";
+      }
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById("inputBox");
+      const sendBtn = document.getElementById("sendBtn");
+      const text = input.value.trim();
+      if (!text) return;
+
+      input.value = "";
+      input.style.height = "auto";
+      sendBtn.disabled = true;
+
+      appendMessage("user", text);
+      chatHistory.push({ role: "user", content: text });
+
+      showTyping();
+
+      try {
+        const response = await fetch("/api/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-session-id": SESSION_ID
+          },
+          body: JSON.stringify({ history: chatHistory })
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "AI 回覆失敗");
+
+        const reply = data.reply;
+        chatHistory.push({ role: "assistant", content: reply });
+
+        removeTyping();
+        appendMessage("bot", reply, { ragSources: data.ragSources || [] });
+      } catch (err) {
+        removeTyping();
+        appendMessage("bot", "抱歉，連線暫時不穩。請稍後再試，或直接聯絡客服：info@ecoco.xyz");
+      }
+
+      sendBtn.disabled = false;
+      input.focus();
+    }
+  </script>
 </body>
 </html>
