@@ -147,7 +147,10 @@ npm run import:knowledge -- data/ecoco-knowledge-import.json --replace
 
 ```text
 .
-├── server.js              # Express + Claude API + PostgreSQL
+├── server.js              # Express 後端入口
+├── config/                # RAG 關鍵字、同義詞與設定
+├── db/                    # PostgreSQL schema
+├── middleware/            # Admin Key 等中介層
 ├── knowledge.js           # 初始知識庫分類種子資料
 ├── data/                  # AI 客服資料庫、匯入 JSON、回覆政策
 ├── docs/                  # 內部維護文件、PRD、Flow 圖規劃

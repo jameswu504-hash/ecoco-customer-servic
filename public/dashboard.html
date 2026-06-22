@@ -95,6 +95,18 @@
       color:var(--green-main); font-family:'Space Mono',monospace;
       font-size:18px; margin-right:4px;
     }
+    .layer-tabs {
+      display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+      margin-bottom:18px;
+    }
+    .layer-tab {
+      border:1.5px solid var(--green-main); background:white; color:var(--green-main);
+      border-radius:8px; padding:8px 14px; font-size:13px; cursor:pointer;
+      font-family:'Noto Sans TC',sans-serif;
+    }
+    .layer-tab.active, .layer-tab:hover { background:var(--green-main); color:white; }
+    .layer-note { font-size:12px; color:var(--gray-mid); line-height:1.6; margin-left:4px; }
+    .dashboard-layer.hidden { display:none !important; }
 
     /* 統計卡片 */
     .stats-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:16px; margin-bottom:28px; }
@@ -374,6 +386,23 @@
       font-family:'Noto Sans TC',sans-serif;
     }
     .kb-name-input:focus { border-color:var(--green-mid); }
+    .kb-suggestion-box {
+      display:none; border:1px solid #e0ede8; border-radius:8px;
+      background:var(--white); margin:-6px 0 12px; padding:8px;
+    }
+    .kb-suggestion-box.open { display:block; }
+    .kb-suggestion-title {
+      font-size:11px; color:var(--gray-mid); margin:0 4px 6px;
+    }
+    .kb-suggestion-item {
+      display:flex; justify-content:space-between; gap:10px; align-items:center;
+      width:100%; border:1px solid transparent; border-radius:8px;
+      background:var(--green-ghost); padding:8px 10px; margin-bottom:4px;
+      cursor:pointer; font-family:'Noto Sans TC',sans-serif; text-align:left;
+    }
+    .kb-suggestion-item:hover { border-color:var(--green-mid); background:white; }
+    .kb-suggestion-name { font-size:13px; color:var(--green-dark); overflow-wrap:anywhere; }
+    .kb-suggestion-size { font-size:10px; color:var(--gray-mid); font-family:'Space Mono',monospace; flex-shrink:0; }
     .kb-content-input {
       width:100%; height:300px; border:1.5px solid #cce0d8; border-radius:8px;
       padding:12px; font-size:13px; font-family:'Space Mono',monospace;
@@ -536,12 +565,19 @@
     </div>
   </div>
 
+  <div class="layer-tabs">
+    <button class="layer-tab active" id="layerDailyBtn" onclick="showDashboardLayer('daily')">客服日常</button>
+    <button class="layer-tab" id="layerKnowledgeBtn" onclick="showDashboardLayer('knowledge')">知識維護</button>
+    <button class="layer-tab" id="layerReportBtn" onclick="showDashboardLayer('report')">主管報表</button>
+    <span class="layer-note" id="layerNote">日常層只放客服需要處理的待辦與對話。</span>
+  </div>
+
   <!-- 統計總覽 -->
-  <div class="stats-grid" id="statsGrid">
+  <div class="stats-grid dashboard-layer layer-report" id="statsGrid">
     <div class="loading">載入中...</div>
   </div>
 
-  <div class="report-card" id="reportSection">
+  <div class="report-card dashboard-layer layer-report" id="reportSection">
     <div class="report-head">
       <div>
         <div class="section-title" style="margin-bottom:6px">📊 營運報表</div>
@@ -558,12 +594,12 @@
   </div>
 
   <!-- AI 資料庫總覽 -->
-  <div class="overview-card">
+  <div class="overview-card dashboard-layer layer-knowledge">
     <div class="section-title">🧭 AI 資料庫總覽</div>
     <div id="knowledgeOverview"><div class="loading">載入中...</div></div>
   </div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:28px" class="two-col">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:28px" class="two-col dashboard-layer layer-report">
 
     <!-- 熱門關鍵字 -->
     <div class="keyword-card">
@@ -580,11 +616,11 @@
   </div>
 
   <!-- 知識庫管理（分類版）-->
-  <div class="knowledge-card" id="knowledgeSection">
+  <div class="knowledge-card dashboard-layer layer-knowledge" id="knowledgeSection">
     <div class="section-title" style="justify-content:space-between">
       <span>📚 知識庫管理 <span id="kbCount" style="color:var(--gray-mid);font-weight:400;font-size:13px"></span></span>
       <div style="display:flex;gap:8px;align-items:center">
-        <button class="kb-export-btn" onclick="exportKnowledgeJson()">匯出 JSON</button>
+        <button class="kb-export-btn" onclick="exportKnowledgeJson()">下載 JSON</button>
         <button class="kb-add-btn" onclick="newSection()">＋ 新增分類</button>
       </div>
     </div>
@@ -598,7 +634,8 @@
         <div class="kb-empty" id="kbEmpty">← 從左邊點一個分類來檢視或編輯<br>或按右上角「＋ 新增分類」<br><br>修改後按「儲存」，AI 立即生效、永久保存</div>
         <div id="kbForm" style="display:none">
           <label class="kb-label">分類名稱</label>
-          <input class="kb-name-input" id="kbName" placeholder="例如：點數計算規則" />
+          <input class="kb-name-input" id="kbName" placeholder="例如：點數計算規則" oninput="renderCategorySuggestions()" onfocus="renderCategorySuggestions()" />
+          <div class="kb-suggestion-box" id="kbCategorySuggestions"></div>
           <label class="kb-label">內容</label>
           <textarea class="kb-content-input" id="kbContent" spellcheck="false" oninput="kbCharCount()"></textarea>
           <div class="kb-actions">
@@ -615,20 +652,20 @@
   </div>
 
   <!-- 評分明細 -->
-  <div class="ratings-card">
+  <div class="ratings-card dashboard-layer layer-daily">
     <div class="section-title">👍👎 用戶對哪些回答評分</div>
     <div id="ratingDetailList"><div class="loading">載入中...</div></div>
   </div>
 
   <!-- 知識缺口列表 -->
-  <div class="unanswered-card" id="unansweredSection">
+  <div class="unanswered-card dashboard-layer layer-daily" id="unansweredSection">
     <div class="section-title">客服待辦：AI 不確定的問題</div>
     <div class="support-note" style="margin:-6px 0 12px">這裡不是錯誤清單，而是「需要人補知識或判斷是否刪除」的待辦。補完知識後，可以把已處理的項目刪掉，避免列表越來越長。</div>
     <div id="unansweredList"><div class="loading">載入中...</div></div>
   </div>
 
   <!-- 對話紀錄 -->
-  <div class="sessions-card" id="sessionsSection">
+  <div class="sessions-card dashboard-layer layer-daily" id="sessionsSection">
     <div class="section-title">💬 每次對話詳細紀錄</div>
     <div class="search-wrap">
       <input class="search-input" id="searchInput" type="text" placeholder="🔍 搜尋對話內容（輸入關鍵字）"
@@ -685,10 +722,37 @@ async function submitLogin() {
 
 async function loadAll() {
   await Promise.all([loadStats(), loadOperationsReport(reportPeriod), loadKnowledgeOverview(), loadKeywords(), loadSessions(), loadUnanswered(), loadRatingDetails(), loadKnowledge()]);
+  showDashboardLayer(currentLayer);
 }
 
 let reportPeriod = 'week';
 let currentReport = null;
+let currentLayer = 'daily';
+
+function showDashboardLayer(layer) {
+  currentLayer = ['daily', 'knowledge', 'report'].includes(layer) ? layer : 'daily';
+  const notes = {
+    daily: '日常層只放客服需要處理的待辦與對話。',
+    knowledge: '維護層用來整理知識庫、下載 JSON 備份與檢查資料來源。',
+    report: '報表層給主管或總經理室看客服量、分類與改善摘要。',
+  };
+  document.querySelectorAll('.dashboard-layer').forEach(el => {
+    el.classList.toggle('hidden', !el.classList.contains(`layer-${currentLayer}`));
+  });
+  document.getElementById('layerDailyBtn').classList.toggle('active', currentLayer === 'daily');
+  document.getElementById('layerKnowledgeBtn').classList.toggle('active', currentLayer === 'knowledge');
+  document.getElementById('layerReportBtn').classList.toggle('active', currentLayer === 'report');
+  document.getElementById('layerNote').textContent = notes[currentLayer];
+}
+
+function switchLayerAndScroll(layer, targetId) {
+  showDashboardLayer(layer);
+  requestAnimationFrame(() => {
+    const target = document.getElementById(targetId);
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  return false;
+}
 
 async function loadOperationsReport(period = 'week') {
   reportPeriod = period === 'month' ? 'month' : 'week';
@@ -901,6 +965,50 @@ function renderKbSidebar() {
   `).join('');
 }
 
+function getMatchingCategories(query) {
+  const normalizedQuery = normalizeKbText(query);
+  if (!normalizedQuery) return [];
+  return kbSections
+    .filter(s => s.id !== kbCurrentId)
+    .filter(s => normalizeKbText(displayCategoryName(s.category)).includes(normalizedQuery))
+    .slice(0, 6);
+}
+
+function renderCategorySuggestions() {
+  const box = document.getElementById('kbCategorySuggestions');
+  const input = document.getElementById('kbName');
+  if (!box || !input) return;
+  const query = input.value.trim();
+  const matches = getMatchingCategories(query);
+  if (query.length < 1 || matches.length === 0) {
+    box.classList.remove('open');
+    box.innerHTML = '';
+    return;
+  }
+  box.classList.add('open');
+  box.innerHTML = `
+    <div class="kb-suggestion-title">已存在相近分類，建議直接開啟原分類編輯，避免重複新增。</div>
+    ${matches.map(s => `
+      <button class="kb-suggestion-item" type="button" onclick="selectCategorySuggestion(${s.id})">
+        <span class="kb-suggestion-name">${escapeHtml(displayCategoryName(s.category))}</span>
+        <span class="kb-suggestion-size">${s.content.length}字</span>
+      </button>
+    `).join('')}
+  `;
+}
+
+function clearCategorySuggestions() {
+  const box = document.getElementById('kbCategorySuggestions');
+  if (!box) return;
+  box.classList.remove('open');
+  box.innerHTML = '';
+}
+
+function selectCategorySuggestion(id) {
+  selectSection(id);
+  clearCategorySuggestions();
+}
+
 function showKbForm() {
   document.getElementById('kbEmpty').style.display = 'none';
   document.getElementById('kbForm').style.display = 'block';
@@ -917,6 +1025,7 @@ function selectSection(id) {
   showKbForm();
   kbCharCount();
   renderKbSidebar();
+  clearCategorySuggestions();
 }
 
 function newSection() {
@@ -927,6 +1036,7 @@ function newSection() {
   showKbForm();
   kbCharCount();
   renderKbSidebar();
+  clearCategorySuggestions();
   document.getElementById('kbName').focus();
 }
 
@@ -1027,19 +1137,19 @@ async function runSearch(q) {
 function renderSupportWorkbench(data, satisfactionRate) {
   const unanswered = data.unansweredCount ?? 0;
   document.getElementById('supportWorkbench').innerHTML = `
-    <a class="support-card" href="#reportSection">
+    <a class="support-card" href="#reportSection" onclick="return switchLayerAndScroll('report', 'reportSection')">
       <strong>1. 先看營運報表</strong>
       <span><b>${data.totalSessions ?? 0}</b> 筆客服案件，滿意度 ${satisfactionRate}% 。可複製週報或月報給主管。</span>
     </a>
-    <a class="support-card" href="#unansweredSection">
+    <a class="support-card" href="#unansweredSection" onclick="return switchLayerAndScroll('daily', 'unansweredSection')">
       <strong>2. 處理 AI 不確定問題</strong>
       <span><b>${unanswered}</b> 筆待辦。能補知識就補，已處理或不需要就刪除。</span>
     </a>
-    <a class="support-card" href="#knowledgeSection">
+    <a class="support-card" href="#knowledgeSection" onclick="return switchLayerAndScroll('knowledge', 'knowledgeSection')">
       <strong>3. 補充客服知識</strong>
       <span>用分類搜尋舊資料，新增前先確認是否已有相近分類，避免重複。</span>
     </a>
-    <a class="support-card" href="#sessionsSection">
+    <a class="support-card" href="#sessionsSection" onclick="return switchLayerAndScroll('daily', 'sessionsSection')">
       <strong>4. 查詢對話紀錄</strong>
       <span>回頭看使用者原話與 AI 回覆，找出常見問題或回答品質問題。</span>
     </a>
@@ -1251,7 +1361,7 @@ async function loadUnanswered() {
             <div class="unanswered-reply">AI 回覆：${reply}</div>
           ` : ''}
           <div class="gap-controls">
-            <a class="unanswered-toggle" href="#knowledgeSection">補到知識庫</a>
+            <a class="unanswered-toggle" href="#knowledgeSection" onclick="return switchLayerAndScroll('knowledge', 'knowledgeSection')">補到知識庫</a>
             <button class="gap-delete" type="button" onclick="deleteGap(${item.id})">刪除</button>
           </div>
         </div>

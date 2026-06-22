@@ -3,9 +3,17 @@ const express   = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
 const path      = require('path');
 const fs        = require('fs');
-const crypto    = require('crypto');
 const { Pool }  = require('pg');
 const rateLimit = require('express-rate-limit');
+const { SCHEMA } = require('./db/schema');
+const { requireAdminKey } = require('./middleware/admin-auth');
+const {
+  MAX_RAG_CHUNKS,
+  MAX_CHUNK_CHARS,
+  CHUNK_OVERLAP_CHARS,
+  RAG_KEYWORDS,
+  RAG_SYNONYM_GROUPS,
+} = require('./config/rag-config');
 
 const app = express();
 app.use(express.json());
@@ -30,81 +38,6 @@ const chatLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: '請求過於頻繁，請稍後再試（每分鐘限 10 次）' },
 });
-
-// ── 安全性：Admin API 保護（timing-safe 比較，防計時攻擊）─
-function requireAdminKey(req, res, next) {
-  const key      = req.headers['x-admin-key'] || '';
-  const expected = process.env.ADMIN_KEY       || '';
-  if (!key || !expected) {
-    return res.status(401).json({ error: '未授權' });
-  }
-  const len = Math.max(Buffer.byteLength(key), Buffer.byteLength(expected));
-  const a   = Buffer.alloc(len); Buffer.from(key).copy(a);
-  const b   = Buffer.alloc(len); Buffer.from(expected).copy(b);
-  if (!crypto.timingSafeEqual(a, b)) {
-    return res.status(401).json({ error: '未授權' });
-  }
-  next();
-}
-
-// ── 資料庫初始化（建表 + 索引），啟動時跑一次 ──────────────
-// 注意：每條指令分開執行（雲端 Postgres 連線池不接受一次多語句）
-const SCHEMA = [
-  `CREATE TABLE IF NOT EXISTS conversations (
-      id         SERIAL PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      role       TEXT NOT NULL,
-      content    TEXT NOT NULL,
-      timestamp  TEXT NOT NULL
-    )`,
-  `CREATE TABLE IF NOT EXISTS ratings (
-      id        SERIAL PRIMARY KEY,
-      msg_id    TEXT NOT NULL,
-      type      TEXT NOT NULL,
-      timestamp TEXT NOT NULL,
-      question  TEXT DEFAULT '',
-      reply     TEXT DEFAULT ''
-    )`,
-  `CREATE TABLE IF NOT EXISTS unanswered_questions (
-      id         SERIAL PRIMARY KEY,
-      session_id TEXT NOT NULL,
-      question   TEXT NOT NULL,
-      reply      TEXT DEFAULT '',
-      reason     TEXT DEFAULT '',
-      timestamp  TEXT NOT NULL
-    )`,
-  `ALTER TABLE unanswered_questions ADD COLUMN IF NOT EXISTS reply TEXT DEFAULT ''`,
-  `ALTER TABLE unanswered_questions ADD COLUMN IF NOT EXISTS reason TEXT DEFAULT ''`,
-  `ALTER TABLE unanswered_questions ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending'`,
-  `ALTER TABLE unanswered_questions ADD COLUMN IF NOT EXISTS note TEXT DEFAULT ''`,
-  `ALTER TABLE unanswered_questions ADD COLUMN IF NOT EXISTS updated_at TEXT DEFAULT ''`,
-  `CREATE TABLE IF NOT EXISTS knowledge_sections (
-      id         SERIAL PRIMARY KEY,
-      category   TEXT NOT NULL,
-      content    TEXT NOT NULL DEFAULT '',
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      updated_at TEXT NOT NULL
-    )`,
-  `CREATE TABLE IF NOT EXISTS knowledge_chunks (
-      id                SERIAL PRIMARY KEY,
-      section_id        INTEGER,
-      category          TEXT NOT NULL,
-      title             TEXT NOT NULL DEFAULT '',
-      content           TEXT NOT NULL DEFAULT '',
-      search_text       TEXT NOT NULL DEFAULT '',
-      sort_order        INTEGER NOT NULL DEFAULT 0,
-      source_updated_at TEXT NOT NULL DEFAULT '',
-      updated_at        TEXT NOT NULL
-    )`,
-  `CREATE INDEX IF NOT EXISTS idx_conv_session  ON conversations(session_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_conv_role     ON conversations(role)`,
-  `CREATE INDEX IF NOT EXISTS idx_ratings_type  ON ratings(type)`,
-  `CREATE INDEX IF NOT EXISTS idx_unanswered_ts ON unanswered_questions(timestamp)`,
-  `CREATE INDEX IF NOT EXISTS idx_unanswered_status ON unanswered_questions(status)`,
-  `CREATE INDEX IF NOT EXISTS idx_ks_sort       ON knowledge_sections(sort_order, id)`,
-  `CREATE INDEX IF NOT EXISTS idx_kc_section    ON knowledge_chunks(section_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_kc_sort       ON knowledge_chunks(sort_order, id)`,
-];
 
 async function initDb() {
   for (const stmt of SCHEMA) {
@@ -258,29 +191,6 @@ function buildRuntimeGuardrails(question, rag) {
 - 必須先同理，再請使用者提供必要資訊，並引導官方客服表單：https://ecoco.tw/kWqgW。
 - 若需要後台查詢，請明確說明「需由客服人員確認」，不要推測原因。`;
 }
-
-const MAX_RAG_CHUNKS = 8;
-const MAX_CHUNK_CHARS = 1800;
-const CHUNK_OVERLAP_CHARS = 180;
-const RAG_KEYWORDS = [
-  '點數', '轉贈', '轉移', '贈送', '入帳', '補點', '兌換', '優惠券',
-  '機台', '收瓶機', '電池機', '寶特瓶', '鋁罐', '塑膠杯', '牛奶瓶',
-  '瓶蓋', '膠膜', '封膜', '壓扁', '卡住', '紅燈', '藍燈',
-  'APP', 'App', '帳號', '登入', '註冊', '驗證碼', '簡訊',
-  '客服', '表單', '站點', '康達盛通', '可可粉', 'Meta', '社群',
-  '正義用戶', '黑名單', '檢舉', '違規', '巡檢', '異常', '通報',
-];
-
-const RAG_SYNONYM_GROUPS = [
-  ['優惠券', '兌換', '核銷', '券不能用', '無法兌換', '兌換失敗', '不能兌換', '漢堡王為何不能兌換', '全聯為何不能兌換'],
-  ['機台', '滿袋', '滿倉', '滿箱', '滿了', '不能投', '投不進去', '退瓶', '卡住'],
-  ['站點', '地點', '據點', '設點', '新竹設點', '新增站點', '站點建議', '可以在新竹設點嗎'],
-  ['現場環境', '垃圾', '髒亂', '清潔', '機台旁邊都是垃圾', '滿地垃圾'],
-  ['合作商家', '商家', '合作店家', '有哪些合作商家', '合作品牌'],
-  ['活動', '任務', '抽獎', '最近有什麼活動', '最近有甚麼活動'],
-  ['點數', '補點', '入帳', '效期', '期限', '點數沒進來', '點數未入帳'],
-  ['帳號', '登入', '註冊', '驗證碼', '手機號碼', '收不到簡訊'],
-];
 
 function normalizeText(value) {
   return String(value || '')

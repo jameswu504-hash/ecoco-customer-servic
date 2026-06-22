@@ -262,7 +262,10 @@ Claude 回答
 
 | 檔案 / 資料夾 | 用途 |
 | --- | --- |
-| `server.js` | 後端主程式、Claude、PostgreSQL、RAG、API |
+| `server.js` | 後端入口，負責啟動 Express、掛 API、串 Claude 與資料庫 |
+| `config/rag-config.js` | RAG 關鍵字、同義詞與檢索參數 |
+| `db/schema.js` | PostgreSQL 建表與索引設定 |
+| `middleware/admin-auth.js` | 後台 Admin Key 驗證 |
 | `public/index.html` | 使用者客服前台 |
 | `public/dashboard.html` | 內部後台 |
 | `public/ecoco-logo.png` | ECOCO Logo |
@@ -297,4 +300,3 @@ Claude 回答
 ## 十、你可以怎麼跟主管說
 
 > 目前 AI 客服已經不是單純把 FAQ 丟給 AI，而是用 PostgreSQL 管理知識庫，並透過 RAG 從 knowledge_chunks 找相關片段再交給 Claude 回答。後台可以看對話、評分、知識缺口，也能緊急補知識。正式資料仍建議整理回 Git JSON，讓資料有版本紀錄。部署目前由 GitHub main 觸發 Render，上線時透過 DATABASE_URL 連到 PostgreSQL。
-
