@@ -483,63 +483,6 @@
       30% { transform: translateY(-5px); opacity: 1; }
     }
 
-    .source-tag {
-      display: inline-flex;
-      margin-top: 8px;
-      padding: 4px 9px;
-      background: var(--soft-yellow);
-      border: 1px solid var(--ecoco-yellow);
-      border-radius: 999px;
-      color: var(--ecoco-blue);
-      font-size: 11px;
-      font-weight: 800;
-    }
-
-    .source-detail {
-      margin-top: 8px;
-      border: 1px solid #dfe8f2;
-      border-radius: var(--radius);
-      background: #fffdf5;
-      overflow: hidden;
-    }
-
-    .source-detail summary {
-      cursor: pointer;
-      padding: 8px 10px;
-      color: var(--ecoco-blue);
-      font-size: 12px;
-      font-weight: 900;
-      list-style: none;
-      user-select: none;
-    }
-
-    .source-detail summary::-webkit-details-marker { display: none; }
-    .source-detail summary::after {
-      content: " 展開";
-      color: var(--muted);
-      font-size: 11px;
-      font-weight: 700;
-    }
-    .source-detail[open] summary::after { content: " 收起"; }
-
-    .source-list {
-      display: grid;
-      gap: 7px;
-      padding: 0 10px 10px;
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .source-item {
-      background: #fff;
-      border: 1px solid #edf2f7;
-      border-radius: 6px;
-      padding: 7px 8px;
-      line-height: 1.5;
-    }
-
-    .source-item strong { color: var(--ecoco-blue); }
-
     .rating-bar {
       display: flex;
       align-items: center;
@@ -827,7 +770,7 @@
       </section>
     </main>
 
-    <footer class="footer-hint">回答內容來自 ECOCO 官方知識庫，如涉及個案處理，請依客服表單或 App 聯絡專人。</footer>
+    <footer class="footer-hint">如涉及帳號、點數補登、退款或個案處理，請依客服表單或 App 聯絡專人。</footer>
   </div>
 
   <script>
@@ -900,15 +843,7 @@
       time.textContent = getTime();
 
       if (role === "bot") {
-        const tag = document.createElement("div");
-        tag.innerHTML = '<span class="source-tag">ECOCO 知識庫</span>';
         wrapper.appendChild(bubble);
-        wrapper.appendChild(tag);
-
-        if (Array.isArray(options.ragSources) && options.ragSources.length > 0) {
-          wrapper.appendChild(renderRagSources(options.ragSources));
-        }
-
         wrapper.appendChild(time);
         wrapper.appendChild(renderRatingBar(text));
 
@@ -916,7 +851,9 @@
           const contactWrapper = document.createElement("div");
           const contactBtn = document.createElement("a");
           contactBtn.className = "contact-btn";
-          contactBtn.href = "mailto:info@ecoco.xyz";
+          contactBtn.href = "https://ecoco.tw/kWqgW";
+          contactBtn.target = "_blank";
+          contactBtn.rel = "noopener";
           contactBtn.textContent = "聯絡 ECOCO 客服";
           contactWrapper.appendChild(contactBtn);
           wrapper.appendChild(contactWrapper);
@@ -961,28 +898,6 @@
       ratingBar.appendChild(thumbDown);
       ratingBar.appendChild(ratingText);
       return ratingBar;
-    }
-
-    function renderRagSources(sources) {
-      const detail = document.createElement("details");
-      detail.className = "source-detail";
-
-      const summary = document.createElement("summary");
-      summary.textContent = `引用知識 ${sources.length} 筆`;
-      detail.appendChild(summary);
-
-      const list = document.createElement("div");
-      list.className = "source-list";
-      sources.slice(0, 5).forEach(source => {
-        const item = document.createElement("div");
-        item.className = "source-item";
-        const score = typeof source.score === "number" ? `｜分數 ${source.score}` : "";
-        item.innerHTML = `<strong>${escapeHtml(source.category || "未分類")}</strong><br>${escapeHtml(source.title || "未命名片段")}${escapeHtml(score)}`;
-        list.appendChild(item);
-      });
-
-      detail.appendChild(list);
-      return detail;
     }
 
     function shouldShowContact(text) {
@@ -1070,7 +985,7 @@
         chatHistory.push({ role: "assistant", content: reply });
 
         removeTyping();
-        appendMessage("bot", reply, { ragSources: data.ragSources || [] });
+        appendMessage("bot", reply);
       } catch (err) {
         removeTyping();
         appendMessage("bot", "抱歉，連線暫時不穩。請稍後再試，或直接聯絡客服：info@ecoco.xyz");
