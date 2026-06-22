@@ -72,6 +72,11 @@
       border:1px solid #f0d77b; border-radius:8px; padding:8px 10px;
       line-height:1.5; max-width:360px;
     }
+    .support-doc a {
+      color:var(--green-dark); font-weight:700; text-decoration:none;
+      border-bottom:1px solid rgba(6,14,159,0.35);
+    }
+    .support-doc a:hover { color:var(--green-mid); border-bottom-color:var(--green-mid); }
     .support-grid {
       display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
       gap:12px;
@@ -633,8 +638,10 @@
         <div class="support-note">一般客服每天先看這裡：確認今天有多少對話、哪些問題 AI 不會答、哪些知識需要補。技術設定、資料庫與部署交給維護者處理。</div>
       </div>
       <div class="support-doc">
-        內部教學文件：docs/CUSTOMER_SUPPORT_GUIDE.md<br>
-        先看客服版，維護者再看交接文件。
+        內部教學文件：
+        <a href="https://github.com/jameswu504-hash/ecoco-customer-servic/blob/main/docs/CUSTOMER_SUPPORT_GUIDE.md" target="_blank" rel="noopener">客服操作指南</a><br>
+        維護者再看
+        <a href="https://github.com/jameswu504-hash/ecoco-customer-servic/blob/main/docs/OPERATIONS_HANDOFF_GUIDE.md" target="_blank" rel="noopener">交接文件</a>。
       </div>
     </div>
     <div class="support-grid" id="supportWorkbench">
