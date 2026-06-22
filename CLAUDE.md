@@ -37,8 +37,9 @@ KNOWLEDGE_AUTO_SYNC=disable       # 日常維護只用後台 PostgreSQL；大改
 | Git JSON（版本控制層） | `data/ecoco-ai-customer-service-database.json` | 主要編輯來源，含版本、衝突追蹤、878 筆紀錄 |
 | PostgreSQL（執行層） | `knowledge_sections` + `knowledge_chunks` | 伺服器實際讀取的資料 |
 
-**正確更新流程：** 編輯 `data/` JSON → `audit` → `apply` → `build` → `import` → 部署後自動同步。  
-**後台直接編輯** 只存進 PostgreSQL，不會回寫 Git JSON，需人工同步。
+**日常更新流程：** 在後台新增、修改、封存或恢復知識，資料直接寫入 PostgreSQL。  
+**正式版本流程：** 大改版、交接或備份前，從後台下載 JSON，人工確認後覆蓋 `data/ecoco-knowledge-import.json`，再 commit / push。  
+**注意：** 後台直接編輯不會回寫 Git JSON，Render 預設也不會自動用 Git JSON 覆蓋 PostgreSQL。
 
 ### `server.js` 的啟動順序
 

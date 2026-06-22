@@ -1,5 +1,14 @@
 # ECOCO AI 客服內部維護手冊
 
+## 維護原則
+
+目前專案採用簡易維護模式：
+
+- 日常新增、修改、封存知識：在後台操作，資料會寫入 PostgreSQL。
+- AI 實際回答：讀取 PostgreSQL 的 `knowledge_sections` 與 `knowledge_chunks`。
+- GitHub JSON：作為重大改版、交接與備份用的正式版本，不會自動被後台更新。
+- Render 建議設定：`KNOWLEDGE_AUTO_SYNC=disable`，避免部署時覆蓋後台修改。
+
 ## 每週維護流程
 
 建議每週固定做一次：
@@ -9,10 +18,9 @@
 3. 查看最近低評分或負評回覆。
 4. 把需要補資料的問題整理出來。
 5. 請內部窗口確認正確答案。
-6. 更新知識庫資料。
-7. 重新部署或讓系統自動同步。
-8. 用測試問題確認 AI 回覆是否正確。
-9. 記錄本週更新內容。
+6. 在後台更新、封存或恢復知識庫資料。
+7. 用前台測試同類問題，確認 AI 回覆是否正確。
+8. 記錄本週更新內容。
 
 ## 知識缺口怎麼處理
 
@@ -29,18 +37,26 @@
 
 ## 更新知識庫的安全流程
 
-一般建議走 Git 版本管理：
+### 日常小修
 
-1. 修改 `data/ecoco-ai-customer-service-database.json`。
-2. 執行 `npm run audit:knowledge` 檢查仍會進 AI 的重複資料。
-3. 執行 `npm run apply:knowledge-audit`，把建議剔除的重複資料標成 `status: archived`。
-4. 執行 `npm run build:knowledge`。
-5. 檢查 `data/ecoco-knowledge-import.json` 是否合理。
-6. Commit 並 push 到 GitHub。
-7. Render 自動部署。
-8. 系統啟動後自動同步到 PostgreSQL。
+日常小修優先使用後台，不需要重新部署：
 
-如果只是臨時小修，也可以在後台修改 `knowledge_sections`，但長期仍建議回寫到 JSON，避免下次部署後被 Git 版本覆蓋。
+1. 到「知識維護」搜尋既有分類。
+2. 新增、修改、封存或恢復知識。
+3. 儲存後用前台測試。
+4. 若來源是知識缺口，回到知識缺口列表更新狀態。
+
+### 大改版或交接
+
+大改版、交接或正式備份前，才需要整理回 Git：
+
+1. 在後台點「下載 JSON」。
+2. 人工檢查匯出的內容。
+3. 覆蓋 `data/ecoco-knowledge-import.json`。
+4. Commit 並 push 到 GitHub。
+5. Render 依 GitHub main 部署新版程式。
+
+注意：下載 JSON 不會自動寫回 GitHub；必須由維護者人工放回 repo。
 
 ## 後台資料回寫 Git 的方式
 
@@ -62,7 +78,7 @@ GET /api/knowledge/export
 3. 人工比對 Git JSON。
 4. 將確認後的內容整理回 Git。
 5. Commit、push、部署。
-6. 下次同步時 Git 與 PostgreSQL 內容就能保持一致。
+6. GitHub 會保留這次正式版本，方便交接與回溯。
 
 ## AI 回覆品質檢查
 

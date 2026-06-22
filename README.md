@@ -15,7 +15,6 @@
 - [docs/OPERATIONS_HANDOFF_GUIDE.md](docs/OPERATIONS_HANDOFF_GUIDE.md)：使用、SQL、部署、更新資料與檔案用途總整理
 - [docs/DEPLOYMENT_RUNBOOK.md](docs/DEPLOYMENT_RUNBOOK.md)：Render 部署與環境變數設定
 - [docs/META_AI_INSTRUCTIONS.md](docs/META_AI_INSTRUCTIONS.md)：Meta AI 指令來源整理與維護方式
-- [docs/RAG_WORKFLOW.md](docs/RAG_WORKFLOW.md)：RAG 第一版與 PostgreSQL chunks 檢索流程
 
 ## 功能
 
@@ -24,7 +23,7 @@
 - 即時客服對話，支援 Markdown 回覆
 - 每則 AI 回答可送出滿意度評分
 - 後台可查看統計、對話紀錄、評分明細與知識缺口
-- 後台可新增、修改、刪除知識庫分類，更新後立即生效
+- 後台可新增、修改、封存或恢復知識庫分類，更新後立即生效
 - PostgreSQL 持久化儲存對話、評分、知識缺口與知識庫內容
 - Rate limiting、Admin Key、輸入驗證與前端 XSS 防護
 
@@ -88,7 +87,7 @@ npm start
 | `GET` | `/api/knowledge/sections` | 取得知識庫分類 | Admin Key |
 | `POST` | `/api/knowledge/sections` | 新增知識庫分類 | Admin Key |
 | `PUT` | `/api/knowledge/sections/:id` | 更新知識庫分類 | Admin Key |
-| `DELETE` | `/api/knowledge/sections/:id` | 刪除知識庫分類 | Admin Key |
+| `DELETE` | `/api/knowledge/sections/:id` | 封存知識庫分類，不進入 AI 回答 | Admin Key |
 | `GET` | `/api/search?q=...` | 搜尋對話紀錄 | Admin Key |
 
 ## 匯入 ECOCO FAQ / 回覆規則

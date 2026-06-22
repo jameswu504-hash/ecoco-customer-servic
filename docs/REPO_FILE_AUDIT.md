@@ -22,7 +22,7 @@
 | --- | --- | --- |
 | `knowledge.js` | PostgreSQL 空資料庫時的初始 seed | `server.js` 首次部署仍會讀取 |
 | `data/ecoco-ai-customer-service-database.json` | 完整 AI 客服資料底稿 | 正式資料整理與來源追蹤 |
-| `data/ecoco-knowledge-import.json` | 匯入 PostgreSQL `knowledge_sections` 的精簡知識庫 | Render 啟動同步使用 |
+| `data/ecoco-knowledge-import.json` | 可匯入 PostgreSQL `knowledge_sections` 的正式知識包 | 大改版、交接或備份時使用 |
 | `data/ecoco-response-policies.json` | 高風險回覆政策 | 已接入 `server.js` system prompt |
 | `data/knowledge-quality-audit.json` | 去重與衝突稽核結果 | 人工整理資料品質使用 |
 
@@ -33,6 +33,7 @@
 | `scripts/build-ecoco-knowledge-data.js` | 從完整資料底稿產生匯入 JSON 與回覆政策 | 正式知識庫更新流程需要 |
 | `scripts/import-knowledge-json.js` | 手動匯入 JSON 到 PostgreSQL | 本地或緊急匯入用 |
 | `scripts/audit-knowledge-quality.js` | 產生重複問題與衝突稽核報告 | 資料清理使用 |
+| `scripts/apply-knowledge-audit.js` | 將建議剔除資料標記為 archived | 去重整理流程使用 |
 
 ## 四、已移除的孤兒檔案
 
@@ -51,9 +52,10 @@
 | 檔案 | 注意事項 |
 | --- | --- |
 | `knowledge.js` | 雖然不是主要知識來源，但仍是空資料庫初始化 fallback，所以暫時保留 |
-| `開啟伺服器.bat` | 本地 Windows 開發輔助，不影響 Render；可視團隊習慣決定是否保留 |
+| `docs/RAG_WORKFLOW.md` | 舊版 RAG 第一版說明，已由維運手冊與現行文件取代，不再作為主要入口 |
 
 ## 六、結論
 
 目前 repo 已往「線上客服系統 + 知識庫維護」方向收斂。舊站點匯入與 SQLite 遷移檔已移除，避免主管或維護者誤以為這些腳本仍是正式流程的一部分。
 
+目前日常維護以後台 PostgreSQL 為準；重大改版、交接或備份前，再由後台下載 JSON 並人工整理回 GitHub。
