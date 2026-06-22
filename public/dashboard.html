@@ -386,8 +386,24 @@
     .kb-cat-btn:hover { border-color:var(--green-mid); }
     .kb-cat-btn.active { background:var(--green-main); color:white; }
     .kb-cat-btn.active .kb-cat-size { color:var(--green-pale); }
+    .kb-cat-btn.archived { opacity:0.72; border-style:dashed; }
     .kb-cat-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .kb-cat-size { font-size:10px; font-family:'Space Mono',monospace; color:var(--gray-mid); flex-shrink:0; }
+    .kb-archive-filter {
+      display:flex; align-items:center; gap:6px; margin:2px 2px 8px;
+      color:var(--gray-mid); font-size:12px; line-height:1.4;
+    }
+    .kb-archive-badge {
+      display:inline-flex; align-items:center; border:1px solid #d9c4c4;
+      color:#9b4f4f; background:#fff8f8; border-radius:999px;
+      padding:1px 6px; font-size:10px; white-space:nowrap;
+    }
+    .kb-restore-btn {
+      padding:7px 12px; background:white; color:var(--green-main);
+      border:1.5px solid var(--green-main); border-radius:8px; cursor:pointer;
+      font-family:'Noto Sans TC',sans-serif; font-size:13px;
+    }
+    .kb-restore-btn:hover { background:var(--green-pale); }
     .kb-editor { border:1px solid #e0ede8; border-radius:10px; padding:16px; min-height:340px; }
     .kb-empty { color:var(--gray-mid); font-size:14px; text-align:center; padding:80px 20px; line-height:1.7; }
     .kb-label { display:block; font-size:12px; color:var(--gray-mid); margin:4px 0; }
@@ -691,6 +707,10 @@
     <div class="kb-layout">
       <div class="kb-sidebar">
         <input class="kb-search-input" id="kbSearch" placeholder="搜尋分類，例如：點數、優惠券、機台" oninput="renderKbSidebar()" />
+        <label class="kb-archive-filter">
+          <input type="checkbox" id="kbShowArchived" onchange="loadKnowledge()" />
+          顯示封存分類
+        </label>
         <div class="kb-hint" id="kbSearchHint"></div>
         <div id="kbSidebar"><div class="loading">載入中...</div></div>
       </div>
@@ -723,7 +743,8 @@
             <span class="knowledge-char" id="kbChar">0 字</span>
             <div style="display:flex;gap:10px;align-items:center">
               <span class="save-msg" id="kbMsg"></span>
-              <button class="kb-del-btn" id="kbDelBtn" onclick="deleteSection()">🗑 刪除</button>
+              <button class="kb-restore-btn" id="kbRestoreBtn" onclick="restoreSection()" style="display:none">恢復使用</button>
+              <button class="kb-del-btn" id="kbDelBtn" onclick="archiveSection()">封存</button>
               <button class="save-btn" id="kbSaveBtn" onclick="saveSection()">💾 儲存</button>
             </div>
           </div>
@@ -976,9 +997,14 @@ let kbSections = [];     // 目前所有分類
 let kbCurrentId = null;  // 正在編輯的 id（null = 新增中尚未存）
 
 async function loadKnowledge() {
-  const data = await adminFetch('/api/knowledge/sections');
+  const showArchived = document.getElementById('kbShowArchived')?.checked;
+  const data = await adminFetch('/api/knowledge/sections' + (showArchived ? '?include_archived=true' : ''));
   kbSections = data;
-  document.getElementById('kbCount').textContent = `（共 ${data.length} 個分類）`;
+  const activeCount = data.filter(s => !isArchivedSection(s)).length;
+  const archivedCount = data.length - activeCount;
+  document.getElementById('kbCount').textContent = showArchived
+    ? `（${activeCount} 個使用中，${archivedCount} 個封存）`
+    : `（共 ${activeCount} 個分類）`;
   renderKbSidebar();
 }
 
@@ -1018,6 +1044,10 @@ function displayCategoryName(value) {
     .trim();
 }
 
+function isArchivedSection(section) {
+  return Boolean(section && String(section.archived_at || '').trim());
+}
+
 function getKbSearchQuery() {
   const input = document.getElementById('kbSearch');
   return input ? input.value.trim() : '';
@@ -1037,7 +1067,7 @@ function renderKbSidebar() {
   if (hint) {
     hint.textContent = query
       ? `找到 ${sections.length} / ${kbSections.length} 個分類`
-      : '搜尋只比對分類名稱，不會搜尋完整內容。';
+      : '搜尋只比對分類名稱，不會搜尋完整內容。封存分類不會提供給 AI 使用。';
   }
 
   if (kbSections.length === 0) {
@@ -1049,8 +1079,9 @@ function renderKbSidebar() {
     return;
   }
   el.innerHTML = sections.map(s => `
-    <button class="kb-cat-btn ${s.id === kbCurrentId ? 'active' : ''}" onclick="selectSection(${s.id})">
+    <button class="kb-cat-btn ${s.id === kbCurrentId ? 'active' : ''} ${isArchivedSection(s) ? 'archived' : ''}" onclick="selectSection(${s.id})">
       <span class="kb-cat-name">${escapeHtml(displayCategoryName(s.category))}</span>
+      ${isArchivedSection(s) ? '<span class="kb-archive-badge">封存</span>' : ''}
       <span class="kb-cat-size">${s.content.length}字</span>
     </button>
   `).join('');
@@ -1109,11 +1140,18 @@ function showKbForm() {
 function selectSection(id) {
   const s = kbSections.find(x => x.id === id);
   if (!s) return;
+  const archived = isArchivedSection(s);
   kbCurrentId = id;
   document.getElementById('kbName').value = displayCategoryName(s.category);
   document.getElementById('kbContent').value = s.content;
-  document.getElementById('kbDelBtn').style.display = '';
+  document.getElementById('kbDelBtn').style.display = archived ? 'none' : '';
+  document.getElementById('kbRestoreBtn').style.display = archived ? '' : 'none';
+  document.getElementById('kbSaveBtn').disabled = archived;
   showKbForm();
+  if (archived) {
+    document.getElementById('kbMsg').textContent = '這筆已封存，不會提供給 AI 使用；如需修改請先恢復。';
+    document.getElementById('kbMsg').className = 'save-msg err';
+  }
   kbCharCount();
   renderKbSidebar();
   clearCategorySuggestions();
@@ -1124,6 +1162,8 @@ function newSection() {
   document.getElementById('kbName').value = '';
   document.getElementById('kbContent').value = '';
   document.getElementById('kbDelBtn').style.display = 'none'; // 還沒存，不給刪
+  document.getElementById('kbRestoreBtn').style.display = 'none';
+  document.getElementById('kbSaveBtn').disabled = false;
   showKbForm();
   kbCharCount();
   renderKbSidebar();
@@ -1183,7 +1223,13 @@ async function saveSection() {
   const msg = document.getElementById('kbMsg');
   const btn = document.getElementById('kbSaveBtn');
   if (!category) { msg.textContent = '❌ 請填分類名稱'; msg.className = 'save-msg err'; return; }
-  const duplicate = kbSections.find(s => s.id !== kbCurrentId && normalizeKbText(displayCategoryName(s.category)) === normalizeKbText(category));
+  const current = kbSections.find(s => s.id === kbCurrentId);
+  if (isArchivedSection(current)) {
+    msg.textContent = '❌ 這筆已封存，如需修改請先恢復使用';
+    msg.className = 'save-msg err';
+    return;
+  }
+  const duplicate = kbSections.find(s => !isArchivedSection(s) && s.id !== kbCurrentId && normalizeKbText(displayCategoryName(s.category)) === normalizeKbText(category));
   if (duplicate) {
     msg.textContent = '❌ 已有同名分類，請開啟原分類編輯，避免資料重複';
     msg.className = 'save-msg err';
@@ -1205,6 +1251,7 @@ async function saveSection() {
     msg.textContent = '✅ 已儲存，AI 立即生效'; msg.className = 'save-msg ok';
     await loadKnowledge();
     document.getElementById('kbDelBtn').style.display = '';
+    document.getElementById('kbRestoreBtn').style.display = 'none';
     renderKbSidebar();
   } catch (e) {
     msg.textContent = '❌ ' + e.message; msg.className = 'save-msg err';
@@ -1214,10 +1261,10 @@ async function saveSection() {
   }
 }
 
-async function deleteSection() {
+async function archiveSection() {
   if (kbCurrentId == null) return;
   const s = kbSections.find(x => x.id === kbCurrentId);
-  if (!confirm(`確定要刪除分類「${s ? s.category : ''}」嗎？\n此動作無法復原。`)) return;
+  if (!confirm(`確定要封存分類「${s ? displayCategoryName(s.category) : ''}」嗎？\n封存後 AI 不會再使用，但之後可以從「顯示封存分類」恢復。`)) return;
   const msg = document.getElementById('kbMsg');
   try {
     const res = await fetch('/api/knowledge/sections/' + kbCurrentId, {
@@ -1225,11 +1272,32 @@ async function deleteSection() {
       headers: { 'x-admin-key': getAdminKey() },
     });
     const body = await res.json();
-    if (!res.ok) throw new Error(body.error || '刪除失敗');
+    if (!res.ok) throw new Error(body.error || '封存失敗');
     kbCurrentId = null;
     document.getElementById('kbForm').style.display = 'none';
     document.getElementById('kbEmpty').style.display = 'block';
     await loadKnowledge();
+  } catch (e) {
+    msg.textContent = '❌ ' + e.message; msg.className = 'save-msg err';
+  }
+}
+
+async function restoreSection() {
+  if (kbCurrentId == null) return;
+  const s = kbSections.find(x => x.id === kbCurrentId);
+  if (!confirm(`確定要恢復分類「${s ? displayCategoryName(s.category) : ''}」嗎？\n恢復後 AI 會重新使用這筆知識。`)) return;
+  const msg = document.getElementById('kbMsg');
+  try {
+    const res = await fetch('/api/knowledge/sections/' + kbCurrentId + '/restore', {
+      method: 'PATCH',
+      headers: { 'x-admin-key': getAdminKey() },
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || '恢復失敗');
+    msg.textContent = '✅ 已恢復，AI 會重新使用這筆知識';
+    msg.className = 'save-msg ok';
+    await loadKnowledge();
+    selectSection(kbCurrentId);
   } catch (e) {
     msg.textContent = '❌ ' + e.message; msg.className = 'save-msg err';
   }

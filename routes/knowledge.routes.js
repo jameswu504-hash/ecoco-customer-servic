@@ -21,8 +21,8 @@ function createKnowledgeRouter({
       const databasePayload = readJsonFile(path.join('data', 'ecoco-ai-customer-service-database.json')) || {};
 
       const [{ rows: dbCounts }, { rows: latestRows }, { rows: chunkCounts }] = await Promise.all([
-        pool.query('SELECT COUNT(*) AS section_count, COALESCE(SUM(LENGTH(content)), 0) AS content_chars FROM knowledge_sections'),
-        pool.query('SELECT MAX(updated_at) AS latest_update FROM knowledge_sections'),
+        pool.query("SELECT COUNT(*) AS section_count, COALESCE(SUM(LENGTH(content)), 0) AS content_chars FROM knowledge_sections WHERE COALESCE(archived_at, '') = ''"),
+        pool.query("SELECT MAX(updated_at) AS latest_update FROM knowledge_sections WHERE COALESCE(archived_at, '') = ''"),
         pool.query('SELECT COUNT(*) AS chunk_count FROM knowledge_chunks'),
       ]);
 
@@ -64,8 +64,12 @@ function createKnowledgeRouter({
 
   router.get('/sections', async (req, res) => {
     try {
+      const includeArchived = String(req.query.include_archived || '').toLowerCase() === 'true';
       const { rows } = await pool.query(
-        'SELECT id, category, content, sort_order, updated_at FROM knowledge_sections ORDER BY sort_order ASC, id ASC'
+        `SELECT id, category, content, sort_order, updated_at, COALESCE(archived_at, '') AS archived_at
+         FROM knowledge_sections
+         ${includeArchived ? '' : "WHERE COALESCE(archived_at, '') = ''"}
+         ORDER BY sort_order ASC, id ASC`
       );
       res.json(rows);
     } catch (dbErr) {
@@ -77,7 +81,7 @@ function createKnowledgeRouter({
   router.get('/export', async (req, res) => {
     try {
       const { rows } = await pool.query(
-        'SELECT category, content, sort_order, updated_at FROM knowledge_sections ORDER BY sort_order ASC, id ASC'
+        "SELECT category, content, sort_order, updated_at FROM knowledge_sections WHERE COALESCE(archived_at, '') = '' ORDER BY sort_order ASC, id ASC"
       );
       const totalChars = rows.reduce((sum, row) => sum + String(row.content || '').length, 0);
       const payload = {
@@ -155,14 +159,36 @@ function createKnowledgeRouter({
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'ID 格式錯誤' });
 
     try {
-      const result = await pool.query('DELETE FROM knowledge_sections WHERE id = $1', [id]);
+      const result = await pool.query(
+        "UPDATE knowledge_sections SET archived_at = $1, updated_at = $1 WHERE id = $2 AND COALESCE(archived_at, '') = ''",
+        [new Date().toISOString(), id]
+      );
       if (result.rowCount === 0) return res.status(404).json({ error: '找不到這個知識分類' });
       await refreshKnowledgeCache();
       await rebuildKnowledgeChunks();
       res.json({ success: true });
     } catch (dbErr) {
-      console.error('DB knowledge delete error:', dbErr.message);
-      res.status(500).json({ error: '刪除知識分類失敗' });
+      console.error('DB knowledge archive error:', dbErr.message);
+      res.status(500).json({ error: '封存知識分類失敗' });
+    }
+  });
+
+  router.patch('/sections/:id/restore', async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: 'ID 格式錯誤' });
+
+    try {
+      const result = await pool.query(
+        "UPDATE knowledge_sections SET archived_at = '', updated_at = $1 WHERE id = $2",
+        [new Date().toISOString(), id]
+      );
+      if (result.rowCount === 0) return res.status(404).json({ error: '找不到這個知識分類' });
+      await refreshKnowledgeCache();
+      await rebuildKnowledgeChunks();
+      res.json({ success: true });
+    } catch (dbErr) {
+      console.error('DB knowledge restore error:', dbErr.message);
+      res.status(500).json({ error: '恢復知識分類失敗' });
     }
   });
 

@@ -34,6 +34,7 @@ const SCHEMA = [
       sort_order INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL
     )`,
+  `ALTER TABLE knowledge_sections ADD COLUMN IF NOT EXISTS archived_at TEXT DEFAULT ''`,
   `CREATE TABLE IF NOT EXISTS knowledge_chunks (
       id                SERIAL PRIMARY KEY,
       section_id        INTEGER,
@@ -51,6 +52,7 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_unanswered_ts ON unanswered_questions(timestamp)`,
   `CREATE INDEX IF NOT EXISTS idx_unanswered_status ON unanswered_questions(status)`,
   `CREATE INDEX IF NOT EXISTS idx_ks_sort       ON knowledge_sections(sort_order, id)`,
+  `CREATE INDEX IF NOT EXISTS idx_ks_archived   ON knowledge_sections(archived_at)`,
   `CREATE INDEX IF NOT EXISTS idx_kc_section    ON knowledge_chunks(section_id)`,
   `CREATE INDEX IF NOT EXISTS idx_kc_sort       ON knowledge_chunks(sort_order, id)`,
 ];

@@ -258,7 +258,7 @@ function buildChunksFromSection(section) {
 
 async function rebuildKnowledgeChunks() {
   const { rows } = await pool.query(
-    'SELECT id, category, content, sort_order, updated_at FROM knowledge_sections ORDER BY sort_order ASC, id ASC'
+    "SELECT id, category, content, sort_order, updated_at FROM knowledge_sections WHERE COALESCE(archived_at, '') = '' ORDER BY sort_order ASC, id ASC"
   );
 
   await pool.query('DELETE FROM knowledge_chunks');
@@ -375,7 +375,7 @@ const KNOWLEDGE_GAP_MARKERS = [
 
 async function refreshKnowledgeCache() {
   const { rows } = await pool.query(
-    'SELECT category, content FROM knowledge_sections ORDER BY sort_order ASC, id ASC'
+    "SELECT category, content FROM knowledge_sections WHERE COALESCE(archived_at, '') = '' ORDER BY sort_order ASC, id ASC"
   );
   knowledgeCache = rows.map(r => `【${r.category}】\n${r.content}`).join('\n\n');
   console.log('知識庫快取已更新，長度：', knowledgeCache.length);
