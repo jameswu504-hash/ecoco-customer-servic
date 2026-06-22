@@ -56,6 +56,46 @@
 
     .container { max-width:1100px; margin:0 auto; padding:24px 20px; }
 
+    .support-workbench {
+      background:var(--white); border-radius:var(--radius); padding:20px;
+      box-shadow:var(--shadow); border:1px solid #dfe6ee; margin-bottom:28px;
+    }
+    .support-head {
+      display:flex; justify-content:space-between; align-items:flex-start;
+      gap:14px; flex-wrap:wrap; margin-bottom:14px;
+    }
+    .support-note {
+      font-size:12px; color:var(--gray-mid); line-height:1.7;
+    }
+    .support-doc {
+      font-size:12px; color:var(--green-dark); background:var(--green-pale);
+      border:1px solid #f0d77b; border-radius:8px; padding:8px 10px;
+      line-height:1.5; max-width:360px;
+    }
+    .support-grid {
+      display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+      gap:12px;
+    }
+    .support-card {
+      display:block; text-decoration:none; color:var(--black);
+      border:1px solid #e6ecf2; border-radius:8px; padding:14px;
+      background:var(--green-ghost); transition:all 0.16s;
+    }
+    .support-card:hover {
+      border-color:var(--green-mid); background:white;
+      transform:translateY(-1px);
+    }
+    .support-card strong {
+      display:block; color:var(--green-dark); font-size:14px; margin-bottom:6px;
+    }
+    .support-card span {
+      display:block; color:var(--gray-mid); font-size:12px; line-height:1.6;
+    }
+    .support-card b {
+      color:var(--green-main); font-family:'Space Mono',monospace;
+      font-size:18px; margin-right:4px;
+    }
+
     /* 統計卡片 */
     .stats-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:16px; margin-bottom:28px; }
     .stat-card {
@@ -404,7 +444,7 @@
     .unanswered-toggle {
       border:1px solid #cce0d8; background:var(--white); color:var(--green-main);
       border-radius:6px; padding:4px 10px; font-size:11px; cursor:pointer;
-      font-family:'Noto Sans TC',sans-serif;
+      font-family:'Noto Sans TC',sans-serif; text-decoration:none; display:inline-block;
     }
     .unanswered-toggle:hover { background:var(--green-pale); }
     .gap-controls {
@@ -480,12 +520,28 @@
 
 <div class="container">
 
+  <div class="support-workbench">
+    <div class="support-head">
+      <div>
+        <div class="section-title" style="margin-bottom:6px">客服日常工作台</div>
+        <div class="support-note">一般客服每天先看這裡：確認今天有多少對話、哪些問題 AI 不會答、哪些知識需要補。技術設定、資料庫與部署交給維護者處理。</div>
+      </div>
+      <div class="support-doc">
+        內部教學文件：docs/CUSTOMER_SUPPORT_GUIDE.md<br>
+        先看客服版，維護者再看交接文件。
+      </div>
+    </div>
+    <div class="support-grid" id="supportWorkbench">
+      <div class="loading">載入中...</div>
+    </div>
+  </div>
+
   <!-- 統計總覽 -->
   <div class="stats-grid" id="statsGrid">
     <div class="loading">載入中...</div>
   </div>
 
-  <div class="report-card">
+  <div class="report-card" id="reportSection">
     <div class="report-head">
       <div>
         <div class="section-title" style="margin-bottom:6px">📊 營運報表</div>
@@ -524,7 +580,7 @@
   </div>
 
   <!-- 知識庫管理（分類版）-->
-  <div class="knowledge-card">
+  <div class="knowledge-card" id="knowledgeSection">
     <div class="section-title" style="justify-content:space-between">
       <span>📚 知識庫管理 <span id="kbCount" style="color:var(--gray-mid);font-weight:400;font-size:13px"></span></span>
       <div style="display:flex;gap:8px;align-items:center">
@@ -565,13 +621,14 @@
   </div>
 
   <!-- 知識缺口列表 -->
-  <div class="unanswered-card">
-    <div class="section-title">❓ 知識缺口列表（AI 無法回答的問題）</div>
+  <div class="unanswered-card" id="unansweredSection">
+    <div class="section-title">客服待辦：AI 不確定的問題</div>
+    <div class="support-note" style="margin:-6px 0 12px">這裡不是錯誤清單，而是「需要人補知識或判斷是否刪除」的待辦。補完知識後，可以把已處理的項目刪掉，避免列表越來越長。</div>
     <div id="unansweredList"><div class="loading">載入中...</div></div>
   </div>
 
   <!-- 對話紀錄 -->
-  <div class="sessions-card">
+  <div class="sessions-card" id="sessionsSection">
     <div class="section-title">💬 每次對話詳細紀錄</div>
     <div class="search-wrap">
       <input class="search-input" id="searchInput" type="text" placeholder="🔍 搜尋對話內容（輸入關鍵字）"
@@ -967,11 +1024,34 @@ async function runSearch(q) {
   }
 }
 
+function renderSupportWorkbench(data, satisfactionRate) {
+  const unanswered = data.unansweredCount ?? 0;
+  document.getElementById('supportWorkbench').innerHTML = `
+    <a class="support-card" href="#reportSection">
+      <strong>1. 先看營運報表</strong>
+      <span><b>${data.totalSessions ?? 0}</b> 筆客服案件，滿意度 ${satisfactionRate}% 。可複製週報或月報給主管。</span>
+    </a>
+    <a class="support-card" href="#unansweredSection">
+      <strong>2. 處理 AI 不確定問題</strong>
+      <span><b>${unanswered}</b> 筆待辦。能補知識就補，已處理或不需要就刪除。</span>
+    </a>
+    <a class="support-card" href="#knowledgeSection">
+      <strong>3. 補充客服知識</strong>
+      <span>用分類搜尋舊資料，新增前先確認是否已有相近分類，避免重複。</span>
+    </a>
+    <a class="support-card" href="#sessionsSection">
+      <strong>4. 查詢對話紀錄</strong>
+      <span>回頭看使用者原話與 AI 回覆，找出常見問題或回答品質問題。</span>
+    </a>
+  `;
+}
+
 // 統計卡片 + 滿意度圖表
 async function loadStats() {
   const data = await adminFetch('/api/stats');
   const total = data.positiveRatings + data.negativeRatings;
   const satisfactionRate = total > 0 ? Math.round(data.positiveRatings / total * 100) : 0;
+  renderSupportWorkbench(data, satisfactionRate);
 
   document.getElementById('statsGrid').innerHTML = `
     <div class="stat-card">
@@ -1149,7 +1229,7 @@ async function loadUnanswered() {
   const data = await adminFetch('/api/unanswered');
   if (data.length === 0) {
     document.getElementById('unansweredList').innerHTML =
-      '<div class="empty-state">目前沒有知識缺口紀錄，AI 都能回答用戶問題 🎉</div>';
+      '<div class="empty-state">目前沒有客服待辦。若 AI 遇到不確定問題，會自動出現在這裡。</div>';
     return;
   }
   document.getElementById('unansweredList').innerHTML = data.map((item, idx) => {
@@ -1171,6 +1251,7 @@ async function loadUnanswered() {
             <div class="unanswered-reply">AI 回覆：${reply}</div>
           ` : ''}
           <div class="gap-controls">
+            <a class="unanswered-toggle" href="#knowledgeSection">補到知識庫</a>
             <button class="gap-delete" type="button" onclick="deleteGap(${item.id})">刪除</button>
           </div>
         </div>

@@ -149,6 +149,26 @@
       border-radius: 12px; font-size: 11px; color: var(--ecoco-blue);
       font-family: 'Space Mono', monospace;
     }
+    .source-detail {
+      margin-top: 8px; border: 1px solid #dfe6ee; border-radius: 8px;
+      background: #fffdf6; overflow: hidden; max-width: 100%;
+    }
+    .source-detail summary {
+      cursor: pointer; padding: 6px 10px; font-size: 11px; color: var(--ecoco-blue);
+      font-weight: 700; list-style: none; user-select: none;
+    }
+    .source-detail summary::-webkit-details-marker { display: none; }
+    .source-detail summary::after { content: ' ▼'; font-size: 10px; color: var(--gray-mid); }
+    .source-detail[open] summary::after { content: ' ▲'; }
+    .source-list {
+      display: flex; flex-direction: column; gap: 6px; padding: 0 10px 8px;
+      font-size: 11px; color: var(--gray-mid);
+    }
+    .source-item {
+      padding: 6px 8px; border-radius: 6px; background: var(--white);
+      border: 1px solid #edf1f5; line-height: 1.5; overflow-wrap: anywhere;
+    }
+    .source-item strong { color: var(--ecoco-blue); }
 
     /* ── 優化二：評分按鈕 ── */
     .rating-bar { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
@@ -318,6 +338,15 @@ function getTime() {
   return new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
 }
 
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function autoResize(el) {
   el.style.height = 'auto';
   el.style.height = Math.min(el.scrollHeight, 120) + 'px';
@@ -332,7 +361,7 @@ function quickAsk(text) {
   sendMessage();
 }
 
-function appendMessage(role, text) {
+function appendMessage(role, text, options = {}) {
   const messages = document.getElementById('messages');
   const row = document.createElement('div');
   row.className = `msg-row ${role}`;
@@ -369,6 +398,9 @@ function appendMessage(role, text) {
     tag.innerHTML = '<span class="source-tag">📚 ECOCO 知識庫</span>';
     wrapper.appendChild(bubble);
     wrapper.appendChild(tag);
+    if (Array.isArray(options.ragSources) && options.ragSources.length > 0) {
+      wrapper.appendChild(renderRagSources(options.ragSources));
+    }
     wrapper.appendChild(time);
 
     // 優化二：滿意度評分按鈕
@@ -423,6 +455,26 @@ function appendMessage(role, text) {
   messages.scrollTop = messages.scrollHeight;
 
   return bubble;
+}
+
+function renderRagSources(sources) {
+  const detail = document.createElement('details');
+  detail.className = 'source-detail';
+  const summary = document.createElement('summary');
+  summary.textContent = `引用知識 ${sources.length} 筆`;
+  detail.appendChild(summary);
+
+  const list = document.createElement('div');
+  list.className = 'source-list';
+  sources.slice(0, 5).forEach(source => {
+    const item = document.createElement('div');
+    item.className = 'source-item';
+    const score = typeof source.score === 'number' ? `｜分數 ${source.score}` : '';
+    item.innerHTML = `<strong>${escapeHtml(source.category || '未分類')}</strong><br>${escapeHtml(source.title || '未命名片段')}${escapeHtml(score)}`;
+    list.appendChild(item);
+  });
+  detail.appendChild(list);
+  return detail;
 }
 
 function showTyping() {
@@ -498,7 +550,7 @@ async function sendMessage() {
     chatHistory.push({ role: 'assistant', content: reply });
 
     removeTyping();
-    appendMessage('bot', reply);
+    appendMessage('bot', reply, { ragSources: data.ragSources || [] });
   } catch (err) {
     removeTyping();
     appendMessage('bot', '抱歉，連線發生問題 😢\n請稍後再試，或直接聯絡客服：info@ecoco.xyz');

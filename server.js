@@ -271,6 +271,17 @@ const RAG_KEYWORDS = [
   '正義用戶', '黑名單', '檢舉', '違規', '巡檢', '異常', '通報',
 ];
 
+const RAG_SYNONYM_GROUPS = [
+  ['優惠券', '兌換', '核銷', '券不能用', '無法兌換', '兌換失敗', '不能兌換', '漢堡王為何不能兌換', '全聯為何不能兌換'],
+  ['機台', '滿袋', '滿倉', '滿箱', '滿了', '不能投', '投不進去', '退瓶', '卡住'],
+  ['站點', '地點', '據點', '設點', '新竹設點', '新增站點', '站點建議', '可以在新竹設點嗎'],
+  ['現場環境', '垃圾', '髒亂', '清潔', '機台旁邊都是垃圾', '滿地垃圾'],
+  ['合作商家', '商家', '合作店家', '有哪些合作商家', '合作品牌'],
+  ['活動', '任務', '抽獎', '最近有什麼活動', '最近有甚麼活動'],
+  ['點數', '補點', '入帳', '效期', '期限', '點數沒進來', '點數未入帳'],
+  ['帳號', '登入', '註冊', '驗證碼', '手機號碼', '收不到簡訊'],
+];
+
 function normalizeText(value) {
   return String(value || '')
     .normalize('NFKC')
@@ -369,6 +380,12 @@ function buildSearchTerms(question) {
   const terms = new Set();
   for (const keyword of RAG_KEYWORDS) {
     if (text.includes(keyword)) terms.add(keyword);
+  }
+  const lowerText = text.toLowerCase();
+  for (const group of RAG_SYNONYM_GROUPS) {
+    if (group.some(term => lowerText.includes(String(term).toLowerCase()))) {
+      group.forEach(term => terms.add(term));
+    }
   }
   text
     .split(/[^0-9A-Za-z\u4e00-\u9fff]+/g)
