@@ -410,6 +410,30 @@
       background:var(--green-ghost);
     }
     .kb-content-input:focus { border-color:var(--green-mid); background:var(--white); }
+    .kb-builder {
+      border:1px solid #e0ede8; border-radius:8px; padding:12px;
+      background:var(--green-ghost); margin-bottom:12px;
+    }
+    .kb-builder-head {
+      display:flex; justify-content:space-between; align-items:center;
+      gap:10px; margin-bottom:10px; flex-wrap:wrap;
+    }
+    .kb-builder-title { font-size:13px; font-weight:700; color:var(--green-dark); }
+    .kb-builder-note { font-size:11px; color:var(--gray-mid); line-height:1.5; }
+    .kb-builder-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .kb-builder-field {
+      width:100%; border:1px solid #cce0d8; border-radius:8px;
+      padding:8px 10px; font-size:12px; font-family:'Noto Sans TC',sans-serif;
+      background:white; outline:none; resize:vertical; min-height:36px;
+    }
+    .kb-builder-field:focus { border-color:var(--green-mid); }
+    .kb-builder-wide { grid-column:1 / -1; }
+    .kb-builder-btn {
+      border:1.5px solid var(--green-main); background:white; color:var(--green-main);
+      border-radius:8px; padding:6px 12px; font-size:12px; cursor:pointer;
+      font-family:'Noto Sans TC',sans-serif;
+    }
+    .kb-builder-btn:hover { background:var(--green-main); color:white; }
     .kb-actions { display:flex; justify-content:space-between; align-items:center; margin-top:10px; }
     .kb-del-btn {
       padding:8px 16px; background:white; color:#e07070; border:1.5px solid #e07070;
@@ -418,6 +442,7 @@
     .kb-del-btn:hover { background:#e07070; color:white; }
     @media (max-width:768px) {
       .kb-layout { grid-template-columns:1fr; }
+      .kb-builder-grid { grid-template-columns:1fr; }
       .overview-columns { grid-template-columns:1fr; }
     }
 
@@ -480,11 +505,35 @@
       display:flex; gap:8px; align-items:center; flex-wrap:wrap;
       margin-top:10px;
     }
+    .gap-toolbar {
+      display:flex; justify-content:space-between; align-items:center;
+      gap:10px; flex-wrap:wrap; margin-bottom:12px;
+    }
+    .gap-status-row {
+      display:grid; grid-template-columns:150px minmax(180px, 1fr) auto;
+      gap:8px; align-items:center; margin-top:10px;
+    }
+    .gap-select, .gap-note {
+      border:1px solid #cce0d8; border-radius:8px; padding:7px 10px;
+      background:white; color:var(--black); font-size:12px;
+      font-family:'Noto Sans TC',sans-serif; outline:none;
+    }
+    .gap-select:focus, .gap-note:focus { border-color:var(--green-mid); }
+    .gap-save {
+      border:1.5px solid var(--green-main); border-radius:8px; padding:7px 12px;
+      cursor:pointer; background:white; color:var(--green-main); font-size:12px;
+      font-family:'Noto Sans TC',sans-serif;
+    }
+    .gap-save:hover { background:var(--green-main); color:white; }
     .gap-delete {
       border:1px solid #e07070; border-radius:8px; padding:7px 12px; cursor:pointer;
       background:white; color:#c0392b; font-size:12px; font-family:'Noto Sans TC',sans-serif;
     }
     .gap-delete:hover { background:#e07070; color:white; }
+    .gap-status-badge {
+      display:inline-block; margin-top:6px; padding:2px 8px; border-radius:999px;
+      background:var(--green-pale); color:var(--green-dark); font-size:11px;
+    }
     .unanswered-meta { font-size:11px; color:var(--gray-mid); font-family:'Space Mono',monospace; flex-shrink:0; white-space:nowrap; }
     .unanswered-icon { font-size:16px; flex-shrink:0; margin-top:1px; }
 
@@ -507,6 +556,7 @@
         grid-column:2; white-space:normal; font-size:10px; margin-top:-4px;
       }
       .gap-controls { grid-template-columns:1fr; }
+      .gap-status-row { grid-template-columns:1fr; }
       .back-link {
         width:28px; height:32px; overflow:hidden;
         color:transparent; position:relative; flex-shrink:0;
@@ -636,6 +686,23 @@
           <label class="kb-label">分類名稱</label>
           <input class="kb-name-input" id="kbName" placeholder="例如：點數計算規則" oninput="renderCategorySuggestions()" onfocus="renderCategorySuggestions()" />
           <div class="kb-suggestion-box" id="kbCategorySuggestions"></div>
+          <div class="kb-builder">
+            <div class="kb-builder-head">
+              <div>
+                <div class="kb-builder-title">客服知識表單</div>
+                <div class="kb-builder-note">填幾個重點後按「產生內容」，會自動整理成 AI 比較好讀的格式。</div>
+              </div>
+              <button class="kb-builder-btn" type="button" onclick="applyKnowledgeTemplate()">產生內容</button>
+            </div>
+            <div class="kb-builder-grid">
+              <input class="kb-builder-field" id="kbTplTitle" placeholder="問題標題，例如：點數未入帳" />
+              <input class="kb-builder-field" id="kbTplContext" placeholder="適用情境，例如：會員回收後點數未出現" />
+              <textarea class="kb-builder-field kb-builder-wide" id="kbTplReply" placeholder="標準回覆：給使用者看的正式回答"></textarea>
+              <textarea class="kb-builder-field" id="kbTplCollect" placeholder="需要收集資訊：註冊手機、時間、站點、截圖"></textarea>
+              <textarea class="kb-builder-field" id="kbTplAvoid" placeholder="不能承諾事項：例如不要承諾補點、退款、已處理"></textarea>
+              <textarea class="kb-builder-field kb-builder-wide" id="kbTplInternal" placeholder="內部備註：給客服或維護者看的提醒"></textarea>
+            </div>
+          </div>
           <label class="kb-label">內容</label>
           <textarea class="kb-content-input" id="kbContent" spellcheck="false" oninput="kbCharCount()"></textarea>
           <div class="kb-actions">
@@ -660,7 +727,17 @@
   <!-- 知識缺口列表 -->
   <div class="unanswered-card dashboard-layer layer-daily" id="unansweredSection">
     <div class="section-title">客服待辦：AI 不確定的問題</div>
-    <div class="support-note" style="margin:-6px 0 12px">這裡不是錯誤清單，而是「需要人補知識或判斷是否刪除」的待辦。補完知識後，可以把已處理的項目刪掉，避免列表越來越長。</div>
+    <div class="support-note" style="margin:-6px 0 12px">這裡不是錯誤清單，而是「需要人補知識或判斷狀態」的待辦。補完知識後可標成已補知識；真的不需要保存時再刪除。</div>
+    <div class="gap-toolbar">
+      <span class="support-note">預設只看待處理，已處理紀錄可切換查看。</span>
+      <select class="gap-select" id="gapFilter" onchange="renderUnansweredList()">
+        <option value="pending">只看待處理</option>
+        <option value="resolved">已補知識</option>
+        <option value="manual">需人工處理</option>
+        <option value="ignored">不需處理</option>
+        <option value="all">全部</option>
+      </select>
+    </div>
     <div id="unansweredList"><div class="loading">載入中...</div></div>
   </div>
 
@@ -1045,6 +1122,47 @@ function kbCharCount() {
     document.getElementById('kbContent').value.length.toLocaleString() + ' 字';
 }
 
+function getTemplateValue(id) {
+  return document.getElementById(id)?.value.trim() || '';
+}
+
+function applyKnowledgeTemplate() {
+  const title = getTemplateValue('kbTplTitle') || document.getElementById('kbName').value.trim() || '未命名問題';
+  const context = getTemplateValue('kbTplContext');
+  const reply = getTemplateValue('kbTplReply');
+  const collect = getTemplateValue('kbTplCollect');
+  const avoid = getTemplateValue('kbTplAvoid');
+  const internal = getTemplateValue('kbTplInternal');
+  const content = [
+    `### ${title}`,
+    '',
+    context ? `適用情境：\n${formatTemplateLines(context)}` : '',
+    reply ? `建議回覆：\n${reply}` : '',
+    collect ? `需要收集資訊：\n${formatTemplateLines(collect)}` : '',
+    avoid ? `不能承諾事項：\n${formatTemplateLines(avoid)}` : '',
+    internal ? `內部備註：\n${internal}` : '',
+  ].filter(Boolean).join('\n\n');
+
+  const textarea = document.getElementById('kbContent');
+  if (!textarea.value.trim()) {
+    textarea.value = content;
+  } else {
+    textarea.value = `${textarea.value.trim()}\n\n${content}`;
+  }
+  kbCharCount();
+  document.getElementById('kbMsg').textContent = '已產生標準格式，請確認後儲存';
+  document.getElementById('kbMsg').className = 'save-msg ok';
+}
+
+function formatTemplateLines(value) {
+  return value
+    .split(/\n|、|，|,/)
+    .map(item => item.trim())
+    .filter(Boolean)
+    .map(item => `- ${item.replace(/^-+\s*/, '')}`)
+    .join('\n');
+}
+
 async function saveSection() {
   const category = document.getElementById('kbName').value.trim();
   const content  = document.getElementById('kbContent').value;
@@ -1143,7 +1261,7 @@ function renderSupportWorkbench(data, satisfactionRate) {
     </a>
     <a class="support-card" href="#unansweredSection" onclick="return switchLayerAndScroll('daily', 'unansweredSection')">
       <strong>2. 處理 AI 不確定問題</strong>
-      <span><b>${unanswered}</b> 筆待辦。能補知識就補，已處理或不需要就刪除。</span>
+      <span><b>${unanswered}</b> 筆待辦。能補知識就補，處理後改狀態，必要時再刪除。</span>
     </a>
     <a class="support-card" href="#knowledgeSection" onclick="return switchLayerAndScroll('knowledge', 'knowledgeSection')">
       <strong>3. 補充客服知識</strong>
@@ -1335,11 +1453,33 @@ async function loadRatingDetails() {
 }
 
 // 知識缺口列表
+let unansweredItems = [];
+const GAP_STATUS_LABELS = {
+  pending: '待處理',
+  resolved: '已補知識',
+  manual: '需人工處理',
+  ignored: '不需處理',
+};
+
 async function loadUnanswered() {
-  const data = await adminFetch('/api/unanswered');
-  if (data.length === 0) {
+  unansweredItems = await adminFetch('/api/unanswered');
+  renderUnansweredList();
+}
+
+function renderUnansweredList() {
+  const filter = document.getElementById('gapFilter')?.value || 'pending';
+  const data = filter === 'all'
+    ? unansweredItems
+    : unansweredItems.filter(item => (item.status || 'pending') === filter);
+
+  if (unansweredItems.length === 0) {
     document.getElementById('unansweredList').innerHTML =
       '<div class="empty-state">目前沒有客服待辦。若 AI 遇到不確定問題，會自動出現在這裡。</div>';
+    return;
+  }
+  if (data.length === 0) {
+    document.getElementById('unansweredList').innerHTML =
+      '<div class="empty-state">這個狀態目前沒有資料。</div>';
     return;
   }
   document.getElementById('unansweredList').innerHTML = data.map((item, idx) => {
@@ -1348,11 +1488,14 @@ async function loadUnanswered() {
     });
     const reply = item.reply ? escapeHtml(item.reply) : '';
     const reason = item.reason ? escapeHtml(item.reason) : 'AI 回覆表示知識庫沒有明確答案';
+    const status = item.status || 'pending';
+    const note = item.note || '';
     return `
       <div class="unanswered-item" id="gap-${idx}">
         <div class="unanswered-icon">❓</div>
         <div class="unanswered-body">
           <div class="unanswered-q">${escapeHtml(item.question)}</div>
+          <div class="gap-status-badge">${escapeHtml(GAP_STATUS_LABELS[status] || status)}</div>
           <div class="unanswered-reason">${reason}</div>
           ${reply ? `
             <div class="unanswered-actions">
@@ -1360,6 +1503,16 @@ async function loadUnanswered() {
             </div>
             <div class="unanswered-reply">AI 回覆：${reply}</div>
           ` : ''}
+          <div class="gap-status-row">
+            <select class="gap-select" id="gap-status-${item.id}">
+              <option value="pending" ${status === 'pending' ? 'selected' : ''}>待處理</option>
+              <option value="resolved" ${status === 'resolved' ? 'selected' : ''}>已補知識</option>
+              <option value="manual" ${status === 'manual' ? 'selected' : ''}>需人工處理</option>
+              <option value="ignored" ${status === 'ignored' ? 'selected' : ''}>不需處理</option>
+            </select>
+            <input class="gap-note" id="gap-note-${item.id}" value="${escapeHtml(note)}" placeholder="備註：例如已補到哪個分類" />
+            <button class="gap-save" type="button" onclick="saveGapStatus(${item.id})">儲存狀態</button>
+          </div>
           <div class="gap-controls">
             <a class="unanswered-toggle" href="#knowledgeSection" onclick="return switchLayerAndScroll('knowledge', 'knowledgeSection')">補到知識庫</a>
             <button class="gap-delete" type="button" onclick="deleteGap(${item.id})">刪除</button>
@@ -1369,6 +1522,27 @@ async function loadUnanswered() {
       </div>
     `;
   }).join('');
+}
+
+async function saveGapStatus(id) {
+  const status = document.getElementById('gap-status-' + id)?.value || 'pending';
+  const note = document.getElementById('gap-note-' + id)?.value || '';
+  const res = await fetch('/api/unanswered/' + id, {
+    method: 'PATCH',
+    headers: { 'x-admin-key': getAdminKey(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status, note }),
+  });
+  if (res.status === 401) {
+    showLogin();
+    return;
+  }
+  if (!res.ok) {
+    alert('知識缺口狀態儲存失敗');
+    return;
+  }
+  await loadUnanswered();
+  await loadStats();
+  await loadOperationsReport(reportPeriod);
 }
 
 async function deleteGap(id) {
