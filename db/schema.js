@@ -42,10 +42,14 @@ const SCHEMA = [
       title             TEXT NOT NULL DEFAULT '',
       content           TEXT NOT NULL DEFAULT '',
       search_text       TEXT NOT NULL DEFAULT '',
+      risk_level        TEXT NOT NULL DEFAULT 'Low',
       sort_order        INTEGER NOT NULL DEFAULT 0,
       source_updated_at TEXT NOT NULL DEFAULT '',
+      embedding_model   TEXT NOT NULL DEFAULT '',
       updated_at        TEXT NOT NULL
     )`,
+  `ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS risk_level TEXT NOT NULL DEFAULT 'Low'`,
+  `ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS embedding_model TEXT NOT NULL DEFAULT ''`,
   `CREATE INDEX IF NOT EXISTS idx_conv_session  ON conversations(session_id)`,
   `CREATE INDEX IF NOT EXISTS idx_conv_role     ON conversations(role)`,
   `CREATE INDEX IF NOT EXISTS idx_ratings_type  ON ratings(type)`,
@@ -55,6 +59,7 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_ks_archived   ON knowledge_sections(archived_at)`,
   `CREATE INDEX IF NOT EXISTS idx_kc_section    ON knowledge_chunks(section_id)`,
   `CREATE INDEX IF NOT EXISTS idx_kc_sort       ON knowledge_chunks(sort_order, id)`,
+  `CREATE INDEX IF NOT EXISTS idx_kc_risk       ON knowledge_chunks(risk_level)`,
 ];
 
 module.exports = { SCHEMA };

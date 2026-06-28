@@ -29,6 +29,10 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 const client = new Anthropic();
+const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'text-embedding-3-small';
+const EMBEDDING_DIMENSIONS = Number(process.env.EMBEDDING_DIMENSIONS || 1536);
+const EMBEDDING_BATCH_SIZE = Number(process.env.EMBEDDING_BATCH_SIZE || 80);
+let pgVectorAvailable = false;
 
 // ── PostgreSQL 連線池 ─────────────────────────────────────
 // DATABASE_URL 由環境變數提供（Neon / Supabase / Render Postgres）
@@ -52,6 +56,7 @@ async function initDb() {
   for (const stmt of SCHEMA) {
     await pool.query(stmt);
   }
+  await ensurePgVector();
 
   // 首次部署：若 knowledge_sections 為空，從 knowledge.js 匯入初始分類
   const { rows } = await pool.query('SELECT COUNT(*) AS count FROM knowledge_sections');
@@ -70,6 +75,23 @@ async function initDb() {
 }
 
 // ── 知識庫：用記憶體快取，避免每次對話都查 DB ──────────────
+async function ensurePgVector() {
+  try {
+    await pool.query('CREATE EXTENSION IF NOT EXISTS vector');
+    await pool.query(`ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS embedding vector(${EMBEDDING_DIMENSIONS})`);
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_kc_embedding_cosine
+       ON knowledge_chunks USING hnsw (embedding vector_cosine_ops)
+       WHERE embedding IS NOT NULL`
+    );
+    pgVectorAvailable = true;
+    console.log('pgvector enabled for semantic RAG search');
+  } catch (err) {
+    pgVectorAvailable = false;
+    console.warn(`pgvector unavailable; falling back to keyword RAG: ${err.message}`);
+  }
+}
+
 function getKnowledgeAutoSyncMode() {
   const rawMode = String(process.env.KNOWLEDGE_AUTO_SYNC || 'disable').trim().toLowerCase();
   if (rawMode === 'disable') return 'disable';
@@ -182,15 +204,31 @@ function buildResponsePolicyPrompt() {
   return lines.join('\n');
 }
 
+function normalizeRiskLevel(value) {
+  const risk = String(value || '').trim().toLowerCase();
+  if (risk === 'high') return 'High';
+  if (risk === 'medium') return 'Medium';
+  return 'Low';
+}
+
+function extractRiskLevel(text) {
+  const value = String(text || '');
+  const match = value.match(/(?:\u98a8\u96aa|risk(?:_level)?)[\s:：_-]*(High|Medium|Low)/i);
+  return normalizeRiskLevel(match ? match[1] : 'Low');
+}
+
+function hasHighRiskChunk(rag) {
+  return Array.isArray(rag?.chunks) && rag.chunks.some(chunk => normalizeRiskLevel(chunk.risk_level) === 'High');
+}
+
 function buildRuntimeGuardrails(question, rag) {
   const text = `${question || ''}\n${rag?.context || ''}`;
-  const ragText = `${rag?.context || ''}`;
+
   const highRiskKeywords = [
     '補點', '退點', '退款', '補發', '賠償', '客訴賠償',
     '帳號停權', '黑名單', '永久註銷', '個資', '臨時密碼',
   ];
-  const hasHighRiskChunk = ragText.includes('風險：High') || ragText.includes('風險: High');
-  const needsGuardrail = hasHighRiskChunk || highRiskKeywords.some(keyword => text.includes(keyword));
+  const needsGuardrail = hasHighRiskChunk(rag) || highRiskKeywords.some(keyword => text.includes(keyword));
   if (!needsGuardrail) return '';
 
   return `## 本次回答安全限制
@@ -236,6 +274,62 @@ function splitLongText(text, maxChars = MAX_CHUNK_CHARS) {
   return chunks.filter(Boolean);
 }
 
+function shouldUseSemanticSearch() {
+  return pgVectorAvailable && Boolean(process.env.OPENAI_API_KEY);
+}
+
+function toVectorLiteral(embedding) {
+  return `[${embedding.map(value => Number(value).toFixed(8)).join(',')}]`;
+}
+
+function buildEmbeddingInput(row) {
+  return normalizeText(`${row.category}\n${row.title}\n${row.content}`).slice(0, 6000);
+}
+
+async function embedTexts(inputs) {
+  if (!process.env.OPENAI_API_KEY || inputs.length === 0) return [];
+  const response = await fetch('https://api.openai.com/v1/embeddings', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: EMBEDDING_MODEL,
+      input: inputs,
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Embedding API failed: ${response.status} ${detail.slice(0, 200)}`);
+  }
+
+  const payload = await response.json();
+  return Array.isArray(payload.data) ? payload.data.map(item => item.embedding) : [];
+}
+
+async function attachEmbeddings(rows) {
+  if (!shouldUseSemanticSearch() || rows.length === 0) return rows;
+
+  try {
+    for (let i = 0; i < rows.length; i += EMBEDDING_BATCH_SIZE) {
+      const batch = rows.slice(i, i + EMBEDDING_BATCH_SIZE);
+      const embeddings = await embedTexts(batch.map(buildEmbeddingInput));
+      embeddings.forEach((embedding, index) => {
+        if (Array.isArray(embedding) && embedding.length > 0) {
+          batch[index].embedding = toVectorLiteral(embedding);
+          batch[index].embeddingModel = EMBEDDING_MODEL;
+        }
+      });
+    }
+  } catch (err) {
+    console.warn(`Embedding backfill skipped; keyword RAG remains available: ${err.message}`);
+  }
+
+  return rows;
+}
+
 function buildChunksFromSection(section) {
   const category = String(section.category || '').trim();
   const content = String(section.content || '').trim();
@@ -255,6 +349,7 @@ function buildChunksFromSection(section) {
         title: idx === 0 ? baseTitle : `${baseTitle} (${idx + 1})`,
         content: chunk,
         searchText: normalizeText(`${category} ${baseTitle} ${chunk}`),
+        riskLevel: extractRiskLevel(chunk),
         sourceUpdatedAt: section.updated_at || '',
       });
     });
@@ -263,47 +358,89 @@ function buildChunksFromSection(section) {
 }
 
 async function rebuildKnowledgeChunks() {
+  const { rows } = await pool.query(
+    "SELECT id, category, content, sort_order, updated_at FROM knowledge_sections WHERE COALESCE(archived_at, '') = '' ORDER BY sort_order ASC, id ASC"
+  );
+
+  const now = new Date().toISOString();
+  let sortOrder = 0;
+  const insertRows = [];
+  for (const section of rows) {
+    for (const chunk of buildChunksFromSection(section)) {
+      insertRows.push({
+        sectionId: chunk.sectionId,
+        category: chunk.category,
+        title: chunk.title,
+        content: chunk.content,
+        searchText: chunk.searchText,
+        riskLevel: chunk.riskLevel,
+        sortOrder: sortOrder++,
+        sourceUpdatedAt: chunk.sourceUpdatedAt,
+        updatedAt: now,
+        embedding: null,
+        embeddingModel: '',
+      });
+    }
+  }
+
+  await attachEmbeddings(insertRows);
+
   const db = await pool.connect();
   try {
     await db.query('BEGIN');
-    const { rows } = await db.query(
-      "SELECT id, category, content, sort_order, updated_at FROM knowledge_sections WHERE COALESCE(archived_at, '') = '' ORDER BY sort_order ASC, id ASC"
-    );
-
-    const now = new Date().toISOString();
-    let sortOrder = 0;
-    const insertRows = [];
-    for (const section of rows) {
-      for (const chunk of buildChunksFromSection(section)) {
-        insertRows.push([
-          chunk.sectionId,
-          chunk.category,
-          chunk.title,
-          chunk.content,
-          chunk.searchText,
-          sortOrder++,
-          chunk.sourceUpdatedAt,
-          now,
-        ]);
-      }
-    }
-
     await db.query('DELETE FROM knowledge_chunks');
     const batchSize = 400;
     for (let i = 0; i < insertRows.length; i += batchSize) {
       const batch = insertRows.slice(i, i + batchSize);
       const values = [];
-      const placeholders = batch.map((row, rowIndex) => {
-        const base = rowIndex * 8;
-        values.push(...row);
-        return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8})`;
-      });
-      await db.query(
-        `INSERT INTO knowledge_chunks
-          (section_id, category, title, content, search_text, sort_order, source_updated_at, updated_at)
-         VALUES ${placeholders.join(', ')}`,
-        values
-      );
+      if (pgVectorAvailable) {
+        const placeholders = batch.map((row, rowIndex) => {
+          const base = rowIndex * 11;
+          values.push(
+            row.sectionId,
+            row.category,
+            row.title,
+            row.content,
+            row.searchText,
+            row.riskLevel,
+            row.sortOrder,
+            row.sourceUpdatedAt,
+            row.embeddingModel,
+            row.updatedAt,
+            row.embedding
+          );
+          return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, CASE WHEN $${base + 11}::text IS NULL THEN NULL ELSE $${base + 11}::vector END)`;
+        });
+        await db.query(
+          `INSERT INTO knowledge_chunks
+            (section_id, category, title, content, search_text, risk_level, sort_order, source_updated_at, embedding_model, updated_at, embedding)
+           VALUES ${placeholders.join(', ')}`,
+          values
+        );
+      } else {
+        const placeholders = batch.map((row, rowIndex) => {
+          const base = rowIndex * 10;
+          values.push(
+            row.sectionId,
+            row.category,
+            row.title,
+            row.content,
+            row.searchText,
+            row.riskLevel,
+            row.sortOrder,
+            row.sourceUpdatedAt,
+            row.embeddingModel,
+            row.updatedAt
+          );
+          return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10})`;
+        });
+        await db.query(
+          `INSERT INTO knowledge_chunks
+            (section_id, category, title, content, search_text, risk_level, sort_order, source_updated_at, embedding_model, updated_at)
+           VALUES ${placeholders.join(', ')}`,
+          values
+        );
+      }
     }
 
     await db.query('COMMIT');
@@ -320,12 +457,16 @@ function buildSearchTerms(question) {
   const text = normalizeText(question);
   const terms = new Set();
   for (const keyword of RAG_KEYWORDS) {
-    if (text.includes(keyword)) terms.add(keyword);
+    const normalizedKeyword = normalizeText(keyword);
+    if ([...normalizedKeyword].length >= 2 && text.includes(normalizedKeyword)) terms.add(normalizedKeyword);
   }
   const lowerText = text.toLowerCase();
   for (const group of RAG_SYNONYM_GROUPS) {
     if (group.some(term => lowerText.includes(String(term).toLowerCase()))) {
-      group.forEach(term => terms.add(term));
+      group.forEach(term => {
+        const normalizedTerm = normalizeText(term);
+        if ([...normalizedTerm].length >= 2) terms.add(normalizedTerm);
+      });
     }
   }
   text
@@ -349,27 +490,54 @@ function scoreChunk(chunk, terms) {
   return score;
 }
 
+async function retrieveSemanticRows(question) {
+  if (!shouldUseSemanticSearch()) return [];
+  try {
+    const [embedding] = await embedTexts([normalizeText(question).slice(0, 6000)]);
+    if (!Array.isArray(embedding) || embedding.length === 0) return [];
+
+    const vector = toVectorLiteral(embedding);
+    const { rows } = await pool.query(
+      `SELECT id, category, title, content, risk_level, sort_order,
+              1 - (embedding <=> $1::vector) AS semantic_score
+       FROM knowledge_chunks
+       WHERE embedding IS NOT NULL
+       ORDER BY embedding <=> $1::vector
+       LIMIT 60`,
+      [vector]
+    );
+    return rows;
+  } catch (err) {
+    console.warn(`Semantic RAG skipped; using keyword RAG: ${err.message}`);
+    return [];
+  }
+}
+
 async function retrieveKnowledgeForQuestion(question) {
   const terms = buildSearchTerms(question);
-  let rows = [];
+  let rows = await retrieveSemanticRows(question);
 
   if (terms.length > 0) {
     const clauses = terms.map((_, idx) => `search_text ILIKE $${idx + 1}`).join(' OR ');
     const values = terms.map(term => `%${term}%`);
     const result = await pool.query(
-      `SELECT id, category, title, content, sort_order
+      `SELECT id, category, title, content, risk_level, sort_order
        FROM knowledge_chunks
        WHERE ${clauses}
        ORDER BY sort_order ASC
        LIMIT 120`,
       values
     );
-    rows = result.rows;
+    const byId = new Map(rows.map(row => [row.id, row]));
+    result.rows.forEach(row => {
+      if (!byId.has(row.id)) byId.set(row.id, row);
+    });
+    rows = [...byId.values()];
   }
 
   if (rows.length === 0) {
     const fallback = await pool.query(
-      `SELECT id, category, title, content, sort_order
+      `SELECT id, category, title, content, risk_level, sort_order
        FROM knowledge_chunks
        ORDER BY sort_order ASC
        LIMIT 20`
@@ -378,7 +546,10 @@ async function retrieveKnowledgeForQuestion(question) {
   }
 
   const ranked = rows
-    .map(row => ({ ...row, score: scoreChunk(row, terms) }))
+    .map(row => ({
+      ...row,
+      score: scoreChunk(row, terms) + (Number(row.semantic_score || 0) * 100),
+    }))
     .sort((a, b) => b.score - a.score || a.sort_order - b.sort_order)
     .slice(0, MAX_RAG_CHUNKS);
 

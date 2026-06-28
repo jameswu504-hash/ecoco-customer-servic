@@ -92,3 +92,10 @@ KNOWLEDGE_AUTO_SYNC=disable       # 日常維護只用後台 PostgreSQL；大改
 ## 部署
 
 Render 從 GitHub main 分支自動部署，執行 `npm start`。環境變數在 Render Dashboard 設定，不可 commit 進版本控制。
+
+## RAG Implementation Note
+
+- Primary retrieval: pgvector semantic search on `knowledge_chunks.embedding`, enabled only when PostgreSQL has the `vector` extension and `OPENAI_API_KEY` is configured.
+- Fallback retrieval: keyword/synonym search through `search_text ILIKE`, so the service still works without embeddings.
+- Chunk risk control: `knowledge_chunks.risk_level` is the source of truth for high-risk guardrails. Do not rely on matching prompt text such as `風險：High`.
+- Embedding defaults: `EMBEDDING_MODEL=text-embedding-3-small`, `EMBEDDING_DIMENSIONS=1536`.
