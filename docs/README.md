@@ -18,6 +18,7 @@
 12. [REPO_FILE_AUDIT.md](REPO_FILE_AUDIT.md)：repo 檔案用途與已移除孤兒檔案。
 13. [knowledge-import.md](knowledge-import.md)：技術細節，說明如何產生與匯入知識庫 JSON。
 14. [security-keys.md](security-keys.md)：API key、token、`.env` 與 Render 環境變數的安全原則。
+15. [LLM_WIKI_RULE_MODEL_STRATEGY.md](LLM_WIKI_RULE_MODEL_STRATEGY.md)：LLM Wiki、Rule、本地模型與正式客服模型的應用策略。
 
 重要原則：
 
