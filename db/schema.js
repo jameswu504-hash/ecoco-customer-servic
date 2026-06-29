@@ -4,13 +4,13 @@ const SCHEMA = [
       session_id TEXT NOT NULL,
       role       TEXT NOT NULL,
       content    TEXT NOT NULL,
-      timestamp  TEXT NOT NULL
+      timestamp  TIMESTAMPTZ NOT NULL
     )`,
   `CREATE TABLE IF NOT EXISTS ratings (
       id        SERIAL PRIMARY KEY,
       msg_id    TEXT NOT NULL,
       type      TEXT NOT NULL,
-      timestamp TEXT NOT NULL,
+      timestamp TIMESTAMPTZ NOT NULL,
       question  TEXT DEFAULT '',
       reply     TEXT DEFAULT ''
     )`,
@@ -20,13 +20,39 @@ const SCHEMA = [
       question   TEXT NOT NULL,
       reply      TEXT DEFAULT '',
       reason     TEXT DEFAULT '',
-      timestamp  TEXT NOT NULL
+      timestamp  TIMESTAMPTZ NOT NULL
     )`,
   `ALTER TABLE unanswered_questions ADD COLUMN IF NOT EXISTS reply TEXT DEFAULT ''`,
   `ALTER TABLE unanswered_questions ADD COLUMN IF NOT EXISTS reason TEXT DEFAULT ''`,
   `ALTER TABLE unanswered_questions ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending'`,
   `ALTER TABLE unanswered_questions ADD COLUMN IF NOT EXISTS note TEXT DEFAULT ''`,
   `ALTER TABLE unanswered_questions ADD COLUMN IF NOT EXISTS updated_at TEXT DEFAULT ''`,
+  `CREATE OR REPLACE FUNCTION ecoco_safe_timestamptz(value TEXT)
+     RETURNS TIMESTAMPTZ AS $$
+     BEGIN
+       RETURN NULLIF(value, '')::timestamptz;
+     EXCEPTION WHEN OTHERS THEN
+       RETURN NOW();
+     END;
+     $$ LANGUAGE plpgsql`,
+  `ALTER TABLE conversations
+     ALTER COLUMN timestamp TYPE TIMESTAMPTZ
+     USING CASE
+       WHEN NULLIF(timestamp::text, '') IS NULL THEN NOW()
+       ELSE ecoco_safe_timestamptz(timestamp::text)
+     END`,
+  `ALTER TABLE ratings
+     ALTER COLUMN timestamp TYPE TIMESTAMPTZ
+     USING CASE
+       WHEN NULLIF(timestamp::text, '') IS NULL THEN NOW()
+       ELSE ecoco_safe_timestamptz(timestamp::text)
+     END`,
+  `ALTER TABLE unanswered_questions
+     ALTER COLUMN timestamp TYPE TIMESTAMPTZ
+     USING CASE
+       WHEN NULLIF(timestamp::text, '') IS NULL THEN NOW()
+       ELSE ecoco_safe_timestamptz(timestamp::text)
+     END`,
   `CREATE TABLE IF NOT EXISTS knowledge_sections (
       id         SERIAL PRIMARY KEY,
       category   TEXT NOT NULL,

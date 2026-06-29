@@ -17,6 +17,7 @@ const { createReportsRouter } = require('./routes/reports.routes');
 const { createUnansweredRouter } = require('./routes/unanswered.routes');
 const { createPromptService } = require('./services/prompt.service');
 const { createRagService } = require('./services/rag.service');
+const { purgeExpiredConversationData } = require('./services/privacy.service');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -191,7 +192,7 @@ app.use('/api/knowledge', createKnowledgeRouter({
   readJsonFile,
   getKnowledgeAutoSyncMode,
   refreshKnowledgeCache,
-  rebuildKnowledgeChunks: ragService.rebuildKnowledgeChunks,
+  rebuildKnowledgeChunksForSection: ragService.rebuildKnowledgeChunksForSection,
   getKnowledgeCache: () => knowledgeCache,
   defaultAnthropicModel: DEFAULT_ANTHROPIC_MODEL,
 }));
@@ -202,6 +203,7 @@ async function start() {
     await syncKnowledgeFromImportFile();
     await refreshKnowledgeCache();
     await ragService.rebuildKnowledgeChunks();
+    await purgeExpiredConversationData(pool, process.env);
     app.listen(PORT, () => {
       console.log(`ECOCO customer service server started: http://localhost:${PORT}`);
     });

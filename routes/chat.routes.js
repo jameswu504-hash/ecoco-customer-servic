@@ -1,4 +1,5 @@
 const express = require('express');
+const { maskSensitiveText } = require('../services/privacy.service');
 
 const KNOWLEDGE_GAP_MARKERS = [
   '目前沒有足夠資料',
@@ -76,20 +77,22 @@ function createChatRouter({
       try {
         const sessionId = req.headers['x-session-id'] || 'unknown';
         const ts = new Date().toISOString();
+        const storedQuestion = maskSensitiveText(userMsg.content);
+        const storedReply = maskSensitiveText(reply);
         await pool.query(
           'INSERT INTO conversations (session_id, role, content, timestamp) VALUES ($1, $2, $3, $4)',
-          [sessionId, 'user', userMsg.content, ts]
+          [sessionId, 'user', storedQuestion, ts]
         );
         await pool.query(
           'INSERT INTO conversations (session_id, role, content, timestamp) VALUES ($1, $2, $3, $4)',
-          [sessionId, 'assistant', reply, ts]
+          [sessionId, 'assistant', storedReply, ts]
         );
 
         const gap = detectKnowledgeGap(reply);
         if (gap.isGap) {
           await pool.query(
             'INSERT INTO unanswered_questions (session_id, question, reply, reason, timestamp) VALUES ($1, $2, $3, $4, $5)',
-            [sessionId, userMsg.content, reply, gap.reason, ts]
+            [sessionId, storedQuestion, storedReply, gap.reason, ts]
           );
         }
       } catch (dbErr) {
@@ -116,7 +119,7 @@ function createChatRouter({
     try {
       await pool.query(
         'INSERT INTO ratings (msg_id, type, timestamp, question, reply) VALUES ($1, $2, $3, $4, $5)',
-        [String(msgId), type, new Date().toISOString(), String(question || '').substring(0, 300), String(reply || '').substring(0, 300)]
+        [String(msgId), type, new Date().toISOString(), maskSensitiveText(question).substring(0, 300), maskSensitiveText(reply).substring(0, 300)]
       );
       res.json({ success: true });
     } catch (dbErr) {

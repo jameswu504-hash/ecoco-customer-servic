@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const { requireAdminKey } = require('../middleware/admin-auth');
 const { detectKnowledgeGap } = require('../routes/chat.routes');
+const { maskSensitiveText } = require('../services/privacy.service');
 const {
   buildRuntimeGuardrails,
   buildSearchTerms,
@@ -80,4 +81,13 @@ test('admin middleware rejects missing admin key', () => {
   assert.equal(statusCode, 401);
   assert.equal(nextCalled, false);
   assert.ok(body.error);
+});
+
+test('conversation persistence masks phone and email values', () => {
+  const masked = maskSensitiveText('my phone is 0912-345-678 and email is test@example.com');
+
+  assert.equal(masked.includes('0912-345-678'), false);
+  assert.equal(masked.includes('test@example.com'), false);
+  assert.match(masked, /\[phone\]/);
+  assert.match(masked, /\[email\]/);
 });

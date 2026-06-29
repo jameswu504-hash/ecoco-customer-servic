@@ -242,15 +242,43 @@ function createRagService({ pool, env = process.env }) {
     return rows;
   }
 
-  async function rebuildKnowledgeChunks() {
-    const { rows } = await pool.query(
-      "SELECT id, category, content, sort_order, updated_at FROM knowledge_sections WHERE COALESCE(archived_at, '') = '' ORDER BY sort_order ASC, id ASC"
-    );
+  async function insertKnowledgeChunkRows(db, insertRows) {
+    const batchSize = 400;
+    for (let i = 0; i < insertRows.length; i += batchSize) {
+      const batch = insertRows.slice(i, i + batchSize);
+      const values = [];
+      if (pgVectorAvailable) {
+        const placeholders = batch.map((row, rowIndex) => {
+          const base = rowIndex * 11;
+          values.push(row.sectionId, row.category, row.title, row.content, row.searchText, row.riskLevel, row.sortOrder, row.sourceUpdatedAt, row.embeddingModel, row.updatedAt, row.embedding);
+          return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, CASE WHEN $${base + 11}::text IS NULL THEN NULL ELSE $${base + 11}::vector END)`;
+        });
+        await db.query(
+          `INSERT INTO knowledge_chunks
+            (section_id, category, title, content, search_text, risk_level, sort_order, source_updated_at, embedding_model, updated_at, embedding)
+           VALUES ${placeholders.join(', ')}`,
+          values
+        );
+      } else {
+        const placeholders = batch.map((row, rowIndex) => {
+          const base = rowIndex * 10;
+          values.push(row.sectionId, row.category, row.title, row.content, row.searchText, row.riskLevel, row.sortOrder, row.sourceUpdatedAt, row.embeddingModel, row.updatedAt);
+          return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10})`;
+        });
+        await db.query(
+          `INSERT INTO knowledge_chunks
+            (section_id, category, title, content, search_text, risk_level, sort_order, source_updated_at, embedding_model, updated_at)
+           VALUES ${placeholders.join(', ')}`,
+          values
+        );
+      }
+    }
+  }
 
-    const now = new Date().toISOString();
-    let sortOrder = 0;
+  function buildInsertRowsFromSections(sections, now, initialSortOrder = 0) {
+    let sortOrder = initialSortOrder;
     const insertRows = [];
-    for (const section of rows) {
+    for (const section of sections) {
       for (const chunk of buildChunksFromSection(section)) {
         insertRows.push({
           sectionId: chunk.sectionId,
@@ -267,6 +295,16 @@ function createRagService({ pool, env = process.env }) {
         });
       }
     }
+    return insertRows;
+  }
+
+  async function rebuildKnowledgeChunks() {
+    const { rows } = await pool.query(
+      "SELECT id, category, content, sort_order, updated_at FROM knowledge_sections WHERE COALESCE(archived_at, '') = '' ORDER BY sort_order ASC, id ASC"
+    );
+
+    const now = new Date().toISOString();
+    const insertRows = buildInsertRowsFromSections(rows, now);
 
     await attachEmbeddings(insertRows);
 
@@ -274,39 +312,53 @@ function createRagService({ pool, env = process.env }) {
     try {
       await db.query('BEGIN');
       await db.query('DELETE FROM knowledge_chunks');
-      const batchSize = 400;
-      for (let i = 0; i < insertRows.length; i += batchSize) {
-        const batch = insertRows.slice(i, i + batchSize);
-        const values = [];
-        if (pgVectorAvailable) {
-          const placeholders = batch.map((row, rowIndex) => {
-            const base = rowIndex * 11;
-            values.push(row.sectionId, row.category, row.title, row.content, row.searchText, row.riskLevel, row.sortOrder, row.sourceUpdatedAt, row.embeddingModel, row.updatedAt, row.embedding);
-            return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, CASE WHEN $${base + 11}::text IS NULL THEN NULL ELSE $${base + 11}::vector END)`;
-          });
-          await db.query(
-            `INSERT INTO knowledge_chunks
-              (section_id, category, title, content, search_text, risk_level, sort_order, source_updated_at, embedding_model, updated_at, embedding)
-             VALUES ${placeholders.join(', ')}`,
-            values
-          );
-        } else {
-          const placeholders = batch.map((row, rowIndex) => {
-            const base = rowIndex * 10;
-            values.push(row.sectionId, row.category, row.title, row.content, row.searchText, row.riskLevel, row.sortOrder, row.sourceUpdatedAt, row.embeddingModel, row.updatedAt);
-            return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10})`;
-          });
-          await db.query(
-            `INSERT INTO knowledge_chunks
-              (section_id, category, title, content, search_text, risk_level, sort_order, source_updated_at, embedding_model, updated_at)
-             VALUES ${placeholders.join(', ')}`,
-            values
-          );
-        }
-      }
+      await insertKnowledgeChunkRows(db, insertRows);
 
       await db.query('COMMIT');
       console.log(`Knowledge chunks rebuilt: ${insertRows.length} chunks`);
+    } catch (err) {
+      await db.query('ROLLBACK');
+      throw err;
+    } finally {
+      db.release();
+    }
+  }
+
+  async function rebuildKnowledgeChunksForSection(sectionId) {
+    const id = Number(sectionId);
+    if (!Number.isInteger(id)) return;
+
+    const { rows } = await pool.query(
+      `SELECT id, category, content, sort_order, updated_at, COALESCE(archived_at, '') AS archived_at
+       FROM knowledge_sections
+       WHERE id = $1`,
+      [id]
+    );
+
+    const section = rows[0];
+    const activeSections = section && !section.archived_at ? [section] : [];
+    const now = new Date().toISOString();
+    const baseSortResult = await pool.query(
+      `SELECT COALESCE(
+          MIN(sort_order),
+          (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM knowledge_chunks)
+        ) AS base_sort_order
+       FROM knowledge_chunks
+       WHERE section_id = $1`,
+      [id]
+    );
+    const baseSortOrder = Number(baseSortResult.rows[0].base_sort_order || 0);
+    const insertRows = buildInsertRowsFromSections(activeSections, now, baseSortOrder);
+
+    await attachEmbeddings(insertRows);
+
+    const db = await pool.connect();
+    try {
+      await db.query('BEGIN');
+      await db.query('DELETE FROM knowledge_chunks WHERE section_id = $1', [id]);
+      await insertKnowledgeChunkRows(db, insertRows);
+      await db.query('COMMIT');
+      console.log(`Knowledge chunks refreshed for section ${id}: ${insertRows.length} chunks`);
     } catch (err) {
       await db.query('ROLLBACK');
       throw err;
@@ -384,6 +436,7 @@ function createRagService({ pool, env = process.env }) {
   return {
     ensurePgVector,
     rebuildKnowledgeChunks,
+    rebuildKnowledgeChunksForSection,
     retrieveKnowledgeForQuestion,
     buildRuntimeGuardrails,
     shouldUseSemanticSearch,

@@ -7,7 +7,7 @@ function createKnowledgeRouter({
   readJsonFile,
   getKnowledgeAutoSyncMode,
   refreshKnowledgeCache,
-  rebuildKnowledgeChunks,
+  rebuildKnowledgeChunksForSection,
   getKnowledgeCache,
   defaultAnthropicModel,
 }) {
@@ -123,7 +123,7 @@ function createKnowledgeRouter({
         [category.trim(), String(content || ''), sortOrder, new Date().toISOString()]
       );
       await refreshKnowledgeCache();
-      await rebuildKnowledgeChunks();
+      await rebuildKnowledgeChunksForSection(inserted[0].id);
       res.json({ success: true, id: inserted[0].id });
     } catch (dbErr) {
       console.error('DB knowledge insert error:', dbErr.message);
@@ -146,7 +146,7 @@ function createKnowledgeRouter({
       );
       if (result.rowCount === 0) return res.status(404).json({ error: '找不到這個知識分類' });
       await refreshKnowledgeCache();
-      await rebuildKnowledgeChunks();
+      await rebuildKnowledgeChunksForSection(id);
       res.json({ success: true });
     } catch (dbErr) {
       console.error('DB knowledge update error:', dbErr.message);
@@ -165,7 +165,7 @@ function createKnowledgeRouter({
       );
       if (result.rowCount === 0) return res.status(404).json({ error: '找不到這個知識分類' });
       await refreshKnowledgeCache();
-      await rebuildKnowledgeChunks();
+      await rebuildKnowledgeChunksForSection(id);
       res.json({ success: true });
     } catch (dbErr) {
       console.error('DB knowledge archive error:', dbErr.message);
@@ -184,7 +184,7 @@ function createKnowledgeRouter({
       );
       if (result.rowCount === 0) return res.status(404).json({ error: '找不到這個知識分類' });
       await refreshKnowledgeCache();
-      await rebuildKnowledgeChunks();
+      await rebuildKnowledgeChunksForSection(id);
       res.json({ success: true });
     } catch (dbErr) {
       console.error('DB knowledge restore error:', dbErr.message);
