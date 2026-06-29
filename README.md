@@ -138,7 +138,7 @@ npm run import:knowledge -- data/ecoco-knowledge-import.json --replace
 - `knowledge_sections`
 - `knowledge_chunks`
 
-如果 `knowledge_sections` 是空的，系統會從 `knowledge.js` 匯入初始分類，之後後台修改會寫回 PostgreSQL。
+如果 `knowledge_sections` 是空的，系統會優先從 `data/ecoco-knowledge-import.json` 匯入初始分類；只有在正式 JSON 不存在或沒有內容時，才退回使用舊的 `knowledge.js`。
 
 後台修改若要整理回 Git JSON，可用 Admin API `GET /api/knowledge/export` 匯出 PostgreSQL 目前知識庫，再人工檢查後回寫到 `data/ecoco-knowledge-import.json`。
 

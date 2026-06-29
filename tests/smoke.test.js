@@ -5,10 +5,12 @@ const path = require('node:path');
 
 const { requireAdminKey } = require('../middleware/admin-auth');
 const { detectKnowledgeGap } = require('../routes/chat.routes');
+const { cleanKnowledgeInput } = require('../routes/knowledge.routes');
 const { maskSensitiveText } = require('../services/privacy.service');
 const {
   buildRuntimeGuardrails,
   buildSearchTerms,
+  createRagService,
   rankKnowledgeRows,
 } = require('../services/rag.service');
 
@@ -19,7 +21,7 @@ test('known point issue ranks the point knowledge first', () => {
       id: 1,
       category: '合作商家',
       title: '優惠券兌換',
-      content: '可查看合作商家與優惠券使用方式。',
+      content: '可在合作商家使用優惠券折抵。',
       sort_order: 2,
     },
     {
@@ -38,18 +40,18 @@ test('known point issue ranks the point knowledge first', () => {
 });
 
 test('high risk chunk adds conservative guardrail', () => {
-  const guardrail = buildRuntimeGuardrails('點數沒有入帳，可以補點嗎？', {
+  const guardrail = buildRuntimeGuardrails('點數沒有入帳，可以幫我補點嗎？', {
     chunks: [{ risk_level: 'High' }],
     context: '',
   });
 
   assert.match(guardrail, /高風險客服規則/);
-  assert.match(guardrail, /不可以承諾/);
+  assert.match(guardrail, /不可承諾已補點/);
   assert.match(guardrail, /客服表單/);
 });
 
 test('knowledge gap marker is recorded', () => {
-  const gap = detectKnowledgeGap('目前沒有足夠資料可確認，建議您填寫客服表單。');
+  const gap = detectKnowledgeGap('目前沒有足夠資料可以確認，建議您填寫客服表單。');
 
   assert.equal(gap.isGap, true);
   assert.match(gap.reason, /知識缺口/);
@@ -96,9 +98,39 @@ test('conversation persistence masks phone and email values', () => {
   assert.match(masked, /\[email\]/);
 });
 
+test('knowledge input is anonymized before it can be saved or exported', () => {
+  const email = ['support', 'example.com'].join('@');
+  const phone = ['0912', '345', '678'].join('-');
+  const cleaned = cleanKnowledgeInput(`請聯絡 ${email}，電話 ${phone}`);
+
+  assert.equal(cleaned.includes(email), false);
+  assert.equal(cleaned.includes(phone), false);
+  assert.match(cleaned, /redacted-email/);
+  assert.match(cleaned, /09XX-XXX-XXX/);
+});
+
+test('RAG returns no context when keyword and semantic search both miss', async () => {
+  const pool = {
+    async query() {
+      return { rows: [] };
+    },
+  };
+  const rag = createRagService({ pool, env: {} });
+  const result = await rag.retrieveKnowledgeForQuestion('完全不相關的問題');
+
+  assert.deepEqual(result.chunks, []);
+  assert.equal(result.context, '');
+});
+
 test('dashboard keeps dynamic click handlers usable', () => {
   const dashboard = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard.html'), 'utf8');
 
   assert.equal(dashboard.includes('protectDashboardHtmlAssignments'), false);
   assert.equal(dashboard.includes('DOMPurify.sanitize'), false);
+});
+
+test('package does not depend on floating latest SDK versions', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+  assert.notEqual(pkg.dependencies['@anthropic-ai/sdk'], 'latest');
+  assert.ok(pkg.engines.node);
 });

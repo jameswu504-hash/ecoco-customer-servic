@@ -15,7 +15,7 @@ function normalizeRiskLevel(value) {
 
 function extractRiskLevel(text) {
   const value = String(text || '');
-  const match = value.match(/(?:\u98a8\u96aa|risk(?:_level)?)[\s:：-]*(High|Medium|Low)/i);
+  const match = value.match(/(?:風險|risk(?:_level)?)[\s:：-]*(High|Medium|Low)/i);
   return normalizeRiskLevel(match ? match[1] : 'Low');
 }
 
@@ -35,7 +35,7 @@ function normalizeKnowledgeContent(value) {
     .replace(/\r\n?/g, '\n')
     .replace(/[ \t\u00a0]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
-    .replace(/(?:^|\n)\s*(?:ECOCO\s*)?(?:客服部|客服團隊|ECOCO Team)\s*$/gim, '')
+    .replace(/(?:^|\n)\s*(?:ECOCO\s*)?(?:客服團隊|ECOCO Team)\s*$/gim, '')
     .trim();
 }
 
@@ -143,24 +143,23 @@ function buildRuntimeGuardrails(question, rag) {
   const highRiskKeywords = [
     '補點',
     '退款',
-    '賠償',
-    '優惠券不能用',
     '帳號',
     '個資',
-    '手機',
+    '客訴',
+    '人工審核',
+    '工程師',
     '機台故障',
     '滿倉',
-    '滿袋',
-    '客訴',
+    '異常',
   ];
   const needsGuardrail = hasHighRiskChunk(rag) || highRiskKeywords.some(keyword => text.includes(keyword));
   if (!needsGuardrail) return '';
 
   return `## 高風險客服規則
-- 這題可能涉及點數、優惠券、帳號、個資、退款、補償、客訴或機台異常。
-- 不可以承諾「已補點」、「會退款」、「已處理」、「工程師已到場」、「人工已審核」。
-- 請使用保守話術，收集必要資訊，例如註冊手機、回收時間、站點、截圖或訂單資訊。
-- 若需要人工確認，請引導使用者填寫客服表單：https://ecoco.tw/kWqgW。`;
+- 遇到點數、優惠券、帳號、個資、退款、客訴、機台異常等問題，要保守回答。
+- 不可承諾已補點、已退款、已人工審核、工程師已到場、問題已完成處理。
+- 應先收集必要資訊，例如註冊手機、回收時間、站點、截圖、交易或兌換資訊。
+- 若知識庫沒有確切資料，請引導使用者填寫客服表單：https://ecoco.tw/kWqgW`;
 }
 
 function toVectorLiteral(embedding) {
@@ -175,6 +174,7 @@ function createRagService({ pool, env = process.env }) {
   const embeddingModel = env.EMBEDDING_MODEL || 'text-embedding-3-small';
   const embeddingDimensions = Number(env.EMBEDDING_DIMENSIONS || 1536);
   const embeddingBatchSize = Number(env.EMBEDDING_BATCH_SIZE || 80);
+  const embeddingTimeoutMs = Number(env.EMBEDDING_TIMEOUT_MS || 10000);
   let pgVectorAvailable = false;
 
   function shouldUseSemanticSearch() {
@@ -200,25 +200,33 @@ function createRagService({ pool, env = process.env }) {
 
   async function embedTexts(inputs) {
     if (!env.OPENAI_API_KEY || inputs.length === 0) return [];
-    const response = await fetch('https://api.openai.com/v1/embeddings', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: embeddingModel,
-        input: inputs,
-      }),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), embeddingTimeoutMs);
 
-    if (!response.ok) {
-      const detail = await response.text();
-      throw new Error(`Embedding API failed: ${response.status} ${detail.slice(0, 200)}`);
+    try {
+      const response = await fetch('https://api.openai.com/v1/embeddings', {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: embeddingModel,
+          input: inputs,
+        }),
+      });
+
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(`Embedding API failed: ${response.status} ${detail.slice(0, 200)}`);
+      }
+
+      const payload = await response.json();
+      return Array.isArray(payload.data) ? payload.data.map(item => item.embedding) : [];
+    } finally {
+      clearTimeout(timeout);
     }
-
-    const payload = await response.json();
-    return Array.isArray(payload.data) ? payload.data.map(item => item.embedding) : [];
   }
 
   async function attachEmbeddings(rows) {
@@ -313,7 +321,6 @@ function createRagService({ pool, env = process.env }) {
       await db.query('BEGIN');
       await db.query('DELETE FROM knowledge_chunks');
       await insertKnowledgeChunkRows(db, insertRows);
-
       await db.query('COMMIT');
       console.log(`Knowledge chunks rebuilt: ${insertRows.length} chunks`);
     } catch (err) {
@@ -410,16 +417,6 @@ function createRagService({ pool, env = process.env }) {
         if (!byId.has(row.id)) byId.set(row.id, row);
       });
       rows = [...byId.values()];
-    }
-
-    if (rows.length === 0) {
-      const fallback = await pool.query(
-        `SELECT id, category, title, content, risk_level, sort_order
-         FROM knowledge_chunks
-         ORDER BY sort_order ASC
-         LIMIT 20`
-      );
-      rows = fallback.rows;
     }
 
     const ranked = rankKnowledgeRows(rows, terms);

@@ -1,5 +1,22 @@
 const express = require('express');
 const path = require('path');
+const { anonymizeText } = require('../scripts/anonymize-pii');
+
+function cleanKnowledgeInput(value) {
+  return anonymizeText(String(value || '').trim());
+}
+
+async function findDuplicateCategory(pool, category, ignoreId = null) {
+  const params = [category];
+  let sql = "SELECT id FROM knowledge_sections WHERE category = $1 AND COALESCE(archived_at, '') = ''";
+  if (ignoreId !== null) {
+    params.push(ignoreId);
+    sql += ` AND id <> $${params.length}`;
+  }
+  sql += ' LIMIT 1';
+  const { rows } = await pool.query(sql, params);
+  return rows[0] || null;
+}
 
 function createKnowledgeRouter({
   pool,
@@ -83,16 +100,21 @@ function createKnowledgeRouter({
       const { rows } = await pool.query(
         "SELECT category, content, sort_order, updated_at FROM knowledge_sections WHERE COALESCE(archived_at, '') = '' ORDER BY sort_order ASC, id ASC"
       );
-      const totalChars = rows.reduce((sum, row) => sum + String(row.content || '').length, 0);
+      const safeRows = rows.map(row => ({
+        ...row,
+        category: cleanKnowledgeInput(row.category),
+        content: cleanKnowledgeInput(row.content),
+      }));
+      const totalChars = safeRows.reduce((sum, row) => sum + String(row.content || '').length, 0);
       const payload = {
         generated_at: new Date().toISOString(),
         source: 'PostgreSQL knowledge_sections export',
-        notes: '這是從後台 PostgreSQL 匯出的知識庫資料。下載 JSON 不會自動寫回 GitHub；如需成為正式版本，請人工檢查後再更新 data/ecoco-knowledge-import.json 並 commit / push。',
+        notes: '由 PostgreSQL 匯出的知識庫備份。匯出時會自動遮罩手機與 email；大改版或交接前，請人工確認後放回 data/ecoco-knowledge-import.json 並 commit / push。',
         summary: {
-          section_count: rows.length,
+          section_count: safeRows.length,
           content_chars: totalChars,
         },
-        sections: rows.map(row => ({
+        sections: safeRows.map(row => ({
           category: row.category,
           content: row.content,
           source: 'PostgreSQL knowledge_sections',
@@ -110,17 +132,21 @@ function createKnowledgeRouter({
   });
 
   router.post('/sections', async (req, res) => {
-    const { category, content } = req.body;
-    if (!category || typeof category !== 'string' || !category.trim()) {
-      return res.status(400).json({ error: '分類名稱不可空白' });
+    const category = cleanKnowledgeInput(req.body.category);
+    const content = cleanKnowledgeInput(req.body.content);
+    if (!category) {
+      return res.status(400).json({ error: '分類名稱不能空白' });
     }
 
     try {
+      const duplicate = await findDuplicateCategory(pool, category);
+      if (duplicate) return res.status(409).json({ error: '已有相同分類名稱，請改用編輯既有分類' });
+
       const { rows } = await pool.query('SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM knowledge_sections');
       const sortOrder = Number(rows[0].next);
       const { rows: inserted } = await pool.query(
         'INSERT INTO knowledge_sections (category, content, sort_order, updated_at) VALUES ($1, $2, $3, $4) RETURNING id',
-        [category.trim(), String(content || ''), sortOrder, new Date().toISOString()]
+        [category, content, sortOrder, new Date().toISOString()]
       );
       await refreshKnowledgeCache();
       await rebuildKnowledgeChunksForSection(inserted[0].id);
@@ -133,16 +159,20 @@ function createKnowledgeRouter({
 
   router.put('/sections/:id', async (req, res) => {
     const id = Number(req.params.id);
-    const { category, content } = req.body;
+    const category = cleanKnowledgeInput(req.body.category);
+    const content = cleanKnowledgeInput(req.body.content);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'ID 格式錯誤' });
-    if (!category || typeof category !== 'string' || !category.trim()) {
-      return res.status(400).json({ error: '分類名稱不可空白' });
+    if (!category) {
+      return res.status(400).json({ error: '分類名稱不能空白' });
     }
 
     try {
+      const duplicate = await findDuplicateCategory(pool, category, id);
+      if (duplicate) return res.status(409).json({ error: '已有相同分類名稱，請合併或改名後再儲存' });
+
       const result = await pool.query(
         'UPDATE knowledge_sections SET category = $1, content = $2, updated_at = $3 WHERE id = $4',
-        [category.trim(), String(content || ''), new Date().toISOString(), id]
+        [category, content, new Date().toISOString(), id]
       );
       if (result.rowCount === 0) return res.status(404).json({ error: '找不到這個知識分類' });
       await refreshKnowledgeCache();
@@ -178,6 +208,11 @@ function createKnowledgeRouter({
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'ID 格式錯誤' });
 
     try {
+      const section = await pool.query('SELECT category FROM knowledge_sections WHERE id = $1', [id]);
+      if (section.rowCount === 0) return res.status(404).json({ error: '找不到這個知識分類' });
+      const duplicate = await findDuplicateCategory(pool, section.rows[0].category, id);
+      if (duplicate) return res.status(409).json({ error: '已有相同分類正在使用，請先改名再恢復' });
+
       const result = await pool.query(
         "UPDATE knowledge_sections SET archived_at = '', updated_at = $1 WHERE id = $2",
         [new Date().toISOString(), id]
@@ -199,4 +234,8 @@ function createKnowledgeRouter({
   return router;
 }
 
-module.exports = { createKnowledgeRouter };
+module.exports = {
+  cleanKnowledgeInput,
+  createKnowledgeRouter,
+  findDuplicateCategory,
+};

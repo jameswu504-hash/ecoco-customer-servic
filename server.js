@@ -18,6 +18,7 @@ const { createUnansweredRouter } = require('./routes/unanswered.routes');
 const { createPromptService } = require('./services/prompt.service');
 const { createRagService } = require('./services/rag.service');
 const { purgeExpiredConversationData } = require('./services/privacy.service');
+const { anonymizeText } = require('./scripts/anonymize-pii');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -25,7 +26,7 @@ app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false,
 }));
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
@@ -62,6 +63,19 @@ function getKnowledgeAutoSyncMode() {
   return 'disable';
 }
 
+function normalizeImportSections(rawSections) {
+  const byCategory = new Map();
+  for (const section of rawSections) {
+    const category = anonymizeText(String(section.category || '').trim());
+    const content = anonymizeText(String(section.content || '').trim());
+    if (!category || !content) continue;
+    if (!byCategory.has(category)) {
+      byCategory.set(category, { category, content });
+    }
+  }
+  return [...byCategory.values()];
+}
+
 async function refreshKnowledgeCache() {
   const { rows } = await pool.query(
     "SELECT category, content FROM knowledge_sections WHERE COALESCE(archived_at, '') = '' ORDER BY sort_order ASC, id ASC"
@@ -84,14 +98,10 @@ async function syncKnowledgeFromImportFile() {
   }
 
   const payload = JSON.parse(fs.readFileSync(importPath, 'utf8'));
-  const sections = Array.isArray(payload.sections) ? payload.sections : [];
+  const sections = normalizeImportSections(Array.isArray(payload.sections) ? payload.sections : []);
   if (sections.length === 0) {
     console.log('Knowledge auto-sync skipped: no sections found');
     return;
-  }
-
-  if (mode === 'replace') {
-    await pool.query('DELETE FROM knowledge_sections');
   }
 
   const now = new Date().toISOString();
@@ -100,45 +110,71 @@ async function syncKnowledgeFromImportFile() {
   let updated = 0;
   let skipped = 0;
 
-  for (const section of sections) {
-    const category = String(section.category || '').trim();
-    const content = String(section.content || '').trim();
-    if (!category || !content) continue;
-
+  const db = await pool.connect();
+  try {
+    await db.query('BEGIN');
     if (mode === 'replace') {
-      await pool.query(
-        'INSERT INTO knowledge_sections (category, content, sort_order, updated_at) VALUES ($1, $2, $3, $4)',
-        [category, content, sortOrder++, now]
-      );
-      inserted++;
-      continue;
+      await db.query('DELETE FROM knowledge_chunks');
+      await db.query('DELETE FROM knowledge_sections');
     }
 
-    const existing = await pool.query(
-      'SELECT id FROM knowledge_sections WHERE category = $1 ORDER BY id ASC LIMIT 1',
-      [category]
-    );
-    if (existing.rowCount > 0) {
-      if (mode === 'upsert') {
-        await pool.query(
-          'UPDATE knowledge_sections SET content = $1, updated_at = $2 WHERE id = $3',
-          [content, now, existing.rows[0].id]
+    for (const section of sections) {
+      if (mode === 'replace') {
+        await db.query(
+          'INSERT INTO knowledge_sections (category, content, sort_order, updated_at) VALUES ($1, $2, $3, $4)',
+          [section.category, section.content, sortOrder++, now]
         );
-        updated++;
-      } else {
-        skipped++;
+        inserted++;
+        continue;
       }
-    } else {
-      const nextSort = await pool.query('SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM knowledge_sections');
-      await pool.query(
-        'INSERT INTO knowledge_sections (category, content, sort_order, updated_at) VALUES ($1, $2, $3, $4)',
-        [category, content, Number(nextSort.rows[0].next), now]
+
+      const existing = await db.query(
+        "SELECT id FROM knowledge_sections WHERE category = $1 AND COALESCE(archived_at, '') = '' ORDER BY id ASC LIMIT 1",
+        [section.category]
       );
-      inserted++;
+      if (existing.rowCount > 0) {
+        if (mode === 'upsert') {
+          await db.query(
+            'UPDATE knowledge_sections SET content = $1, updated_at = $2 WHERE id = $3',
+            [section.content, now, existing.rows[0].id]
+          );
+          updated++;
+        } else {
+          skipped++;
+        }
+      } else {
+        const nextSort = await db.query('SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM knowledge_sections');
+        await db.query(
+          'INSERT INTO knowledge_sections (category, content, sort_order, updated_at) VALUES ($1, $2, $3, $4)',
+          [section.category, section.content, Number(nextSort.rows[0].next), now]
+        );
+        inserted++;
+      }
     }
+
+    await db.query('COMMIT');
+  } catch (err) {
+    await db.query('ROLLBACK');
+    throw err;
+  } finally {
+    db.release();
   }
 
   console.log(`Knowledge auto-sync complete: mode=${mode} inserted=${inserted} updated=${updated} skipped=${skipped}`);
+}
+
+function loadInitialKnowledgeSections() {
+  const importPayload = readJsonFile(path.join('data', 'ecoco-knowledge-import.json'));
+  const importSections = normalizeImportSections(Array.isArray(importPayload?.sections) ? importPayload.sections : []);
+  if (importSections.length > 0) {
+    return { source: 'data/ecoco-knowledge-import.json', sections: importSections };
+  }
+
+  const seed = require('./knowledge');
+  return {
+    source: 'knowledge.js',
+    sections: normalizeImportSections(Array.isArray(seed) ? seed : []),
+  };
 }
 
 async function initDb(ragService) {
@@ -149,16 +185,16 @@ async function initDb(ragService) {
 
   const { rows } = await pool.query('SELECT COUNT(*) AS count FROM knowledge_sections');
   if (Number(rows[0].count) === 0) {
-    const seed = require('./knowledge');
+    const { source, sections } = loadInitialKnowledgeSections();
     const now = new Date().toISOString();
     let i = 0;
-    for (const section of seed) {
+    for (const section of sections) {
       await pool.query(
         'INSERT INTO knowledge_sections (category, content, sort_order, updated_at) VALUES ($1, $2, $3, $4)',
         [section.category, section.content, i++, now]
       );
     }
-    console.log(`Knowledge initialized from knowledge.js: ${seed.length} sections`);
+    console.log(`Knowledge initialized from ${source}: ${sections.length} sections`);
   }
 }
 
@@ -221,6 +257,9 @@ if (require.main === module) {
 module.exports = {
   app,
   getKnowledgeAutoSyncMode,
+  loadInitialKnowledgeSections,
+  normalizeImportSections,
   readJsonFile,
   start,
+  syncKnowledgeFromImportFile,
 };
