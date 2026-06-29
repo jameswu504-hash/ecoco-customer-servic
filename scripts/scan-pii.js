@@ -3,6 +3,9 @@ const path = require('path');
 const { EMAIL_PATTERN, TW_MOBILE_PATTERN } = require('./anonymize-pii');
 
 const EXCLUDED_DIRS = new Set(['.git', 'node_modules', '.cache', 'dist', 'build']);
+const ALLOWED_EMAILS = new Set([
+  'actions@github.com',
+]);
 const TEXT_EXTENSIONS = new Set([
   '.css',
   '.env',
@@ -35,10 +38,13 @@ function collectFiles(dir) {
 
 function scanFile(filePath) {
   const content = fs.readFileSync(filePath, 'utf8');
+  const emailMatches = (content.match(EMAIL_PATTERN) || [])
+    .filter(email => !ALLOWED_EMAILS.has(email.toLowerCase()));
+
   return {
     filePath,
     phoneMatches: (content.match(TW_MOBILE_PATTERN) || []).length,
-    emailMatches: (content.match(EMAIL_PATTERN) || []).length,
+    emailMatches: emailMatches.length,
   };
 }
 

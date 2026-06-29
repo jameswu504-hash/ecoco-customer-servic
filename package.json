@@ -1,7 +1,7 @@
 {
   "name": "ecoco-customer-service",
   "version": "1.0.0",
-  "description": "ECOCO 宜可可 AI 客服系統後端",
+  "description": "ECOCO AI customer service assistant",
   "main": "server.js",
   "engines": {
     "node": ">=20"

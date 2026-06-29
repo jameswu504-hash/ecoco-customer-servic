@@ -1,260 +1,259 @@
 # ECOCO AI 客服系統維運與交接手冊
 
-本文件提供 ECOCO AI 客服系統的維護、部署、資料流與交接標準。適用對象為系統維護者、專案交接人員、營運窗口與需要理解系統架構的管理者。
+本文件提供 ECOCO AI 客服系統的維運、部署、資料流、權限、例行維護與交接標準。適用對象包含系統維護者、工程協作者、客服主管、營運窗口與接手專案的人員。
 
 ## 1. 系統定位
 
-ECOCO AI 客服是一套以 Node.js、Claude API 與 PostgreSQL 組成的 AI 客服系統。它的核心目標是：
+ECOCO AI 客服是一套結合前台客服頁、內部後台、PostgreSQL 知識庫、Claude 回覆模型與 RAG 檢索的客服輔助系統。
 
-- 讓使用者可以即時詢問 ECOCO 相關問題。
-- 讓 AI 依照已整理的 ECOCO 知識庫回答。
-- 讓內部人員能追蹤對話、評分與知識缺口。
-- 讓客服知識可以持續維護、備份與版本管理。
+系統目的：
 
-系統不是舊版 CommandCenter，也不是單純 FAQ 靜態頁。舊資料可作為比對來源，但正式回答應以目前 PostgreSQL 知識庫與 Git 版本資料為準。
+- 回答使用者常見客服問題。
+- 統一 ECOCO 客服回覆口徑。
+- 將知識缺口轉成可追蹤待辦。
+- 讓客服與營運人員能持續維護知識庫。
+- 提供主管查看客服量、問題分類與改善進度。
+- 保留可交接的 Git 文件、JSON 與資料庫流程。
+
+系統不是舊版 CommandCenter，也不是單純 FAQ 靜態頁。舊資料可作為參考，但正式回答應以目前 PostgreSQL 知識庫與 Git 版本資料為準。
 
 ## 2. 系統架構
 
 ```text
 使用者
-  ↓
-public/index.html
-  ↓
-Express API / server.js
-  ↓
-PostgreSQL knowledge_sections / knowledge_chunks
-  ↓
-Claude API
-  ↓
-AI 回覆 + 對話紀錄 + 評分 + 知識缺口
-  ↓
-public/dashboard.html
+  -> public/index.html
+  -> Express API
+  -> PostgreSQL knowledge_sections / knowledge_chunks
+  -> Claude API
+  -> AI 回覆
+  -> conversations / ratings / unanswered_questions
+  -> public/dashboard.html
 ```
 
 | 元件 | 用途 |
 | --- | --- |
-| `server.js` | 後端入口，負責啟動服務、初始化資料庫與註冊 API routes |
-| `routes/dashboard.routes.js` | 後台統計、對話紀錄、營運報表 API |
-| `routes/knowledge.routes.js` | 知識庫新增、修改、封存、恢復、匯出 API |
+| `server.js` | 後端入口、服務啟動、資料庫初始化、route 註冊 |
+| `routes/chat.routes.js` | AI 對話 API、評分 API、知識缺口判斷 |
+| `routes/dashboard.routes.js` | 後台統計、對話紀錄與主管報表 API |
+| `routes/knowledge.routes.js` | 知識庫新增、修改、封存、恢復與匯出 API |
 | `routes/unanswered.routes.js` | 知識缺口查詢與狀態更新 API |
-| `public/index.html` | 使用者端 AI 客服頁面 |
+| `services/rag.service.js` | RAG 檢索、chunks 建立、pgvector embedding |
+| `services/prompt.service.js` | System prompt 與品牌語氣組合 |
+| `services/privacy.service.js` | 手機與 Email 等敏感資訊遮罩 |
+| `public/index.html` | 使用者端 AI 客服頁 |
 | `public/dashboard.html` | 內部客服後台 |
-| PostgreSQL | 線上執行資料庫，AI 實際讀取資料的位置 |
-| Claude API | 產生客服回覆的 AI 模型 |
+| PostgreSQL | 線上知識庫、對話、評分、知識缺口與 RAG chunks |
+| Claude API | 產生客服回答 |
+| OpenAI Embedding API | 產生向量，支援 pgvector 語意檢索 |
 
-## 3. 環境與部署
+## 3. 權限與帳號
 
-目前正式部署由 Render 執行，主要來源為 GitHub repository。
-
-| 項目 | 說明 |
-| --- | --- |
-| GitHub | 正式程式碼與文件版本來源 |
-| Render | Web Service 部署平台 |
-| PostgreSQL | 線上資料庫，由 `DATABASE_URL` 指向 |
-| GitLab | 公司備份或協作倉庫，依權限與流程同步 |
-
-Render 會讀取以下環境變數：
-
-| 變數 | 用途 |
-| --- | --- |
-| `ANTHROPIC_API_KEY` | Claude API key |
-| `ADMIN_KEY` | 後台管理 API 權限 |
-| `DATABASE_URL` | PostgreSQL 連線字串 |
-| `KNOWLEDGE_AUTO_SYNC` | Git JSON 與 PostgreSQL 的啟動同步模式 |
-| `PGSSL` | PostgreSQL SSL 設定，依部署環境調整 |
-
-機密資料只能放在 Render Environment Variables 或本機 `.env`，不得提交到 GitHub 或 GitLab。
-
-## 4. PostgreSQL 資料表
-
-PostgreSQL 是線上執行資料庫，可以理解為 AI 客服正在使用的正式資料庫。它不是 GitHub 檔案，也不是 Excel，需要透過後台、程式或 DBeaver 查看。
-
-| 資料表 | 用途 |
-| --- | --- |
-| `knowledge_sections` | 知識庫分類與內容，AI 回答的主要來源 |
-| `knowledge_chunks` | 由知識庫自動切分的 RAG 檢索片段 |
-| `conversations` | 使用者與 AI 的對話紀錄 |
-| `ratings` | 使用者對 AI 回覆的評分 |
-| `unanswered_questions` | AI 不確定或資料不足的問題 |
-
-`knowledge_chunks` 是系統自動產生的衍生資料，不應手動編輯。維護者應修改 `knowledge_sections`，再由系統重建 chunks。
-
-## 5. 知識資料的兩層管理
-
-本系統採用「線上執行資料庫」與「Git 版本資料」分層管理。
-
-| 層級 | 位置 | 用途 |
+| 項目 | 用途 | 管理原則 |
 | --- | --- | --- |
-| 執行層 | PostgreSQL `knowledge_sections` | AI 目前實際使用的知識 |
-| 版本層 | `data/ecoco-knowledge-import.json` | 可匯入 PostgreSQL 的正式知識包 |
-| 底稿層 | `data/ecoco-ai-customer-service-database.json` | 完整資料整理與來源追蹤底稿 |
+| GitHub repository | 正式程式碼、文件與 JSON 版本 | 應由公司或授權帳號控管 |
+| Render service | 正式部署平台 | 只有維護者可改環境變數與部署設定 |
+| PostgreSQL / Neon | 線上資料庫 | 連線字串不得公開 |
+| `ANTHROPIC_API_KEY` | Claude 回覆模型 | 放在 Render Environment Variables |
+| `OPENAI_API_KEY` | embedding 語意檢索 | 放在 Render Environment Variables |
+| `ADMIN_KEY` | 後台與管理 API 權限 | 不得寫入文件或 Git |
+| `.env` | 本機開發設定 | 不得提交 |
 
-日常修改以 PostgreSQL 後台為主，方便客服或維護者即時補資料。重大改版、交接或備份時，應從後台下載 JSON，人工確認後放回 Git。
+任何 API key、token、資料庫密碼、真實手機、Email 或會員資料都不得提交到 GitHub 或 GitLab。
+
+## 4. 部署與健康檢查
+
+目前正式服務由 Render 部署，Render 會從 GitHub main 分支拉取程式碼。
+
+部署後應檢查：
+
+1. Render deploy 狀態為 Live。
+2. Logs 無啟動錯誤。
+3. `/healthz` 可回傳服務狀態。
+4. 前台可正常提問。
+5. 後台可正常登入。
+6. 知識庫分類與 RAG chunks 數量合理。
+
+健康檢查網址：
+
+```text
+https://你的-render-domain/healthz
+```
+
+應關注欄位：
+
+| 欄位 | 正常狀態 |
+| --- | --- |
+| `status` | `ok` |
+| `database` | `ok` |
+| `semanticRagEnabled` | 有 OpenAI key 且 pgvector 可用時為 `true` |
+| `knowledgeAutoSyncMode` | 建議日常維護為 `disable` |
+
+## 5. PostgreSQL 與 Git JSON 的關係
+
+系統採用兩層資料管理。
+
+| 層級 | 位置 | 說明 |
+| --- | --- | --- |
+| 線上執行資料 | PostgreSQL `knowledge_sections` | AI 目前實際讀取的知識 |
+| 正式版本資料 | `data/ecoco-knowledge-import.json` | 可重新匯入、備份與交接的知識包 |
+| 資料底稿 | `data/ecoco-ai-customer-service-database.json` | 來源整理與資料追蹤底稿 |
+
+重要原則：
+
+- 後台新增或修改知識會立即寫入 PostgreSQL。
+- 後台修改不會自動寫回 GitHub。
+- 重大更新、交接或備份前，需從後台下載 JSON，人工確認後覆蓋 `data/ecoco-knowledge-import.json`。
+- `knowledge_chunks` 是由系統自動產生的 RAG 檢索資料，不應手動修改。
 
 ## 6. 知識更新流程
 
 ### 6.1 日常小修
 
-適用於修正錯字、補充單一問題、封存過期知識。
+適用於修正錯字、補充一筆 FAQ、封存過期內容。
 
 ```text
 登入後台
-  ↓
-搜尋既有分類
-  ↓
-新增 / 修改 / 封存知識
-  ↓
-前台測試同類問題
-  ↓
-必要時於知識缺口更新狀態
+  -> 搜尋既有分類
+  -> 新增 / 修改 / 封存知識
+  -> 儲存至 PostgreSQL
+  -> 系統重建 chunks
+  -> 前台測試相關問題
 ```
 
-此流程會立即寫入 PostgreSQL，AI 可以使用最新內容，但不會自動寫回 GitHub。
+日常小修不一定需要立刻更新 Git，但應在重大整理或交接前匯出 JSON。
 
 ### 6.2 重大改版或交接
 
-適用於大量整理知識、交接前備份、正式版本更新。
+適用於大量整理知識、正式版本備份、交接前確認。
 
 ```text
 後台下載 JSON
-  ↓
-人工檢查內容
-  ↓
-覆蓋 data/ecoco-knowledge-import.json
-  ↓
-commit / push 到 GitHub
-  ↓
-Render 部署
+  -> 人工檢查內容與個資
+  -> 覆蓋 data/ecoco-knowledge-import.json
+  -> npm.cmd run scan:pii
+  -> npm.cmd test
+  -> commit / push 到 GitHub
+  -> Render 部署
 ```
 
-注意：下載 JSON 只是產生檔案，不會自動更新 GitHub。必須由維護者人工放回 repo、commit 並 push。
+### 6.3 不建議操作
 
-### 6.3 不建議的做法
-
-- 直接修改 PostgreSQL 但完全不備份。
-- 把未確認的個案結果寫成公開知識。
-- 將 API key、token 或使用者個資寫入 JSON。
+- 直接修改 PostgreSQL 但不留下備份。
+- 把未確認個案結果寫成公開知識。
+- 把 API key 或個資寫入 JSON。
 - 手動修改 `knowledge_chunks`。
-- 未確認就刪除知識；建議先封存。
+- 未確認就永久刪除知識，建議先封存。
 
-## 7. RAG 與回答流程
+## 7. 回覆風險控管
 
-系統回答問題時，會先從 PostgreSQL 找出相關知識片段，再交給 Claude 產生回答。
-
-```text
-使用者問題
-  ↓
-PostgreSQL 全文搜尋 knowledge_chunks
-  ↓
-取出相關 chunks
-  ↓
-組成 system prompt
-  ↓
-Claude 產生回覆
-  ↓
-儲存對話與可能的知識缺口
-```
-
-RAG 的重點不是讓 AI 自由發揮，而是讓 AI 依照公司可控、可維護的知識回答。若資料庫缺少內容，AI 應保守回覆並留下知識缺口。
-
-## 8. 回覆風險控管
-
-系統已接入 `data/ecoco-response-policies.json`，用於控制高風險問題的回答方式。
-
-高風險情境包含：
+高風險問題包括：
 
 - 點數未入帳
 - 優惠券無法兌換
-- 帳號或會員資料
-- 機台異常與客訴
-- 退款、補償、補點要求
+- 補點、退款、補償
+- 帳號、會員資料、個資
+- 機台異常、滿倉、清潔與客訴
+- 未確認的新站點、新活動或合作方資訊
 
-原則如下：
+AI 可做：
 
-- 可以說明規則與收集必要資訊。
-- 可以引導客服表單或人工協助。
-- 不得承諾補點、退款、賠償或已完成處理。
-- 不得推測使用者個資或帳號狀態。
+- 說明公開規則。
+- 收集必要查詢資訊。
+- 引導客服表單或人工協助。
+- 使用保守、親切、專業語氣。
 
-## 9. 重要檔案用途
+AI 不可做：
 
-| 檔案 / 資料夾 | 用途 |
-| --- | --- |
-| `server.js` | 後端入口、Claude 呼叫、資料庫初始化、主要服務啟動 |
-| `routes/` | 後台、知識庫、知識缺口等 API 模組 |
-| `db/schema.js` | PostgreSQL 資料表 schema |
-| `middleware/admin-auth.js` | 後台 API 權限驗證 |
-| `public/index.html` | 使用者端 AI 客服頁 |
-| `public/dashboard.html` | 內部後台 |
-| `data/ecoco-knowledge-import.json` | 可匯入 PostgreSQL 的正式知識包 |
-| `data/ecoco-ai-customer-service-database.json` | 完整知識底稿與來源紀錄 |
-| `data/ecoco-response-policies.json` | 回覆風險政策 |
-| `data/knowledge-quality-audit.json` | 重複與衝突稽核結果 |
-| `scripts/build-ecoco-knowledge-data.js` | 從底稿產生匯入 JSON |
-| `scripts/audit-knowledge-quality.js` | 檢查重複與衝突 |
-| `scripts/apply-knowledge-audit.js` | 將建議剔除資料標記為 archived |
-| `scripts/import-knowledge-json.js` | 手動匯入知識 JSON 到 PostgreSQL |
-| `CLAUDE.md` | AI coding agent 維護本專案時的工作規則 |
-| `.env.example` | 環境變數範例 |
-| `.gitignore` | 防止 `.env`、log、node_modules 等不該進 Git 的檔案被提交 |
+- 承諾補點、退款、賠償或補償。
+- 宣稱已完成處理或已派員。
+- 查詢、推測或公開會員個資。
+- 代表公司做客訴責任判定。
 
-## 10. 例行維護清單
+## 8. 例行維護清單
 
-建議每週檢查：
+### 每日或每週
 
-- 是否有未處理知識缺口。
-- 是否有低評分或負面回饋。
-- 是否有重複或過期知識。
-- 是否有高風險問題被 AI 過度承諾。
-- 後台是否能正常登入。
-- Render 是否正常部署。
-- GitHub 文件是否符合目前流程。
+- 檢查知識缺口是否有待處理項目。
+- 檢查使用者負評與低分回覆。
+- 檢查是否有高風險問題被 AI 過度承諾。
+- 補充已確認的常見問題。
+- 封存過期或不確定知識。
 
-建議每月或交接前檢查：
+### 每月或重大更新前
 
-- 從後台下載 JSON 備份。
-- 確認 `data/ecoco-knowledge-import.json` 是否需要更新。
-- 確認 API key 與資料庫權限仍由公司帳號控管。
-- 確認文件與實際操作流程一致。
+- 下載 PostgreSQL 知識庫 JSON。
+- 檢查是否有個資或不該公開的內容。
+- 更新 `data/ecoco-knowledge-import.json`。
+- 執行 PII 掃描與 smoke test。
+- 確認 GitHub、Render、PostgreSQL 權限仍由公司控管。
 
-## 11. 故障排除
+## 9. 測試與驗證
+
+常用檢查指令：
+
+```bash
+npm.cmd run lint
+npm.cmd test
+npm.cmd run scan:pii
+```
+
+部署後人工驗證：
+
+1. 前台輸入一般 FAQ，例如點數效期。
+2. 前台輸入高風險問題，例如點數未入帳。
+3. 確認 AI 不承諾補點或退款。
+4. 後台確認對話有紀錄。
+5. 後台確認知識缺口與評分功能正常。
+6. 打開 `/healthz` 確認 database 狀態。
+
+## 10. 故障排除
 
 | 問題 | 可能原因 | 處理方式 |
 | --- | --- | --- |
-| AI 無法回答 | 知識庫缺少資料、Claude API 失敗 | 檢查後台知識缺口與 Render logs |
-| 後台無法存知識 | `ADMIN_KEY` 錯誤或 API 失敗 | 確認登入 key 與 Render logs |
-| 修改後 AI 沒變 | 修改的分類未命中、chunks 尚未重建 | 重新測試相近問法，必要時重啟服務 |
-| 資料庫連不上 | `DATABASE_URL` 錯誤、SSL 設定錯誤 | 檢查 Render Environment 與 DBeaver SSL |
-| 部署後資料不一致 | Git JSON 與 PostgreSQL 沒同步 | 確認 `KNOWLEDGE_AUTO_SYNC` 與更新流程 |
+| AI 無法回答 | Claude key 失效、模型錯誤、API 額度問題 | 檢查 Render logs 與 `ANTHROPIC_API_KEY` |
+| 語意 RAG 未啟用 | 沒有 `OPENAI_API_KEY`、OpenAI 額度不足、pgvector 不可用 | 檢查 logs、billing 與 `/healthz` |
+| 後台無法登入 | `ADMIN_KEY` 錯誤 | 確認 Render Environment Variables |
+| 知識更新後 AI 沒變 | 問法未命中、chunks 未重建、資料未儲存 | 檢查後台、logs，重新測試相近問法 |
+| PostgreSQL 連不上 | `DATABASE_URL` 錯誤、SSL 設定錯誤 | 檢查 Render 與 DB provider |
+| 部署後資料不一致 | PostgreSQL 與 Git JSON 不同步 | 確認最近是否下載 JSON 並回寫 Git |
 
-## 12. 交接標準
+## 11. 交接資料包
 
 交接時應提供：
 
-- GitHub repository 位置。
-- Render service 位置。
-- PostgreSQL 連線資訊由公司帳號保管。
-- 後台登入方式與 `ADMIN_KEY` 管理方式。
-- 最近一次知識 JSON 備份。
-- 尚待確認的知識缺口或衝突清單。
+- GitHub repository URL。
+- Render service URL。
+- 後台 URL。
+- PostgreSQL 管理位置與負責帳號。
+- API key 管理位置，不提供明文 key。
 - 最近一次部署 commit。
+- 最近一次知識 JSON 備份。
+- 尚未處理的知識缺口與資料衝突。
 - 文件入口：`docs/README.md`。
 
-交接完成前，應由接手者實際完成一次：
+## 12. 接手驗收流程
 
-1. 登入後台。
-2. 查看對話紀錄。
-3. 新增或修改一筆測試知識。
-4. 前台測試 AI 回覆。
-5. 封存或恢復一筆非正式資料。
-6. 下載 JSON，確認知道它不會自動寫回 GitHub。
+接手者應實際完成：
+
+1. 開啟前台並送出測試問題。
+2. 登入後台。
+3. 查看一筆對話紀錄。
+4. 查看知識缺口清單。
+5. 新增或修改一筆測試知識。
+6. 前台測試 AI 是否讀到新知識。
+7. 封存或恢復一筆測試知識。
+8. 下載 JSON，確認知道此動作不會自動寫回 GitHub。
+9. 查看 `/healthz`。
+10. 確認知道部署與 GitHub 更新流程。
 
 ## 13. 維護原則
 
-本系統的長期維護重點是讓 AI 回答「可追蹤、可修正、可交接」。
+本系統維護的核心目標是讓 AI 回答可控、資料可追蹤、流程可交接。
 
-因此所有重大調整應符合三個原則：
+所有重大調整應符合：
 
 - 來源清楚：知道資料從哪裡來。
-- 風險可控：高風險問題不讓 AI 過度承諾。
-- 流程可交接：下一位維護者能依文件完成操作。
+- 權限清楚：知道誰能改資料、誰能部署。
+- 風險清楚：高風險問題不讓 AI 過度承諾。
+- 版本清楚：PostgreSQL 線上資料與 Git JSON 版本有明確同步流程。
+- 文件清楚：接手者不需要依賴口頭說明才能維護系統。

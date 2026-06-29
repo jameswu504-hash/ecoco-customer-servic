@@ -12,7 +12,7 @@
 
 ## 對主管可用說法
 
-我看到舊版 CommandCenter 的 `config.json` 裡有 `api_key` / `zd_token`。因為新版 ECOCO 客服系統已經有自己的 API 設定，我這邊不會沿用這組舊 key，也不會匯入新版專案或提交到 Git。
+舊版 CommandCenter 的 `config.json` 曾包含 `api_key` / `zd_token`。新版 ECOCO 客服系統應使用正式環境變數管理 API 設定，不應沿用舊 key，也不應將任何 key 匯入新版專案或提交到 Git。
 
 另外這組 key 已經存在於可被打包傳遞的檔案中，建議請負責 API/Zendesk 的同仁確認是否仍有效；若仍有效，建議停用或重產，避免資安風險。
 

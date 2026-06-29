@@ -1,29 +1,65 @@
-# ECOCO AI 客服內部文件入口
+# ECOCO AI 客服內部文件索引
 
-這個資料夾放的是給 ECOCO 內部維護 AI 客服用的文件。
+本資料夾收錄 ECOCO AI 客服系統的正式說明文件。文件依使用者角色分組，方便客服、主管、維護者與工程協作者快速找到需要的資訊。
 
-建議閱讀順序：
+## 建議閱讀順序
 
-1. [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)：先看整個系統是什麼、誰會用、資料怎麼流。
-2. [CUSTOMER_SUPPORT_GUIDE.md](CUSTOMER_SUPPORT_GUIDE.md)：一般客服人員版本，只講後台怎麼看、知識缺口怎麼處理、什麼不能讓 AI 承諾。
-3. [DATA_SOURCES.md](DATA_SOURCES.md)：確認 AI 目前吃了哪些資料、哪些不能直接用。
-4. [DATA_DICTIONARY.md](DATA_DICTIONARY.md)：看懂 PostgreSQL 資料表與 JSON 檔案的用途。
-5. [MAINTENANCE_GUIDE.md](MAINTENANCE_GUIDE.md)：日常怎麼維護知識庫、知識缺口與回覆品質。
-6. [OPERATIONS_HANDOFF_GUIDE.md](OPERATIONS_HANDOFF_GUIDE.md)：系統維運、部署、資料流與交接手冊。
-7. [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md)：Render、環境變數、部署與更新流程。
-8. [META_AI_INSTRUCTIONS.md](META_AI_INSTRUCTIONS.md)：Meta AI 指令來源整理與維護方式。
-9. [CUSTOMER_SERVICE_FLOW.md](CUSTOMER_SERVICE_FLOW.md)：客服 Flow 圖規劃。
-10. [PRD_ECOCO_AI_CUSTOMER_SERVICE.md](PRD_ECOCO_AI_CUSTOMER_SERVICE.md)：ECOCO AI 客服系統 PRD。
-11. [KNOWLEDGE_QUALITY_AUDIT.md](KNOWLEDGE_QUALITY_AUDIT.md)：重複問題與待確認衝突稽核清單。
-12. [REPO_FILE_AUDIT.md](REPO_FILE_AUDIT.md)：repo 檔案用途與已移除孤兒檔案。
-13. [knowledge-import.md](knowledge-import.md)：技術細節，說明如何產生與匯入知識庫 JSON。
-14. [security-keys.md](security-keys.md)：API key、token、`.env` 與 Render 環境變數的安全原則。
-15. [LLM_WIKI_RULE_MODEL_STRATEGY.md](LLM_WIKI_RULE_MODEL_STRATEGY.md)：LLM Wiki、Rule、本地模型與正式客服模型的應用策略。
+| 角色 | 建議先讀 | 目的 |
+| --- | --- | --- |
+| 客服人員 | [客服人員操作指南](CUSTOMER_SUPPORT_GUIDE.md) | 了解日常後台操作與知識缺口處理 |
+| 客服主管 / 營運主管 | [PRD](PRD_ECOCO_AI_CUSTOMER_SERVICE.md)、[客服 Flow 圖底稿](CUSTOMER_SERVICE_FLOW.md) | 了解系統目標、流程與管理方式 |
+| 系統維護者 | [維運與交接手冊](OPERATIONS_HANDOFF_GUIDE.md)、[部署與環境手冊](DEPLOYMENT_RUNBOOK.md) | 了解部署、資料庫、知識更新與交接流程 |
+| 工程協作者 | [資料字典](DATA_DICTIONARY.md)、[資料來源清單](DATA_SOURCES.md) | 了解資料表、JSON、來源與限制 |
+| AI / LLM 評估者 | [LLM Wiki、Rule 與模型策略](LLM_WIKI_RULE_MODEL_STRATEGY.md) | 了解模型、Rule、RAG 與後續擴充方向 |
 
-重要原則：
+## 核心交付文件
 
-- `.env` 和 Render Environment Variables 只放機密設定，不放進 GitHub。
-- 日常知識維護以 PostgreSQL 的 `knowledge_sections` 為準，AI 實際回答時會讀取這裡。
-- 大改版、交接或正式備份前，從後台下載 JSON，人工確認後回寫到 `data/ecoco-knowledge-import.json`。
-- AI 無法確定的問題會進入 `unanswered_questions`，後續要由內部確認後補回知識庫。
-- 舊系統資料只能當參考，不能整包匯入。
+| 文件 | 說明 |
+| --- | --- |
+| [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) | 專案整體定位、主要功能與角色分工 |
+| [CUSTOMER_SUPPORT_GUIDE.md](CUSTOMER_SUPPORT_GUIDE.md) | 客服與營運人員的後台操作 SOP |
+| [PRD_ECOCO_AI_CUSTOMER_SERVICE.md](PRD_ECOCO_AI_CUSTOMER_SERVICE.md) | 產品需求文件，包含目標、範圍、功能、指標與風險 |
+| [CUSTOMER_SERVICE_FLOW.md](CUSTOMER_SERVICE_FLOW.md) | 客服流程與 Whimsical Flowchart 繪製底稿 |
+| [OPERATIONS_HANDOFF_GUIDE.md](OPERATIONS_HANDOFF_GUIDE.md) | 維運、權限、資料庫、部署與交接標準 |
+| [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md) | Render、PostgreSQL、Claude、OpenAI embedding 與健康檢查 |
+
+## 資料與知識庫文件
+
+| 文件 | 說明 |
+| --- | --- |
+| [DATA_SOURCES.md](DATA_SOURCES.md) | 知識來源、使用限制、資料量摘要與更新原則 |
+| [DATA_DICTIONARY.md](DATA_DICTIONARY.md) | PostgreSQL 資料表、JSON 檔案與環境變數說明 |
+| [knowledge-import.md](knowledge-import.md) | 知識 JSON 的產生、匯入、匯出與同步方式 |
+| [KNOWLEDGE_QUALITY_AUDIT.md](KNOWLEDGE_QUALITY_AUDIT.md) | 重複知識、衝突與資料品質稽核摘要 |
+| [META_AI_INSTRUCTIONS.md](META_AI_INSTRUCTIONS.md) | Meta AI 指令來源與轉換為客服規則的方式 |
+
+## 安全與治理文件
+
+| 文件 | 說明 |
+| --- | --- |
+| [security-keys.md](security-keys.md) | API key、token、`.env` 與 Render 環境變數的安全原則 |
+| [PII_HISTORY_CLEANUP_PLAN.md](PII_HISTORY_CLEANUP_PLAN.md) | 個資外洩止血與 Git 歷史清除方案 |
+| [REPO_FILE_AUDIT.md](REPO_FILE_AUDIT.md) | Git repository 檔案用途與不必要檔案稽核 |
+| [commandcenter-migration.md](commandcenter-migration.md) | 舊 CommandCenter 專案可沿用與不建議沿用內容 |
+
+## 重要維護原則
+
+- PostgreSQL 是線上執行資料庫，AI 目前實際讀取 `knowledge_sections` 與 `knowledge_chunks`。
+- Git 裡的 `data/ecoco-knowledge-import.json` 是正式版本備份，不會因為後台修改而自動更新。
+- 大量更新、交接或正式版本備份前，請從後台下載 JSON，人工確認後放回 Git。
+- API key、token、資料庫連線字串與 `.env` 不得提交。
+- 真實手機、Email、會員資料或可識別個資不得提交。
+- 高風險客服問題不得由 AI 承諾補點、退款、賠償或已完成處理。
+
+## 文件維護規範
+
+文件應保持「可交接、可查證、可執行」。
+
+新增或修改文件時，請避免：
+
+- 只寫個人學習心得，卻沒有操作步驟。
+- 使用未確認的內部結論。
+- 將測試帳號、API key、真實個資寫入文件。
+- 讓同一件事散落在多份文件且內容互相矛盾。
+
+若文件與實際系統不一致，應優先修正正式文件，再同步通知維護者檢查程式或資料庫設定。
