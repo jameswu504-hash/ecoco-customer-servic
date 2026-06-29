@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const { requireAdminKey } = require('../middleware/admin-auth');
 const { detectKnowledgeGap } = require('../routes/chat.routes');
@@ -90,4 +92,11 @@ test('conversation persistence masks phone and email values', () => {
   assert.equal(masked.includes('test@example.com'), false);
   assert.match(masked, /\[phone\]/);
   assert.match(masked, /\[email\]/);
+});
+
+test('dashboard keeps dynamic click handlers usable', () => {
+  const dashboard = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard.html'), 'utf8');
+
+  assert.equal(dashboard.includes('protectDashboardHtmlAssignments'), false);
+  assert.equal(dashboard.includes('DOMPurify.sanitize'), false);
 });
