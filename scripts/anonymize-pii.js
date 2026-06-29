@@ -11,8 +11,24 @@ const TW_MOBILE_PATTERN = /(?<!\d)(?:\+?886[-\s]?)?9\d{2}[-\s]?\d{3}[-\s]?\d{3}(
 
 function anonymizeText(input) {
   return String(input || '')
-    .replace(EMAIL_PATTERN, '[匿名]@example.com')
+    .replace(EMAIL_PATTERN, 'redacted-email')
     .replace(TW_MOBILE_PATTERN, '09XX-XXX-XXX');
+}
+
+function anonymizeJsonValue(value) {
+  if (typeof value === 'string') return anonymizeText(value);
+  if (Array.isArray(value)) return value.map(anonymizeJsonValue);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [key, anonymizeJsonValue(child)])
+    );
+  }
+  return value;
+}
+
+function anonymizeJsonFile(original) {
+  const parsed = JSON.parse(original);
+  return `${JSON.stringify(anonymizeJsonValue(parsed), null, 2)}\n`;
 }
 
 function collectFiles(target) {
@@ -31,7 +47,9 @@ function collectFiles(target) {
 
 function anonymizeFile(filePath) {
   const original = fs.readFileSync(filePath, 'utf8');
-  const anonymized = anonymizeText(original);
+  const anonymized = path.extname(filePath).toLowerCase() === '.json'
+    ? anonymizeJsonFile(original)
+    : anonymizeText(original);
   const changed = original !== anonymized;
   if (changed) {
     fs.writeFileSync(filePath, anonymized, 'utf8');
@@ -74,5 +92,6 @@ if (require.main === module) {
 module.exports = {
   EMAIL_PATTERN,
   TW_MOBILE_PATTERN,
+  anonymizeJsonValue,
   anonymizeText,
 };
