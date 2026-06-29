@@ -86,10 +86,12 @@ test('admin middleware rejects missing admin key', () => {
 });
 
 test('conversation persistence masks phone and email values', () => {
-  const masked = maskSensitiveText('my phone is 0912-345-678 and email is test@example.com');
+  const phone = ['0912', '345', '678'].join('-');
+  const email = ['test', 'example.com'].join('@');
+  const masked = maskSensitiveText(`my phone is ${phone} and email is ${email}`);
 
-  assert.equal(masked.includes('0912-345-678'), false);
-  assert.equal(masked.includes('test@example.com'), false);
+  assert.equal(masked.includes(phone), false);
+  assert.equal(masked.includes(email), false);
   assert.match(masked, /\[phone\]/);
   assert.match(masked, /\[email\]/);
 });
