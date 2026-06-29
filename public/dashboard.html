@@ -4,6 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>ECOCO 客服後台</title>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Space+Mono&display=swap" rel="stylesheet"/>
   <style>
     :root {
@@ -806,6 +807,23 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
+
+// Defense-in-depth: most dynamic values are escaped before rendering, and this
+// sanitizer catches future missed escapes in dashboard-only HTML assignment.
+(function protectDashboardHtmlAssignments() {
+  if (!window.DOMPurify || !window.Element) return;
+  const descriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+  if (!descriptor || !descriptor.set || !descriptor.get) return;
+
+  Object.defineProperty(Element.prototype, 'innerHTML', {
+    get() {
+      return descriptor.get.call(this);
+    },
+    set(value) {
+      descriptor.set.call(this, DOMPurify.sanitize(String(value)));
+    },
+  });
+})();
 
 // ── Admin Key 管理 ────────────────────────────────────────
 function getAdminKey() { return sessionStorage.getItem('adminKey') || ''; }

@@ -1,23 +1,22 @@
 require('dotenv').config();
-const express   = require('express');
+
+const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
-const path      = require('path');
-const fs        = require('fs');
-const { Pool }  = require('pg');
+const path = require('path');
+const fs = require('fs');
+const { Pool } = require('pg');
 const rateLimit = require('express-rate-limit');
-const helmet    = require('helmet');
+const helmet = require('helmet');
+
 const { SCHEMA } = require('./db/schema');
 const { requireAdminKey } = require('./middleware/admin-auth');
+const { createChatRouter } = require('./routes/chat.routes');
 const { createDashboardRouter } = require('./routes/dashboard.routes');
 const { createKnowledgeRouter } = require('./routes/knowledge.routes');
+const { createReportsRouter } = require('./routes/reports.routes');
 const { createUnansweredRouter } = require('./routes/unanswered.routes');
-const {
-  MAX_RAG_CHUNKS,
-  MAX_CHUNK_CHARS,
-  CHUNK_OVERLAP_CHARS,
-  RAG_KEYWORDS,
-  RAG_SYNONYM_GROUPS,
-} = require('./config/rag-config');
+const { createPromptService } = require('./services/prompt.service');
+const { createRagService } = require('./services/rag.service');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -28,68 +27,29 @@ app.use(helmet({
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const client = new Anthropic();
-const EMBEDDING_MODEL = process.env.EMBEDDING_MODEL || 'text-embedding-3-small';
-const EMBEDDING_DIMENSIONS = Number(process.env.EMBEDDING_DIMENSIONS || 1536);
-const EMBEDDING_BATCH_SIZE = Number(process.env.EMBEDDING_BATCH_SIZE || 80);
-let pgVectorAvailable = false;
+const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
+const PORT = process.env.PORT || 3000;
 
-// ── PostgreSQL 連線池 ─────────────────────────────────────
-// DATABASE_URL 由環境變數提供（Neon / Supabase / Render Postgres）
-// 雲端 Postgres 外部連線一律需要 SSL；若用 Render 內部連線報 SSL 錯，
-// 可在環境變數加 PGSSL=disable 關閉。
+const client = new Anthropic();
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.PGSSL === 'disable' ? false : { rejectUnauthorized: false },
 });
 
-// ── 安全性：Rate Limiting ─────────────────────────────────
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: '請求過於頻繁，請稍後再試（每分鐘限 10 次）' },
+  message: { error: '請稍後再試，每分鐘最多 10 次。' },
 });
 
-async function initDb() {
-  for (const stmt of SCHEMA) {
-    await pool.query(stmt);
-  }
-  await ensurePgVector();
+let knowledgeCache = '';
 
-  // 首次部署：若 knowledge_sections 為空，從 knowledge.js 匯入初始分類
-  const { rows } = await pool.query('SELECT COUNT(*) AS count FROM knowledge_sections');
-  if (Number(rows[0].count) === 0) {
-    const seed = require('./knowledge'); // 分類陣列 [{category, content}]
-    const now  = new Date().toISOString();
-    let i = 0;
-    for (const s of seed) {
-      await pool.query(
-        'INSERT INTO knowledge_sections (category, content, sort_order, updated_at) VALUES ($1, $2, $3, $4)',
-        [s.category, s.content, i++, now]
-      );
-    }
-    console.log(`知識庫初始化：從 knowledge.js 匯入 ${seed.length} 個分類`);
-  }
-}
-
-// ── 知識庫：用記憶體快取，避免每次對話都查 DB ──────────────
-async function ensurePgVector() {
-  try {
-    await pool.query('CREATE EXTENSION IF NOT EXISTS vector');
-    await pool.query(`ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS embedding vector(${EMBEDDING_DIMENSIONS})`);
-    await pool.query(
-      `CREATE INDEX IF NOT EXISTS idx_kc_embedding_cosine
-       ON knowledge_chunks USING hnsw (embedding vector_cosine_ops)
-       WHERE embedding IS NOT NULL`
-    );
-    pgVectorAvailable = true;
-    console.log('pgvector enabled for semantic RAG search');
-  } catch (err) {
-    pgVectorAvailable = false;
-    console.warn(`pgvector unavailable; falling back to keyword RAG: ${err.message}`);
-  }
+function readJsonFile(relativePath) {
+  const filePath = path.join(__dirname, relativePath);
+  if (!fs.existsSync(filePath)) return null;
+  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
 function getKnowledgeAutoSyncMode() {
@@ -98,9 +58,15 @@ function getKnowledgeAutoSyncMode() {
   if (rawMode === 'replace') return 'replace';
   if (rawMode === 'upsert') return 'upsert';
   if (rawMode === 'insert_only') return 'insert_only';
-
-  // Default to dashboard/PostgreSQL as the daily source of truth.
   return 'disable';
+}
+
+async function refreshKnowledgeCache() {
+  const { rows } = await pool.query(
+    "SELECT category, content FROM knowledge_sections WHERE COALESCE(archived_at, '') = '' ORDER BY sort_order ASC, id ASC"
+  );
+  knowledgeCache = rows.map(r => `## ${r.category}\n${r.content}`).join('\n\n');
+  console.log('Knowledge cache refreshed:', knowledgeCache.length);
 }
 
 async function syncKnowledgeFromImportFile() {
@@ -132,6 +98,7 @@ async function syncKnowledgeFromImportFile() {
   let inserted = 0;
   let updated = 0;
   let skipped = 0;
+
   for (const section of sections) {
     const category = String(section.category || '').trim();
     const content = String(section.content || '').trim();
@@ -169,917 +136,54 @@ async function syncKnowledgeFromImportFile() {
       inserted++;
     }
   }
+
   console.log(`Knowledge auto-sync complete: mode=${mode} inserted=${inserted} updated=${updated} skipped=${skipped}`);
 }
 
-function readJsonFile(relativePath) {
-  const filePath = path.join(__dirname, relativePath);
-  if (!fs.existsSync(filePath)) return null;
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+async function initDb(ragService) {
+  for (const stmt of SCHEMA) {
+    await pool.query(stmt);
+  }
+  await ragService.ensurePgVector();
+
+  const { rows } = await pool.query('SELECT COUNT(*) AS count FROM knowledge_sections');
+  if (Number(rows[0].count) === 0) {
+    const seed = require('./knowledge');
+    const now = new Date().toISOString();
+    let i = 0;
+    for (const section of seed) {
+      await pool.query(
+        'INSERT INTO knowledge_sections (category, content, sort_order, updated_at) VALUES ($1, $2, $3, $4)',
+        [section.category, section.content, i++, now]
+      );
+    }
+    console.log(`Knowledge initialized from knowledge.js: ${seed.length} sections`);
+  }
 }
 
-const RESPONSE_POLICY_PAYLOAD = readJsonFile(path.join('data', 'ecoco-response-policies.json')) || {};
-const RESPONSE_POLICIES = Array.isArray(RESPONSE_POLICY_PAYLOAD.policies)
-  ? RESPONSE_POLICY_PAYLOAD.policies
+const responsePolicyPayload = readJsonFile(path.join('data', 'ecoco-response-policies.json')) || {};
+const responsePolicies = Array.isArray(responsePolicyPayload.policies)
+  ? responsePolicyPayload.policies
   : [];
 
-function buildResponsePolicyPrompt() {
-  if (RESPONSE_POLICIES.length === 0) return '';
-
-  const lines = [
-    '## 高風險回覆政策',
-    '以下政策優先於一般語氣規則。遇到對應情境時，必須遵守 required_fields、allowed_response 與 do_not_say。',
-  ];
-
-  for (const policy of RESPONSE_POLICIES) {
-    lines.push(
-      `\n### ${policy.intent || policy.policy_id || '未命名政策'}`,
-      `- 自動化等級：${policy.automation_level || '未標示'}`,
-      `- 必收資料：${policy.required_fields || '無'}`,
-      `- 可說：${policy.allowed_response || '依知識庫回答'}`,
-      `- 不可說：${policy.do_not_say || '不可超出知識庫自行推測'}`,
-    );
-  }
-
-  return lines.join('\n');
-}
-
-function normalizeRiskLevel(value) {
-  const risk = String(value || '').trim().toLowerCase();
-  if (risk === 'high') return 'High';
-  if (risk === 'medium') return 'Medium';
-  return 'Low';
-}
-
-function extractRiskLevel(text) {
-  const value = String(text || '');
-  const match = value.match(/(?:\u98a8\u96aa|risk(?:_level)?)[\s:：_-]*(High|Medium|Low)/i);
-  return normalizeRiskLevel(match ? match[1] : 'Low');
-}
-
-function hasHighRiskChunk(rag) {
-  return Array.isArray(rag?.chunks) && rag.chunks.some(chunk => normalizeRiskLevel(chunk.risk_level) === 'High');
-}
-
-function buildRuntimeGuardrails(question, rag) {
-  const text = `${question || ''}\n${rag?.context || ''}`;
-
-  const highRiskKeywords = [
-    '補點', '退點', '退款', '補發', '賠償', '客訴賠償',
-    '帳號停權', '黑名單', '永久註銷', '個資', '臨時密碼',
-  ];
-  const needsGuardrail = hasHighRiskChunk(rag) || highRiskKeywords.some(keyword => text.includes(keyword));
-  if (!needsGuardrail) return '';
-
-  return `## 本次回答安全限制
-- 本次問題可能涉及點數、優惠券、帳號、客訴或機台異常等高風險情境。
-- 只能回答知識庫已明確提供的內容。
-- 不可承諾補點、退點、退款、補發、已完成處理、已通知人員、已安排維修或固定完成時間。
-- 必須先同理，再請使用者提供必要資訊，並引導官方客服表單：https://ecoco.tw/kWqgW。
-- 若需要後台查詢，請明確說明「需由客服人員確認」，不要推測原因。`;
-}
-
-function normalizeText(value) {
-  return String(value || '')
-    .normalize('NFKC')
-    .replace(/\p{Extended_Pictographic}/gu, '')
-    .replace(/[ \t\u00a0]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function normalizeKnowledgeContent(value) {
-  return String(value || '')
-    .normalize('NFKC')
-    .replace(/\p{Extended_Pictographic}/gu, '')
-    .replace(/\r\n?/g, '\n')
-    .replace(/[ \t\u00a0]+/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/(?:^|\n)\s*(?:ECOCO\s*)?(?:客服團隊|宜可可循環經濟團隊|ECOCO Team)\s*$/gim, '')
-    .trim();
-}
-
-function splitLongText(text, maxChars = MAX_CHUNK_CHARS) {
-  const normalized = normalizeKnowledgeContent(text);
-  if (normalized.length <= maxChars) return [normalized].filter(Boolean);
-
-  const chunks = [];
-  let start = 0;
-  while (start < normalized.length) {
-    const end = Math.min(start + maxChars, normalized.length);
-    chunks.push(normalized.slice(start, end).trim());
-    if (end >= normalized.length) break;
-    start = Math.max(0, end - CHUNK_OVERLAP_CHARS);
-  }
-  return chunks.filter(Boolean);
-}
-
-function shouldUseSemanticSearch() {
-  return pgVectorAvailable && Boolean(process.env.OPENAI_API_KEY);
-}
-
-function toVectorLiteral(embedding) {
-  return `[${embedding.map(value => Number(value).toFixed(8)).join(',')}]`;
-}
-
-function buildEmbeddingInput(row) {
-  return normalizeText(`${row.category}\n${row.title}\n${row.content}`).slice(0, 6000);
-}
-
-async function embedTexts(inputs) {
-  if (!process.env.OPENAI_API_KEY || inputs.length === 0) return [];
-  const response = await fetch('https://api.openai.com/v1/embeddings', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: EMBEDDING_MODEL,
-      input: inputs,
-    }),
-  });
-
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`Embedding API failed: ${response.status} ${detail.slice(0, 200)}`);
-  }
-
-  const payload = await response.json();
-  return Array.isArray(payload.data) ? payload.data.map(item => item.embedding) : [];
-}
-
-async function attachEmbeddings(rows) {
-  if (!shouldUseSemanticSearch() || rows.length === 0) return rows;
-
-  try {
-    for (let i = 0; i < rows.length; i += EMBEDDING_BATCH_SIZE) {
-      const batch = rows.slice(i, i + EMBEDDING_BATCH_SIZE);
-      const embeddings = await embedTexts(batch.map(buildEmbeddingInput));
-      embeddings.forEach((embedding, index) => {
-        if (Array.isArray(embedding) && embedding.length > 0) {
-          batch[index].embedding = toVectorLiteral(embedding);
-          batch[index].embeddingModel = EMBEDDING_MODEL;
-        }
-      });
-    }
-  } catch (err) {
-    console.warn(`Embedding backfill skipped; keyword RAG remains available: ${err.message}`);
-  }
-
-  return rows;
-}
-
-function buildChunksFromSection(section) {
-  const category = String(section.category || '').trim();
-  const content = String(section.content || '').trim();
-  if (!category || !content) return [];
-
-  const parts = content.split(/\n(?=###\s+)/g);
-  const chunks = [];
-  for (const part of parts) {
-    const trimmed = part.trim();
-    if (!trimmed) continue;
-    const titleMatch = trimmed.match(/^###\s*(.+)$/m);
-    const baseTitle = titleMatch ? titleMatch[1].trim() : category;
-    splitLongText(trimmed).forEach((chunk, idx) => {
-      chunks.push({
-        sectionId: section.id,
-        category,
-        title: idx === 0 ? baseTitle : `${baseTitle} (${idx + 1})`,
-        content: chunk,
-        searchText: normalizeText(`${category} ${baseTitle} ${chunk}`),
-        riskLevel: extractRiskLevel(chunk),
-        sourceUpdatedAt: section.updated_at || '',
-      });
-    });
-  }
-  return chunks;
-}
-
-async function rebuildKnowledgeChunks() {
-  const { rows } = await pool.query(
-    "SELECT id, category, content, sort_order, updated_at FROM knowledge_sections WHERE COALESCE(archived_at, '') = '' ORDER BY sort_order ASC, id ASC"
-  );
-
-  const now = new Date().toISOString();
-  let sortOrder = 0;
-  const insertRows = [];
-  for (const section of rows) {
-    for (const chunk of buildChunksFromSection(section)) {
-      insertRows.push({
-        sectionId: chunk.sectionId,
-        category: chunk.category,
-        title: chunk.title,
-        content: chunk.content,
-        searchText: chunk.searchText,
-        riskLevel: chunk.riskLevel,
-        sortOrder: sortOrder++,
-        sourceUpdatedAt: chunk.sourceUpdatedAt,
-        updatedAt: now,
-        embedding: null,
-        embeddingModel: '',
-      });
-    }
-  }
-
-  await attachEmbeddings(insertRows);
-
-  const db = await pool.connect();
-  try {
-    await db.query('BEGIN');
-    await db.query('DELETE FROM knowledge_chunks');
-    const batchSize = 400;
-    for (let i = 0; i < insertRows.length; i += batchSize) {
-      const batch = insertRows.slice(i, i + batchSize);
-      const values = [];
-      if (pgVectorAvailable) {
-        const placeholders = batch.map((row, rowIndex) => {
-          const base = rowIndex * 11;
-          values.push(
-            row.sectionId,
-            row.category,
-            row.title,
-            row.content,
-            row.searchText,
-            row.riskLevel,
-            row.sortOrder,
-            row.sourceUpdatedAt,
-            row.embeddingModel,
-            row.updatedAt,
-            row.embedding
-          );
-          return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, CASE WHEN $${base + 11}::text IS NULL THEN NULL ELSE $${base + 11}::vector END)`;
-        });
-        await db.query(
-          `INSERT INTO knowledge_chunks
-            (section_id, category, title, content, search_text, risk_level, sort_order, source_updated_at, embedding_model, updated_at, embedding)
-           VALUES ${placeholders.join(', ')}`,
-          values
-        );
-      } else {
-        const placeholders = batch.map((row, rowIndex) => {
-          const base = rowIndex * 10;
-          values.push(
-            row.sectionId,
-            row.category,
-            row.title,
-            row.content,
-            row.searchText,
-            row.riskLevel,
-            row.sortOrder,
-            row.sourceUpdatedAt,
-            row.embeddingModel,
-            row.updatedAt
-          );
-          return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10})`;
-        });
-        await db.query(
-          `INSERT INTO knowledge_chunks
-            (section_id, category, title, content, search_text, risk_level, sort_order, source_updated_at, embedding_model, updated_at)
-           VALUES ${placeholders.join(', ')}`,
-          values
-        );
-      }
-    }
-
-    await db.query('COMMIT');
-    console.log(`Knowledge chunks rebuilt: ${insertRows.length} chunks`);
-  } catch (err) {
-    await db.query('ROLLBACK');
-    throw err;
-  } finally {
-    db.release();
-  }
-}
-
-function buildSearchTerms(question) {
-  const text = normalizeText(question);
-  const terms = new Set();
-  for (const keyword of RAG_KEYWORDS) {
-    const normalizedKeyword = normalizeText(keyword);
-    if ([...normalizedKeyword].length >= 2 && text.includes(normalizedKeyword)) terms.add(normalizedKeyword);
-  }
-  const lowerText = text.toLowerCase();
-  for (const group of RAG_SYNONYM_GROUPS) {
-    if (group.some(term => lowerText.includes(String(term).toLowerCase()))) {
-      group.forEach(term => {
-        const normalizedTerm = normalizeText(term);
-        if ([...normalizedTerm].length >= 2) terms.add(normalizedTerm);
-      });
-    }
-  }
-  text
-    .split(/[^0-9A-Za-z\u4e00-\u9fff]+/g)
-    .map(term => term.trim())
-    .filter(term => term.length >= 2 && term.length <= 24)
-    .forEach(term => terms.add(term));
-  return [...terms].slice(0, 12);
-}
-
-function scoreChunk(chunk, terms) {
-  const category = String(chunk.category || '');
-  const title = String(chunk.title || '');
-  const content = String(chunk.content || '');
-  let score = 0;
-  for (const term of terms) {
-    if (category.includes(term)) score += 8;
-    if (title.includes(term)) score += 6;
-    if (content.includes(term)) score += 2;
-  }
-  return score;
-}
-
-async function retrieveSemanticRows(question) {
-  if (!shouldUseSemanticSearch()) return [];
-  try {
-    const [embedding] = await embedTexts([normalizeText(question).slice(0, 6000)]);
-    if (!Array.isArray(embedding) || embedding.length === 0) return [];
-
-    const vector = toVectorLiteral(embedding);
-    const { rows } = await pool.query(
-      `SELECT id, category, title, content, risk_level, sort_order,
-              1 - (embedding <=> $1::vector) AS semantic_score
-       FROM knowledge_chunks
-       WHERE embedding IS NOT NULL
-       ORDER BY embedding <=> $1::vector
-       LIMIT 60`,
-      [vector]
-    );
-    return rows;
-  } catch (err) {
-    console.warn(`Semantic RAG skipped; using keyword RAG: ${err.message}`);
-    return [];
-  }
-}
-
-async function retrieveKnowledgeForQuestion(question) {
-  const terms = buildSearchTerms(question);
-  let rows = await retrieveSemanticRows(question);
-
-  if (terms.length > 0) {
-    const clauses = terms.map((_, idx) => `search_text ILIKE $${idx + 1}`).join(' OR ');
-    const values = terms.map(term => `%${term}%`);
-    const result = await pool.query(
-      `SELECT id, category, title, content, risk_level, sort_order
-       FROM knowledge_chunks
-       WHERE ${clauses}
-       ORDER BY sort_order ASC
-       LIMIT 120`,
-      values
-    );
-    const byId = new Map(rows.map(row => [row.id, row]));
-    result.rows.forEach(row => {
-      if (!byId.has(row.id)) byId.set(row.id, row);
-    });
-    rows = [...byId.values()];
-  }
-
-  if (rows.length === 0) {
-    const fallback = await pool.query(
-      `SELECT id, category, title, content, risk_level, sort_order
-       FROM knowledge_chunks
-       ORDER BY sort_order ASC
-       LIMIT 20`
-    );
-    rows = fallback.rows;
-  }
-
-  const ranked = rows
-    .map(row => ({
-      ...row,
-      score: scoreChunk(row, terms) + (Number(row.semantic_score || 0) * 100),
-    }))
-    .sort((a, b) => b.score - a.score || a.sort_order - b.sort_order)
-    .slice(0, MAX_RAG_CHUNKS);
-
-  return {
-    terms,
-    chunks: ranked,
-    context: ranked.map((row, idx) => (
-      `【RAG-${idx + 1}｜${row.category}｜${row.title}】\n${row.content}`
-    )).join('\n\n'),
-  };
-}
-
-let knowledgeCache = '';
-const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
-const KNOWLEDGE_GAP_MARKERS = [
-  '沒有確切資料',
-  '沒有明確答案',
-  '沒有相關資料',
-  '建議您透過客服表單',
-  'App 內「我的」>「聯絡我們」',
-];
-
-async function refreshKnowledgeCache() {
-  const { rows } = await pool.query(
-    "SELECT category, content FROM knowledge_sections WHERE COALESCE(archived_at, '') = '' ORDER BY sort_order ASC, id ASC"
-  );
-  knowledgeCache = rows.map(r => `【${r.category}】\n${r.content}`).join('\n\n');
-  console.log('知識庫快取已更新，長度：', knowledgeCache.length);
-}
-
-function buildSystemPrompt(ragContext = knowledgeCache, runtimeGuardrails = '') { return `你是 ECOCO 宜可可循環經濟的官方 AI 客服助理。
-
-## 你的任務
-根據以下知識庫，用友善、簡潔的方式回答用戶問題。
-
-## 本次問題檢索到的相關知識庫
-${ragContext || knowledgeCache}
-
-${buildResponsePolicyPrompt()}
-
-${runtimeGuardrails}
-
-## 回答規則
-
-### 語言與語氣
-- 永遠使用繁體中文回答
-- 語氣溫暖、謙遜、負責任，像真人客服而非機器人
-- emoji 每則最多 2 個，放在句尾，不放在句首（常用：🙏 🫡 😢）
-- 用「建議您」而非「你應該」；用「歡迎」而非「請你」
-- 不用誇張語氣，不說「非常非常」「超級」等過度用詞
-
-### 回覆結構（依情境）
-一般問題：直接回答，簡潔為主。
-用戶抱怨／遇到問題時，依序：
-1. 同理開頭：先道歉並確認用戶的困擾（「很抱歉讓您…」「很抱歉造成不便」）
-2. 解釋原因：給合理說明，語氣中立不推卸
-3. 具體建議：告訴用戶現在可以怎麼做（如何用 App 確認機台、去附近站點等）
-4. 引導聯繫：若問題需要進一步處理，請用戶透過客服表單回報（https://ecoco.tw/kWqgW）
-5. 感謝結尾：感謝回饋或體諒，加 1 個 emoji
-
-### 品牌語氣參考範例
-以下是 ECOCO 官方真實客服回覆風格，請模仿這個語氣：
-
-範例一（機台退瓶）：
-「很抱歉讓您多次嘗試卻未能順利回收。寶特瓶因材質、外型或投瓶速度不同，可能影響機台判定穩定度。建議操作時依畫面指示逐一投放，讓系統完成判定後再進行下一次投放。若仍反覆無法回收，歡迎透過客服表單提供相關站點資訊或拒收寶特瓶照片，我們將協助確認並作為後續優化參考。」
-
-範例二（機台滿袋）：
-「出發前可以先打開 ECOCO App，點選「機台」，就能查看該站是否滿袋。如果顯示已滿袋，也可以去附近的站點投瓶，省時又不會白跑一趟喔 🫡」
-
-範例三（用戶不滿）：
-「很抱歉造成您不好的體驗，也謝謝您的回饋。機台滿袋後系統會自動回報並安排清運，但實際清運仍需依排程執行，可能無法立刻處理。我們也會再加強說明與改善。」
-
-### 格式（使用 Markdown 語法，介面會自動渲染）
-- 段落式回答為主，抱怨類不要用條列（顯得冷漠）
-- 純資訊查詢（點數規則、操作步驟）用條列 \`-\` 或表格
-- 數字與重點用粗體 **粗體** 標示
-- 多步驟操作用編號 \`1.\` \`2.\` \`3.\`
-- 不要在抱怨／安慰類回覆使用條列，改用自然段落
-
-### 最重要的規則：不確定就說不確定
-- 只根據知識庫內容回答
-- 如果知識庫沒有明確答案，請說：
-  「這個問題我沒有確切資料，建議您透過客服表單讓專人協助：https://ecoco.tw/kWqgW（或 App 內「我的」>「聯絡我們」）」
-- 絕對不要猜測或編造答案
-
-### 特定情境處理
-- 用戶抱怨或情緒激動：一定先道歉同理，再解釋，再給解法，不要急著解釋
-- 用戶問競爭對手：只介紹 ECOCO，不評論其他品牌
-- 用戶問優惠或折扣：說明現有點數兌換制度，不承諾額外優惠`; }
-
-// ── API 路由 ──────────────────────────────────────────────
-
-function detectKnowledgeGap(reply) {
-  if (typeof reply !== 'string') {
-    return { isGap: false, reason: '' };
-  }
-
-  const marker = KNOWLEDGE_GAP_MARKERS.find(text => reply.includes(text));
-  if (!marker) {
-    return { isGap: false, reason: '' };
-  }
-
-  return {
-    isGap: true,
-    reason: `AI 回覆包含知識缺口標記：「${marker}」`,
-  };
-}
-
-app.post('/api/chat', chatLimiter, async (req, res) => {
-  const { history } = req.body;
-
-  const MAX_HISTORY = 20;
-  const MAX_MSG_LEN = 2000;
-
-  if (!Array.isArray(history) || history.length === 0) {
-    return res.status(400).json({ error: '缺少對話紀錄' });
-  }
-  if (history.length > MAX_HISTORY) {
-    return res.status(400).json({ error: `對話歷史超過 ${MAX_HISTORY} 則上限` });
-  }
-  if (!history.every(m => ['user', 'assistant'].includes(m.role))) {
-    return res.status(400).json({ error: '訊息格式錯誤' });
-  }
-  if (history.some(m => typeof m.content !== 'string' || m.content.length > MAX_MSG_LEN)) {
-    return res.status(400).json({ error: `訊息長度超過 ${MAX_MSG_LEN} 字上限` });
-  }
-
-  try {
-    const userMsg = history[history.length - 1];
-    const rag = await retrieveKnowledgeForQuestion(userMsg.content);
-    const runtimeGuardrails = buildRuntimeGuardrails(userMsg.content, rag);
-    const response = await client.messages.create({
-      model: process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL,
-      max_tokens: 1024,
-      system: [{ type: 'text', text: buildSystemPrompt(rag.context, runtimeGuardrails), cache_control: { type: 'ephemeral' } }],
-      messages: history,
-    });
-
-    const reply = response.content.find(b => b.type === 'text')?.text
-      ?? '抱歉，我暫時無法回應，請稍後再試。';
-
-    // 寫入對話紀錄（DB 錯誤不影響回覆）
-    try {
-      const sessionId = req.headers['x-session-id'] || 'unknown';
-      const ts        = new Date().toISOString();
-      await pool.query(
-        'INSERT INTO conversations (session_id, role, content, timestamp) VALUES ($1, $2, $3, $4)',
-        [sessionId, 'user', userMsg.content, ts]
-      );
-      await pool.query(
-        'INSERT INTO conversations (session_id, role, content, timestamp) VALUES ($1, $2, $3, $4)',
-        [sessionId, 'assistant', reply, ts]
-      );
-      // 未被回答的問題歸檔（知識缺口）
-      const gap = detectKnowledgeGap(reply);
-      if (gap.isGap) {
-        await pool.query(
-          'INSERT INTO unanswered_questions (session_id, question, reply, reason, timestamp) VALUES ($1, $2, $3, $4, $5)',
-          [sessionId, userMsg.content, reply, gap.reason, ts]
-        );
-      }
-    } catch (dbErr) {
-      console.error('DB 寫入失敗（不影響回覆）:', dbErr.message);
-    }
-
-    res.json({
-      reply,
-      ragSources: rag.chunks.map(chunk => ({
-        category: chunk.category,
-        title: chunk.title,
-        score: chunk.score,
-      })),
-    });
-  } catch (err) {
-    console.error('Claude API 錯誤:', err.message);
-    res.status(500).json({ error: '伺服器錯誤，請稍後再試' });
-  }
+const ragService = createRagService({ pool, env: process.env });
+const promptService = createPromptService({
+  responsePolicies,
+  getKnowledgeCache: () => knowledgeCache,
 });
 
-app.post('/api/rating', async (req, res) => {
-  const { msgId, type, question, reply } = req.body;
-  if (!msgId || !type) return res.status(400).json({ error: '缺少參數' });
-  try {
-    await pool.query(
-      'INSERT INTO ratings (msg_id, type, timestamp, question, reply) VALUES ($1, $2, $3, $4, $5)',
-      [String(msgId), type, new Date().toISOString(),
-       String(question || '').substring(0, 300),
-       String(reply    || '').substring(0, 300)]
-    );
-    res.json({ success: true });
-  } catch (dbErr) {
-    console.error('DB 寫入失敗:', dbErr.message);
-    res.status(500).json({ error: '儲存失敗，請稍後再試' });
-  }
-});
-
-app.get('/api/ratings', requireAdminKey, async (req, res) => {
-  try {
-    const { rows } = await pool.query(
-      "SELECT type, question, reply, timestamp FROM ratings WHERE question <> '' ORDER BY timestamp DESC LIMIT 50"
-    );
-    res.json(rows);
-  } catch (dbErr) {
-    console.error('DB 查詢失敗:', dbErr.message);
-    res.status(500).json({ error: '資料庫查詢失敗' });
-  }
-});
-
-app.get('/api/stats', requireAdminKey, async (req, res) => {
-  try {
-    const [s, m, p, n, u] = await Promise.all([
-      pool.query('SELECT COUNT(DISTINCT session_id) AS count FROM conversations'),
-      pool.query('SELECT COUNT(*) AS count FROM conversations'),
-      pool.query("SELECT COUNT(*) AS count FROM ratings WHERE type = 'positive'"),
-      pool.query("SELECT COUNT(*) AS count FROM ratings WHERE type = 'negative'"),
-      pool.query('SELECT COUNT(*) AS count FROM unanswered_questions'),
-    ]);
-    res.json({
-      totalSessions:   Number(s.rows[0].count),
-      totalMessages:   Number(m.rows[0].count),
-      positiveRatings: Number(p.rows[0].count),
-      negativeRatings: Number(n.rows[0].count),
-      unansweredCount: Number(u.rows[0].count),
-    });
-  } catch (dbErr) {
-    console.error('DB 查詢失敗:', dbErr.message);
-    res.status(500).json({ error: '資料庫查詢失敗' });
-  }
-});
-
-const REPORT_CATEGORIES = [
-  { name: '無效訊息', keywords: ['hi', 'hello', '嗨', '哈囉', '你好', '測試', 'test'] },
-  { name: '合作商家', keywords: ['合作商家', '商家', '品牌', '漢堡王', '康是美', '全家', '萊爾富', '合作店家'] },
-  { name: '活動 / 任務', keywords: ['活動', '任務', '抽獎', '加碼', '優惠活動', '最近有什麼', '最近有甚麼'] },
-  { name: '點數問題', keywords: ['點數', '補點', '入帳', '期限', '效期', '轉贈', '兌換點'] },
-  { name: '優惠券 / 兌換', keywords: ['優惠券', '兌換', '抵用', '核銷', '條碼', '券'] },
-  { name: 'APP / 帳號', keywords: ['App', 'APP', '帳號', '登入', '註冊', '驗證碼', '密碼', '手機號碼'] },
-  { name: '機台 / 維修', keywords: ['機台', '故障', '紅燈', '藍燈', '滿袋', '退瓶', '卡住', '黑屏'] },
-  { name: '現場環境 / 清潔', keywords: ['垃圾', '髒', '髒亂', '清潔', '環境', '滿地', '旁邊都是', '異味'] },
-  { name: '站點建議', keywords: ['設點', '新增站點', '新竹設點', '可以在', '希望設', '建議設'] },
-  { name: '站點 / 地點', keywords: ['站點', '地點', '門市', '據點', '營業時間', '康達盛通'] },
-  { name: '回收規則', keywords: ['寶特瓶', '鋁罐', '電池', '瓶蓋', '膠膜', '壓扁', '回收物', '牛奶瓶'] },
-  { name: '客訴 / 高風險', keywords: ['客訴', '投訴', '賠償', '退款', '黑名單', '停權', '個資'] },
-];
-
-function getReportRange(period) {
-  const now = new Date();
-  const end = now;
-  const start = new Date(now);
-  const normalized = period === 'month' ? 'month' : 'week';
-  if (normalized === 'month') {
-    start.setDate(1);
-    start.setHours(0, 0, 0, 0);
-  } else {
-    start.setDate(now.getDate() - 6);
-    start.setHours(0, 0, 0, 0);
-  }
-  return { period: normalized, start, end };
-}
-
-function classifyQuestion(content) {
-  const text = String(content || '');
-  const compact = text.replace(/\s+/g, '').toLowerCase();
-  if (!compact || ['hi', 'hello', '嗨', '哈囉', '你好', '測試', 'test'].includes(compact) || compact.length <= 2) {
-    return '無效訊息';
-  }
-  const matched = REPORT_CATEGORIES.find(category =>
-    category.keywords.some(keyword => text.toLowerCase().includes(String(keyword).toLowerCase()))
-  );
-  return matched ? matched.name : '其他';
-}
-
-function makePreview(text, maxLength = 80) {
-  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
-  return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
-}
-
-function buildOperationsReportMarkdown(payload) {
-  const title = payload.range.period === 'month' ? '月報' : '週報';
-  const categories = payload.categories
-    .map((item, index) => `${index + 1}. ${item.category}：${item.count} 則`)
-    .join('\n') || '尚無分類資料';
-  const gaps = payload.gapStatuses
-    .map(item => `- ${item.statusLabel}：${item.count} 則`)
-    .join('\n') || '- 本期無知識缺口';
-  const improvements = payload.optimizations
-    .map(item => `- ${item.label}：${item.count} ${item.unit}`)
-    .join('\n') || '- 本期無優化項目';
-
-  return `# ECOCO AI 客服${title}
-
-期間：${payload.range.startDate} 至 ${payload.range.endDate}
-
-## 一、客服量總覽
-- 對話案件數：${payload.summary.sessions} 件
-- 用戶訊息數：${payload.summary.userMessages} 則
-- AI 回覆數：${payload.summary.aiReplies} 則
-- 總訊息數：${payload.summary.totalMessages} 則
-
-## 二、問題分類
-${categories}
-
-## 三、處理與品質
-- AI 已回覆訊息：${payload.summary.aiReplies} 則
-- 知識缺口：${payload.summary.knowledgeGaps} 則
-- 已解決知識缺口：${payload.summary.resolvedGaps} 則
-- 需人工處理：${payload.summary.manualGaps} 則
-- 好評：${payload.summary.positiveRatings} 則
-- 負評：${payload.summary.negativeRatings} 則
-- 滿意度：${payload.summary.satisfactionRate}%
-
-## 四、知識庫優化
-- 目前正式知識分類：${payload.knowledge.dbSections} 個
-- RAG 檢索片段：${payload.knowledge.ragChunks} 個
-- active 重複問題組數：${payload.knowledge.activeDuplicateGroups} 組
-- 待確認衝突：${payload.knowledge.conflictsPendingReview} 筆
-${improvements}
-
-## 五、知識缺口狀態
-${gaps}
-
-## 六、下週建議
-- 優先補強高頻分類的 FAQ。
-- 檢查負評回覆是否需要補充知識庫或調整回覆策略。
-- 持續清理重複與衝突資料，避免 AI 回答不一致。
-`;
-}
-
-app.get('/api/reports/operations', requireAdminKey, async (req, res) => {
-  const { period, start, end } = getReportRange(String(req.query.period || 'week'));
-  const startIso = start.toISOString();
-  const endIso = end.toISOString();
-
-  try {
-    const databasePayload = readJsonFile(path.join('data', 'ecoco-ai-customer-service-database.json')) || {};
-    const auditPayload = readJsonFile(path.join('data', 'knowledge-quality-audit.json')) || {};
-
-    const [
-      conversationCounts,
-      userMessagesResult,
-      ratingCounts,
-      gapCounts,
-      gapStatusCounts,
-      gapRowsResult,
-      knowledgeCounts,
-      chunkCounts,
-    ] = await Promise.all([
-      pool.query(
-        `SELECT COUNT(DISTINCT session_id) AS sessions,
-                COUNT(*) AS total_messages,
-                COUNT(*) FILTER (WHERE role = 'user') AS user_messages,
-                COUNT(*) FILTER (WHERE role = 'assistant') AS ai_replies
-         FROM conversations
-         WHERE timestamp >= $1 AND timestamp <= $2`,
-        [startIso, endIso]
-      ),
-      pool.query(
-        `SELECT content, timestamp
-         FROM conversations
-         WHERE role = 'user' AND timestamp >= $1 AND timestamp <= $2
-         ORDER BY timestamp DESC
-         LIMIT 500`,
-        [startIso, endIso]
-      ),
-      pool.query(
-        `SELECT
-           COUNT(*) FILTER (WHERE type = 'positive') AS positive,
-           COUNT(*) FILTER (WHERE type = 'negative') AS negative
-         FROM ratings
-         WHERE timestamp >= $1 AND timestamp <= $2`,
-        [startIso, endIso]
-      ),
-      pool.query(
-        `SELECT
-           COUNT(*) AS total,
-           COUNT(*) FILTER (WHERE COALESCE(status, 'pending') = 'resolved') AS resolved,
-           COUNT(*) FILTER (WHERE COALESCE(status, 'pending') = 'manual') AS manual
-         FROM unanswered_questions
-         WHERE timestamp >= $1 AND timestamp <= $2`,
-        [startIso, endIso]
-      ),
-      pool.query(
-        `SELECT COALESCE(status, 'pending') AS status, COUNT(*) AS count
-         FROM unanswered_questions
-         WHERE timestamp >= $1 AND timestamp <= $2
-         GROUP BY COALESCE(status, 'pending')
-         ORDER BY count DESC`,
-        [startIso, endIso]
-      ),
-      pool.query(
-        `SELECT id, question, reply, reason, status, note, timestamp
-         FROM unanswered_questions
-         WHERE timestamp >= $1 AND timestamp <= $2
-         ORDER BY timestamp DESC
-         LIMIT 200`,
-        [startIso, endIso]
-      ),
-      pool.query('SELECT COUNT(*) AS count FROM knowledge_sections'),
-      pool.query('SELECT COUNT(*) AS count FROM knowledge_chunks'),
-    ]);
-
-    const userMessages = userMessagesResult.rows;
-    const categories = {};
-    for (const row of userMessages) {
-      const category = classifyQuestion(row.content);
-      if (!categories[category]) {
-        categories[category] = { category, count: 0, samples: [] };
-      }
-      categories[category].count += 1;
-      if (categories[category].samples.length < 8) {
-        categories[category].samples.push({
-          preview: makePreview(row.content),
-          timestamp: row.timestamp,
-        });
-      }
-    }
-
-    const gapRowsByStatus = {};
-    for (const row of gapRowsResult.rows) {
-      const status = row.status || 'pending';
-      if (!gapRowsByStatus[status]) gapRowsByStatus[status] = [];
-      if (gapRowsByStatus[status].length < 8) {
-        gapRowsByStatus[status].push({
-          id: row.id,
-          preview: makePreview(row.question),
-          note: makePreview(row.note || row.reason || ''),
-          timestamp: row.timestamp,
-        });
-      }
-    }
-
-    const conflictItems = Array.isArray(auditPayload.conflicts_pending_review)
-      ? auditPayload.conflicts_pending_review.slice(0, 8).map(item => ({
-          preview: item.issue || '未命名衝突',
-          note: makePreview(item.recommended_resolution || item.observed_conflict || '', 120),
-          priority: item.priority || '',
-        }))
-      : [];
-
-    const positive = Number(ratingCounts.rows[0].positive || 0);
-    const negative = Number(ratingCounts.rows[0].negative || 0);
-    const ratingTotal = positive + negative;
-    const payload = {
-      generatedAt: new Date().toISOString(),
-      range: {
-        period,
-        start: startIso,
-        end: endIso,
-        startDate: start.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' }),
-        endDate: end.toLocaleDateString('zh-TW', { timeZone: 'Asia/Taipei' }),
-      },
-      summary: {
-        sessions: Number(conversationCounts.rows[0].sessions || 0),
-        totalMessages: Number(conversationCounts.rows[0].total_messages || 0),
-        userMessages: Number(conversationCounts.rows[0].user_messages || 0),
-        aiReplies: Number(conversationCounts.rows[0].ai_replies || 0),
-        knowledgeGaps: Number(gapCounts.rows[0].total || 0),
-        resolvedGaps: Number(gapCounts.rows[0].resolved || 0),
-        manualGaps: Number(gapCounts.rows[0].manual || 0),
-        positiveRatings: positive,
-        negativeRatings: negative,
-        satisfactionRate: ratingTotal > 0 ? Math.round((positive / ratingTotal) * 100) : 0,
-      },
-      categories: Object.values(categories)
-        .sort((a, b) => b.count - a.count),
-      gapStatuses: gapStatusCounts.rows.map(row => ({
-        status: row.status,
-        statusLabel: {
-          pending: '待確認',
-          resolved: '已補資料',
-          ignored: '不需處理',
-          manual: '需人工處理',
-        }[row.status] || row.status,
-        count: Number(row.count),
-        samples: gapRowsByStatus[row.status] || [],
-      })),
-      knowledge: {
-        dbSections: Number(knowledgeCounts.rows[0].count || 0),
-        ragChunks: Number(chunkCounts.rows[0].count || 0),
-        archivedDuplicates: Number(databasePayload.dedupe_applied?.archived_duplicate_records_total || 0),
-        activeDuplicateGroups: Number(auditPayload.summary?.duplicate_groups || 0),
-        conflictsPendingReview: Number(auditPayload.summary?.conflicts_pending_review || 0),
-      },
-    };
-
-    payload.optimizations = [
-      {
-        key: 'resolved-gaps',
-        label: '已解決知識缺口',
-        count: payload.summary.resolvedGaps,
-        unit: '則',
-        samples: gapRowsByStatus.resolved || [],
-      },
-      {
-        key: 'manual-gaps',
-        label: '需人工處理',
-        count: payload.summary.manualGaps,
-        unit: '則',
-        samples: gapRowsByStatus.manual || [],
-      },
-      {
-        key: 'archived-duplicates',
-        label: '已封存重複知識',
-        count: payload.knowledge.archivedDuplicates,
-        unit: '筆',
-        samples: [
-          {
-            preview: '重複知識已在主資料庫標記 archived，不再進入 AI 回答知識庫。',
-            note: databasePayload.dedupe_applied?.method || '',
-          },
-        ],
-      },
-      {
-        key: 'pending-conflicts',
-        label: '待確認衝突',
-        count: payload.knowledge.conflictsPendingReview,
-        unit: '筆',
-        samples: conflictItems,
-      },
-    ];
-
-    payload.reportMarkdown = buildOperationsReportMarkdown(payload);
-    res.json(payload);
-  } catch (err) {
-    console.error('Operations report error:', err.message);
-    res.status(500).json({ error: '營運報表產生失敗' });
-  }
-});
-
+app.use('/api', createChatRouter({
+  pool,
+  client,
+  chatLimiter,
+  requireAdminKey,
+  retrieveKnowledgeForQuestion: ragService.retrieveKnowledgeForQuestion,
+  buildRuntimeGuardrails: ragService.buildRuntimeGuardrails,
+  buildSystemPrompt: promptService.buildSystemPrompt,
+  defaultAnthropicModel: DEFAULT_ANTHROPIC_MODEL,
+}));
 app.use('/api', createDashboardRouter({ pool, requireAdminKey }));
+app.use('/api/reports', createReportsRouter({ pool, requireAdminKey, readJsonFile }));
 app.use('/api/unanswered', createUnansweredRouter({ pool, requireAdminKey }));
 app.use('/api/knowledge', createKnowledgeRouter({
   pool,
@@ -1087,26 +191,34 @@ app.use('/api/knowledge', createKnowledgeRouter({
   readJsonFile,
   getKnowledgeAutoSyncMode,
   refreshKnowledgeCache,
-  rebuildKnowledgeChunks,
+  rebuildKnowledgeChunks: ragService.rebuildKnowledgeChunks,
   getKnowledgeCache: () => knowledgeCache,
   defaultAnthropicModel: DEFAULT_ANTHROPIC_MODEL,
 }));
 
-// ── 啟動伺服器（先建表 + 載入知識庫，再開始接請求）──────────
-const PORT = process.env.PORT || 3000;
-
-(async () => {
+async function start() {
   try {
-    await initDb();
+    await initDb(ragService);
     await syncKnowledgeFromImportFile();
     await refreshKnowledgeCache();
-    await rebuildKnowledgeChunks();
+    await ragService.rebuildKnowledgeChunks();
     app.listen(PORT, () => {
-      console.log(`✅ ECOCO 客服伺服器啟動：http://localhost:${PORT}`);
+      console.log(`ECOCO customer service server started: http://localhost:${PORT}`);
     });
   } catch (err) {
-    console.error('❌ 啟動失敗：', err.message);
-    console.error('請確認 DATABASE_URL 環境變數是否正確設定。');
+    console.error('Server startup failed:', err.message);
+    console.error('Please check DATABASE_URL and Render environment variables.');
     process.exit(1);
   }
-})();
+}
+
+if (require.main === module) {
+  start();
+}
+
+module.exports = {
+  app,
+  getKnowledgeAutoSyncMode,
+  readJsonFile,
+  start,
+};
