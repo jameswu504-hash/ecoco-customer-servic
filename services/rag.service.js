@@ -6,6 +6,8 @@ const {
   RAG_SYNONYM_GROUPS,
 } = require('../config/rag-config');
 
+const KNOWLEDGE_CHUNK_LOCK_ID = 60229;
+
 function normalizeRiskLevel(value) {
   const risk = String(value || '').trim().toLowerCase();
   if (risk === 'high') return 'High';
@@ -141,25 +143,25 @@ function hasHighRiskChunk(rag) {
 function buildRuntimeGuardrails(question, rag) {
   const text = `${question || ''}\n${rag?.context || ''}`;
   const highRiskKeywords = [
-    '補點',
-    '退款',
-    '帳號',
     '個資',
+    '退款',
+    '補點',
+    '點數未入帳',
+    '帳號',
+    '手機',
     '客訴',
-    '人工審核',
-    '工程師',
-    '機台故障',
+    '機台異常',
     '滿倉',
-    '異常',
+    '故障',
   ];
   const needsGuardrail = hasHighRiskChunk(rag) || highRiskKeywords.some(keyword => text.includes(keyword));
   if (!needsGuardrail) return '';
 
-  return `## 高風險客服規則
-- 遇到點數、優惠券、帳號、個資、退款、客訴、機台異常等問題，要保守回答。
-- 不可承諾已補點、已退款、已人工審核、工程師已到場、問題已完成處理。
-- 應先收集必要資訊，例如註冊手機、回收時間、站點、截圖、交易或兌換資訊。
-- 若知識庫沒有確切資料，請引導使用者填寫客服表單：https://ecoco.tw/kWqgW`;
+  return `## 高風險客服回覆限制
+- 不承諾補點、退款、補償、已完成處理或人工已接手。
+- 不要求使用者在公開對話提供完整個資，只能請使用者透過客服表單補充必要資訊。
+- 可以請使用者提供註冊手機末三碼、回收時間、站點、截圖等查詢線索。
+- 若知識庫沒有明確資料，請標記為知識缺口，並引導客服表單：https://ecoco.tw/kWqgW`;
 }
 
 function toVectorLiteral(embedding) {
@@ -319,6 +321,7 @@ function createRagService({ pool, env = process.env }) {
     const db = await pool.connect();
     try {
       await db.query('BEGIN');
+      await db.query('SELECT pg_advisory_xact_lock($1)', [KNOWLEDGE_CHUNK_LOCK_ID]);
       await db.query('DELETE FROM knowledge_chunks');
       await insertKnowledgeChunkRows(db, insertRows);
       await db.query('COMMIT');
@@ -362,6 +365,7 @@ function createRagService({ pool, env = process.env }) {
     const db = await pool.connect();
     try {
       await db.query('BEGIN');
+      await db.query('SELECT pg_advisory_xact_lock($1)', [KNOWLEDGE_CHUNK_LOCK_ID]);
       await db.query('DELETE FROM knowledge_chunks WHERE section_id = $1', [id]);
       await insertKnowledgeChunkRows(db, insertRows);
       await db.query('COMMIT');

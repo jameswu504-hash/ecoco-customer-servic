@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { anonymizeJsonValue } = require('./anonymize-pii');
 
 const repoRoot = path.join(__dirname, '..');
 const databasePath = path.join(repoRoot, 'data', 'ecoco-ai-customer-service-database.json');
@@ -10,7 +11,7 @@ function readJson(filePath) {
 }
 
 function writeJson(filePath, payload) {
-  fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  fs.writeFileSync(filePath, `${JSON.stringify(anonymizeJsonValue(payload), null, 2)}\n`, 'utf8');
 }
 
 function appendNote(existingNote, addition) {

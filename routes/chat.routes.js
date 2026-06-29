@@ -1,11 +1,12 @@
+const crypto = require('crypto');
 const express = require('express');
 const { maskSensitiveText } = require('../services/privacy.service');
 
 const KNOWLEDGE_GAP_MARKERS = [
+  '沒有確切資料',
   '目前沒有足夠資料',
-  '沒有足夠資料可確認',
-  '建議您填寫客服表單',
-  '需要由客服協助確認',
+  '建議您透過客服表單',
+  '需要人工補充或確認',
 ];
 
 function detectKnowledgeGap(reply) {
@@ -29,24 +30,34 @@ function validateHistory(history) {
   const MAX_MSG_LEN = 2000;
 
   if (!Array.isArray(history) || history.length === 0) {
-    return '缺少對話紀錄';
+    return 'Missing conversation history.';
   }
   if (history.length > MAX_HISTORY) {
-    return `對話紀錄最多 ${MAX_HISTORY} 則`;
+    return `Conversation history must be at most ${MAX_HISTORY} messages.`;
   }
   if (!history.every(m => ['user', 'assistant'].includes(m.role))) {
-    return '訊息角色格式錯誤';
+    return 'Conversation role must be user or assistant.';
+  }
+  if (history[history.length - 1].role !== 'user') {
+    return 'The last conversation message must be from user.';
   }
   if (history.some(m => typeof m.content !== 'string' || m.content.length > MAX_MSG_LEN)) {
-    return `單則訊息最多 ${MAX_MSG_LEN} 字`;
+    return `Each message content must be a string under ${MAX_MSG_LEN} characters.`;
   }
   return '';
+}
+
+function getSafeSessionId(headers = {}) {
+  const raw = String(headers['x-session-id'] || '').trim();
+  if (/^session_[A-Za-z0-9_-]{8,80}$/.test(raw)) return raw;
+  return `server_${crypto.randomUUID()}`;
 }
 
 function createChatRouter({
   pool,
   client,
   chatLimiter,
+  ratingLimiter,
   requireAdminKey,
   retrieveKnowledgeForQuestion,
   buildRuntimeGuardrails,
@@ -72,10 +83,10 @@ function createChatRouter({
       });
 
       const reply = response.content.find(b => b.type === 'text')?.text
-        ?? '不好意思，我剛剛沒有產生完整回覆，請再試一次。';
+        ?? '目前無法產生回覆，請稍後再試或聯絡客服。';
 
       try {
-        const sessionId = req.headers['x-session-id'] || 'unknown';
+        const sessionId = getSafeSessionId(req.headers);
         const ts = new Date().toISOString();
         const storedQuestion = maskSensitiveText(userMsg.content);
         const storedReply = maskSensitiveText(reply);
@@ -109,22 +120,30 @@ function createChatRouter({
       });
     } catch (err) {
       console.error('Claude API error:', err.message);
-      res.status(500).json({ error: '客服系統暫時忙碌，請稍後再試。' });
+      res.status(500).json({ error: 'AI response failed. Please try again later.' });
     }
   });
 
-  router.post('/rating', async (req, res) => {
+  router.post('/rating', ratingLimiter, async (req, res) => {
     const { msgId, type, question, reply } = req.body;
-    if (!msgId || !type) return res.status(400).json({ error: '缺少評分參數' });
+    if (!msgId || !type) return res.status(400).json({ error: 'Missing rating fields.' });
+    if (!['positive', 'negative'].includes(type)) return res.status(400).json({ error: 'Invalid rating type.' });
+
     try {
       await pool.query(
         'INSERT INTO ratings (msg_id, type, timestamp, question, reply) VALUES ($1, $2, $3, $4, $5)',
-        [String(msgId), type, new Date().toISOString(), maskSensitiveText(question).substring(0, 300), maskSensitiveText(reply).substring(0, 300)]
+        [
+          String(msgId).substring(0, 120),
+          type,
+          new Date().toISOString(),
+          maskSensitiveText(question).substring(0, 300),
+          maskSensitiveText(reply).substring(0, 300),
+        ]
       );
       res.json({ success: true });
     } catch (dbErr) {
       console.error('DB rating insert error:', dbErr.message);
-      res.status(500).json({ error: '評分儲存失敗，請稍後再試。' });
+      res.status(500).json({ error: 'Failed to save rating.' });
     }
   });
 
@@ -136,7 +155,7 @@ function createChatRouter({
       res.json(rows);
     } catch (dbErr) {
       console.error('DB ratings query error:', dbErr.message);
-      res.status(500).json({ error: '讀取評分資料失敗' });
+      res.status(500).json({ error: 'Failed to load ratings.' });
     }
   });
 
@@ -158,7 +177,7 @@ function createChatRouter({
       });
     } catch (dbErr) {
       console.error('DB stats query error:', dbErr.message);
-      res.status(500).json({ error: '讀取統計資料失敗' });
+      res.status(500).json({ error: 'Failed to load stats.' });
     }
   });
 
@@ -169,5 +188,6 @@ module.exports = {
   KNOWLEDGE_GAP_MARKERS,
   createChatRouter,
   detectKnowledgeGap,
+  getSafeSessionId,
   validateHistory,
 };

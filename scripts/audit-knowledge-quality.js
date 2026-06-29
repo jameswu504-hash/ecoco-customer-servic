@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { anonymizeJsonValue, anonymizeText } = require('./anonymize-pii');
 
 const repoRoot = path.join(__dirname, '..');
 const databasePath = path.join(repoRoot, 'data', 'ecoco-ai-customer-service-database.json');
@@ -43,7 +44,7 @@ function chooseRecommendedRecord(rows) {
 }
 
 function preview(value, length = 180) {
-  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  const text = anonymizeText(String(value || '')).replace(/\s+/g, ' ').trim();
   return text.length > length ? `${text.slice(0, length)}...` : text;
 }
 
@@ -108,7 +109,7 @@ function main() {
     conflicts_pending_review: conflicts,
   };
 
-  fs.writeFileSync(jsonOutputPath, `${JSON.stringify(audit, null, 2)}\n`, 'utf8');
+  fs.writeFileSync(jsonOutputPath, `${JSON.stringify(anonymizeJsonValue(audit), null, 2)}\n`, 'utf8');
 
   const duplicateLines = duplicateGroups.slice(0, 40).map((group, index) => {
     const candidateLines = group.candidates.map(candidate => (
@@ -179,7 +180,7 @@ data/knowledge-quality-audit.json
 \`\`\`
 `;
 
-  fs.writeFileSync(markdownOutputPath, markdown, 'utf8');
+  fs.writeFileSync(markdownOutputPath, anonymizeText(markdown), 'utf8');
   console.log(`Wrote ${path.relative(repoRoot, jsonOutputPath)}`);
   console.log(`Wrote ${path.relative(repoRoot, markdownOutputPath)}`);
 }

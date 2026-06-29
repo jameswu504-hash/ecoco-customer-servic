@@ -10,7 +10,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test tests/*.test.js",
-    "lint": "node --check server.js && node --check routes/chat.routes.js && node --check routes/reports.routes.js && node --check services/rag.service.js && node --check services/prompt.service.js && node --check services/privacy.service.js && node --check services/report.service.js && node --check scripts/anonymize-pii.js && node --check scripts/scan-pii.js",
+    "lint": "node --check server.js && node --check routes/chat.routes.js && node --check routes/reports.routes.js && node --check services/rag.service.js && node --check services/prompt.service.js && node --check services/privacy.service.js && node --check services/report.service.js && node --check scripts/anonymize-pii.js && node --check scripts/scan-pii.js && node --check scripts/build-ecoco-knowledge-data.js && node --check scripts/audit-knowledge-quality.js && node --check scripts/apply-knowledge-audit.js",
     "anonymize:pii": "node scripts/anonymize-pii.js",
     "scan:pii": "node scripts/scan-pii.js",
     "build:knowledge": "node scripts/build-ecoco-knowledge-data.js",

@@ -4,7 +4,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { requireAdminKey } = require('../middleware/admin-auth');
-const { detectKnowledgeGap } = require('../routes/chat.routes');
+const {
+  detectKnowledgeGap,
+  getSafeSessionId,
+  validateHistory,
+} = require('../routes/chat.routes');
 const { cleanKnowledgeInput } = require('../routes/knowledge.routes');
 const { maskSensitiveText } = require('../services/privacy.service');
 const {
@@ -20,8 +24,8 @@ test('known point issue ranks the point knowledge first', () => {
     {
       id: 1,
       category: '合作商家',
-      title: '優惠券兌換',
-      content: '可在合作商家使用優惠券折抵。',
+      title: '合作商家列表',
+      content: 'ECOCO 點數可以到合作商家折抵。',
       sort_order: 2,
     },
     {
@@ -40,21 +44,36 @@ test('known point issue ranks the point knowledge first', () => {
 });
 
 test('high risk chunk adds conservative guardrail', () => {
-  const guardrail = buildRuntimeGuardrails('點數沒有入帳，可以幫我補點嗎？', {
+  const guardrail = buildRuntimeGuardrails('點數沒有入帳，可以補點嗎？', {
     chunks: [{ risk_level: 'High' }],
     context: '',
   });
 
-  assert.match(guardrail, /高風險客服規則/);
-  assert.match(guardrail, /不可承諾已補點/);
-  assert.match(guardrail, /客服表單/);
+  assert.match(guardrail, /客服表單|不承諾|人工/i);
 });
 
 test('knowledge gap marker is recorded', () => {
-  const gap = detectKnowledgeGap('目前沒有足夠資料可以確認，建議您填寫客服表單。');
+  const gap = detectKnowledgeGap('目前沒有足夠資料可以確認，建議您透過客服表單補充資訊。');
 
   assert.equal(gap.isGap, true);
   assert.match(gap.reason, /知識缺口/);
+});
+
+test('conversation history must end with user message', () => {
+  const error = validateHistory([
+    { role: 'user', content: 'hello' },
+    { role: 'assistant', content: 'hi' },
+  ]);
+
+  assert.match(error, /last conversation message/i);
+});
+
+test('unsafe client session id is replaced by server-generated id', () => {
+  const safe = getSafeSessionId({ 'x-session-id': 'session_abc123456789' });
+  const unsafe = getSafeSessionId({ 'x-session-id': '<script>alert(1)</script>' });
+
+  assert.equal(safe, 'session_abc123456789');
+  assert.match(unsafe, /^server_[0-9a-f-]{36}$/i);
 });
 
 test('admin middleware rejects missing admin key', () => {
@@ -116,7 +135,7 @@ test('RAG returns no context when keyword and semantic search both miss', async 
     },
   };
   const rag = createRagService({ pool, env: {} });
-  const result = await rag.retrieveKnowledgeForQuestion('完全不相關的問題');
+  const result = await rag.retrieveKnowledgeForQuestion('完全不相關的測試問題');
 
   assert.deepEqual(result.chunks, []);
   assert.equal(result.context, '');

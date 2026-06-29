@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { anonymizeJsonValue } = require('./anonymize-pii');
 
 const SOURCE_PRIORITY = {
   official_faq: 0,
@@ -26,7 +27,7 @@ function readJson(filePath) {
 }
 
 function writeJson(filePath, payload) {
-  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2) + '\n', 'utf8');
+  fs.writeFileSync(filePath, JSON.stringify(anonymizeJsonValue(payload), null, 2) + '\n', 'utf8');
 }
 
 function sectionKey(row) {

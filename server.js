@@ -46,6 +46,14 @@ const chatLimiter = rateLimit({
   message: { error: '請稍後再試，每分鐘最多 10 次。' },
 });
 
+const ratingLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many ratings. Please try again later.' },
+});
+
 let knowledgeCache = '';
 
 function readJsonFile(relativePath) {
@@ -213,6 +221,7 @@ app.use('/api', createChatRouter({
   pool,
   client,
   chatLimiter,
+  ratingLimiter,
   requireAdminKey,
   retrieveKnowledgeForQuestion: ragService.retrieveKnowledgeForQuestion,
   buildRuntimeGuardrails: ragService.buildRuntimeGuardrails,
