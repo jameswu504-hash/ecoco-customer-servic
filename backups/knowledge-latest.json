@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-06-29T06:56:12.425Z",
+  "generated_at": "2026-06-29T06:59:57.454Z",
   "source": "PostgreSQL knowledge_sections export",
   "notes": "這是從後台 PostgreSQL 匯出的知識庫資料。下載 JSON 不會自動寫回 GitHub；如需成為正式版本，請人工檢查後再更新 data/ecoco-knowledge-import.json 並 commit / push。",
   "summary": {
     "section_count": 85,
-    "content_chars": 305278
+    "content_chars": 305288
   },
   "sections": [
     {
@@ -37,10 +37,10 @@
     },
     {
       "category": "投瓶規則",
-      "content": "可投品項：PET 寶特瓶（1號）、CAN 鋁罐、PP 透明塑膠杯（5號）、HDPE 牛奶瓶（2號）\n不可投：\n- 養樂多瓶（6號 PS 材質，無法辨識）\n- 玻璃瓶、紙杯、洗髮精等清潔用品容器\n- 360ml 以下小寶特瓶（機台辨識度不足）\n- 酒瓶、汽油桶、鋰電池、鐵罐（有磁性）\n注意事項：\n- 不可壓扁或切割（首次警告，再犯永久停權）\n- 需清洗乾淨無殘液\n- 需完全去除膠膜和封膜\n- 瓶蓋分開投入機台右下方專用回收孔\n- 依燈號一次投一瓶：綠燈投、藍燈停\n- 每日投瓶無數量上限\n- 正常入帳：即時\n- 機台異常（黑屏/滿袋）：3～5 個工作天內補發，超過請聯絡客服",
+      "content": "可投品項：PET 寶特瓶（1號）、CAN 鋁罐、PP 透明塑膠杯（5號）、HDPE 牛奶瓶（2號）\n不可投：\n- 養樂多瓶（6號 PS 材質，無法辨識）\n- 玻璃瓶、紙杯、洗髮精等清潔用品容器\n- 360ml 以下小寶特瓶（機台辨識度不足）\n- 酒瓶、汽油桶、鋰電池、鐵罐（有磁性）\n注意事項：\n- 不可壓扁或切割（首次警告，再犯永久停權）\n- 需清洗乾淨無殘液\n- 需完全去除膠膜和封膜\n- 瓶蓋分開投入機台右下方專用回收孔\n- 依燈號一次投一瓶：綠燈投、藍燈停\n- 每日投瓶無數量上限\n- 正常入帳：即時\n- 機台異常（黑屏/滿袋）：3～5 個工作天內補發，超過請聯絡客服。。。。。。。。。。",
       "source": "PostgreSQL knowledge_sections",
       "visibility": "public_knowledge_or_agent_assist",
-      "updated_at": "2026-06-29T06:55:00.901Z"
+      "updated_at": "2026-06-29T06:59:00.842Z"
     },
     {
       "category": "投電池規則",
