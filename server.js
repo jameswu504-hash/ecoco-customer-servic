@@ -31,6 +31,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
 const PORT = process.env.PORT || 3000;
+const startedAt = new Date().toISOString();
 
 const client = new Anthropic();
 const pool = new Pool({
@@ -217,6 +218,37 @@ const promptService = createPromptService({
   getKnowledgeCache: () => knowledgeCache,
 });
 
+async function buildHealthStatus() {
+  const health = {
+    status: 'ok',
+    service: 'ecoco-customer-service',
+    startedAt,
+    checkedAt: new Date().toISOString(),
+    database: 'unknown',
+    knowledgeCacheChars: knowledgeCache.length,
+    knowledgeAutoSyncMode: getKnowledgeAutoSyncMode(),
+    semanticRagEnabled: ragService.shouldUseSemanticSearch(),
+    embeddingModel: process.env.EMBEDDING_MODEL || 'text-embedding-3-small',
+    anthropicModel: process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL,
+  };
+
+  try {
+    await pool.query('SELECT 1');
+    health.database = 'ok';
+  } catch (err) {
+    health.status = 'degraded';
+    health.database = 'error';
+    health.databaseError = err.message;
+  }
+
+  return health;
+}
+
+app.get('/healthz', async (req, res) => {
+  const health = await buildHealthStatus();
+  res.status(health.status === 'ok' ? 200 : 503).json(health);
+});
+
 app.use('/api', createChatRouter({
   pool,
   client,
@@ -271,4 +303,5 @@ module.exports = {
   readJsonFile,
   start,
   syncKnowledgeFromImportFile,
+  buildHealthStatus,
 };

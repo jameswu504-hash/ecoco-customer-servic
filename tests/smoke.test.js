@@ -153,3 +153,9 @@ test('package does not depend on floating latest SDK versions', () => {
   assert.notEqual(pkg.dependencies['@anthropic-ai/sdk'], 'latest');
   assert.ok(pkg.engines.node);
 });
+
+test('server exposes a health check route', () => {
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+
+  assert.match(server, /\/healthz/);
+});
