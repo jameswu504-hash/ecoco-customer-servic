@@ -1,0 +1,41 @@
+name: 知識庫週備份
+
+on:
+  schedule:
+    - cron: '10 1 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: 安裝套件
+        working-directory: scripts
+        run: npm install
+      - name: 執行備份
+        working-directory: scripts
+        env:
+          ECOCO_BASE_URL: ${{ secrets.ECOCO_BASE_URL }}
+          ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
+          MAIL_USER: ${{ secrets.MAIL_USER }}
+          MAIL_PASS: ${{ secrets.MAIL_PASS }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+        run: node backup.mjs
+      - name: 有變更才 commit 備份檔
+        run: |
+          if [ -f scripts/.changed ]; then
+            git config user.name "github-actions"
+            git config user.email "actions@github.com"
+            git add backups/
+            git commit -m "自動備份知識庫 $(date +%Y-%m-%d)"
+            git push
+          else
+            echo "本週無變更，不 commit"
+          fi
