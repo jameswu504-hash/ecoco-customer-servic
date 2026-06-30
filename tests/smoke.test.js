@@ -191,3 +191,20 @@ test('knowledge chunks are not blindly rebuilt on every startup', () => {
   assert.match(server, /ensureKnowledgeChunksReady/);
   assert.match(server, /REBUILD_KNOWLEDGE_CHUNKS_ON_START/);
 });
+
+test('runtime config fails fast when required production secrets are missing', () => {
+  const { validateRuntimeConfig } = require('../server');
+  const result = validateRuntimeConfig({});
+
+  assert.match(result.errors.join('\n'), /DATABASE_URL/);
+  assert.match(result.errors.join('\n'), /ANTHROPIC_API_KEY/);
+  assert.match(result.errors.join('\n'), /ADMIN_KEY/);
+});
+
+test('public health check does not expose internal runtime details by default', () => {
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+
+  assert.match(server, /app\.get\('\/api\/system\/status', requireAdminKey/);
+  assert.match(server, /includeDetails = false/);
+  assert.match(server, /X-Robots-Tag/);
+});

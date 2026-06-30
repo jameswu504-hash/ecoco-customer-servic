@@ -37,12 +37,17 @@ app.use(helmet({
   },
   crossOriginEmbedderPolicy: false,
 }));
+app.use((req, res, next) => {
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  next();
+});
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
 const PORT = process.env.PORT || 3000;
 const startedAt = new Date().toISOString();
+let startupWarnings = [];
 
 const client = new Anthropic();
 const pool = new Pool({
@@ -81,6 +86,34 @@ function getKnowledgeAutoSyncMode() {
   if (rawMode === 'upsert') return 'upsert';
   if (rawMode === 'insert_only') return 'insert_only';
   return 'disable';
+}
+
+function validateRuntimeConfig(env = process.env) {
+  const errors = [];
+  const warnings = [];
+  const required = ['DATABASE_URL', 'ANTHROPIC_API_KEY', 'ADMIN_KEY'];
+
+  for (const key of required) {
+    if (!env[key]) errors.push(`${key} is required`);
+  }
+
+  if (env.ADMIN_KEY && env.ADMIN_KEY.length < 16) {
+    warnings.push('ADMIN_KEY is short; use a long random value for production.');
+  }
+
+  if (!env.CONVERSATION_RETENTION_DAYS || Number(env.CONVERSATION_RETENTION_DAYS) <= 0) {
+    warnings.push('CONVERSATION_RETENTION_DAYS is not set; raw conversation logs will be retained.');
+  }
+
+  if (!env.OPENAI_API_KEY) {
+    warnings.push('OPENAI_API_KEY is not set; semantic RAG will fall back to keyword search.');
+  }
+
+  if (['replace', 'upsert'].includes(getKnowledgeAutoSyncMode())) {
+    warnings.push(`KNOWLEDGE_AUTO_SYNC=${getKnowledgeAutoSyncMode()} can overwrite dashboard knowledge edits on startup.`);
+  }
+
+  return { errors, warnings };
 }
 
 function normalizeImportSections(rawSections) {
@@ -254,19 +287,23 @@ const promptService = createPromptService({
   getKnowledgeCache: () => knowledgeCache,
 });
 
-async function buildHealthStatus() {
+async function buildHealthStatus({ includeDetails = false } = {}) {
   const health = {
     status: 'ok',
     service: 'ecoco-customer-service',
-    startedAt,
     checkedAt: new Date().toISOString(),
     database: 'unknown',
-    knowledgeCacheChars: knowledgeCache.length,
-    knowledgeAutoSyncMode: getKnowledgeAutoSyncMode(),
-    semanticRagEnabled: ragService.shouldUseSemanticSearch(),
-    embeddingModel: process.env.EMBEDDING_MODEL || 'text-embedding-3-small',
-    anthropicModel: process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL,
   };
+
+  if (includeDetails) {
+    health.startedAt = startedAt;
+    health.knowledgeCacheChars = knowledgeCache.length;
+    health.knowledgeAutoSyncMode = getKnowledgeAutoSyncMode();
+    health.semanticRagEnabled = ragService.shouldUseSemanticSearch();
+    health.embeddingModel = process.env.EMBEDDING_MODEL || 'text-embedding-3-small';
+    health.anthropicModel = process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL;
+    health.startupWarnings = startupWarnings;
+  }
 
   try {
     await pool.query('SELECT 1');
@@ -274,7 +311,7 @@ async function buildHealthStatus() {
   } catch (err) {
     health.status = 'degraded';
     health.database = 'error';
-    health.databaseError = err.message;
+    if (includeDetails) health.databaseError = err.message;
   }
 
   return health;
@@ -282,6 +319,11 @@ async function buildHealthStatus() {
 
 app.get('/healthz', async (req, res) => {
   const health = await buildHealthStatus();
+  res.status(health.status === 'ok' ? 200 : 503).json(health);
+});
+
+app.get('/api/system/status', requireAdminKey, async (req, res) => {
+  const health = await buildHealthStatus({ includeDetails: true });
   res.status(health.status === 'ok' ? 200 : 503).json(health);
 });
 
@@ -312,6 +354,13 @@ app.use('/api/knowledge', createKnowledgeRouter({
 
 async function start() {
   try {
+    const config = validateRuntimeConfig(process.env);
+    startupWarnings = config.warnings;
+    startupWarnings.forEach(warning => console.warn(`Startup warning: ${warning}`));
+    if (config.errors.length > 0) {
+      throw new Error(`Invalid runtime config: ${config.errors.join('; ')}`);
+    }
+
     await initDb(ragService);
     const syncChanged = await syncKnowledgeFromImportFile();
     await refreshKnowledgeCache();
@@ -340,4 +389,5 @@ module.exports = {
   start,
   syncKnowledgeFromImportFile,
   buildHealthStatus,
+  validateRuntimeConfig,
 };

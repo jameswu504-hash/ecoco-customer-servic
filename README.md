@@ -73,6 +73,7 @@ npm start
 | 客服前台 | `http://localhost:3000` |
 | 後台 | `http://localhost:3000/dashboard.html` |
 | 健康檢查 | `http://localhost:3000/healthz` |
+| 管理者詳細狀態 | `http://localhost:3000/api/system/status`，需 `x-admin-key` |
 
 ## 環境變數
 

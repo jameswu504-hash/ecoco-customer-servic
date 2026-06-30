@@ -57,7 +57,7 @@ PostgreSQL pgvector = 比對向量相似度
 
 ## 4. 健康檢查
 
-部署後可打開：
+部署後可打開公開健康檢查：
 
 ```text
 https://你的-render-domain/healthz
@@ -69,10 +69,16 @@ https://你的-render-domain/healthz
 {
   "status": "ok",
   "service": "ecoco-customer-service",
-  "database": "ok",
-  "semanticRagEnabled": true,
-  "knowledgeAutoSyncMode": "disable"
+  "checkedAt": "2026-07-01T00:00:00.000Z",
+  "database": "ok"
 }
+```
+
+詳細模型、RAG、同步模式與啟動警告屬於管理資訊，請用 Admin Key 查：
+
+```text
+GET /api/system/status
+x-admin-key: <ADMIN_KEY>
 ```
 
 欄位說明：
@@ -81,9 +87,9 @@ https://你的-render-domain/healthz
 | --- | --- |
 | `status` | `ok` 代表服務與 DB 基本正常；`degraded` 代表至少 DB 檢查失敗 |
 | `database` | PostgreSQL 連線是否正常 |
-| `semanticRagEnabled` | 是否同時具備 pgvector 與 `OPENAI_API_KEY` |
-| `knowledgeCacheChars` | 目前載入到 prompt cache 的知識庫字數 |
-| `knowledgeAutoSyncMode` | 啟動時知識庫同步模式 |
+| `semanticRagEnabled` | 僅管理 API 顯示，代表是否同時具備 pgvector 與 `OPENAI_API_KEY` |
+| `knowledgeCacheChars` | 僅管理 API 顯示，目前載入到 prompt cache 的知識庫字數 |
+| `knowledgeAutoSyncMode` | 僅管理 API 顯示，啟動時知識庫同步模式 |
 
 ## 5. 知識庫同步原則
 
@@ -115,7 +121,7 @@ pgvector enabled for semantic RAG search
 Knowledge chunks rebuilt: ... chunks
 ```
 
-5. 打開 `/healthz`，確認：
+5. 打開 `/api/system/status`，確認：
 
 ```json
 "semanticRagEnabled": true
@@ -157,7 +163,7 @@ npm.cmd run scan:pii
 4. push 到 GitHub `main`。
 5. Render 會依照 GitHub 設定自動部署，或由維護者手動 redeploy。
 6. 部署後看 Render Logs。
-7. 打開 `/healthz`。
+7. 打開 `/healthz` 與 `/api/system/status`。
 8. 測試前台問答與後台知識庫管理。
 
 ## 10. 常見故障
@@ -192,5 +198,5 @@ npm.cmd run scan:pii
 
 - `OPENAI_API_KEY`
 - PostgreSQL 是否支援 `vector`
-- `/healthz` 的 `semanticRagEnabled`
+- `/api/system/status` 的 `semanticRagEnabled`
 - Render Logs 是否有 embedding 或 pgvector 錯誤

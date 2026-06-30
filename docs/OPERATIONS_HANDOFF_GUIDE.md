@@ -68,7 +68,7 @@ ECOCO AI 客服是一套結合前台客服頁、內部後台、PostgreSQL 知識
 
 1. Render deploy 狀態為 Live。
 2. Logs 無啟動錯誤。
-3. `/healthz` 可回傳服務狀態。
+3. `/healthz` 可回傳公開服務狀態。
 4. 前台可正常提問。
 5. 後台可正常登入。
 6. 知識庫分類與 RAG chunks 數量合理。
@@ -79,14 +79,20 @@ ECOCO AI 客服是一套結合前台客服頁、內部後台、PostgreSQL 知識
 https://你的-render-domain/healthz
 ```
 
-應關注欄位：
+公開健康檢查應關注欄位：
 
 | 欄位 | 正常狀態 |
 | --- | --- |
 | `status` | `ok` |
 | `database` | `ok` |
+
+詳細狀態請用 Admin Key 查 `/api/system/status`。應關注欄位：
+
+| 欄位 | 正常狀態 |
+| --- | --- |
 | `semanticRagEnabled` | 有 OpenAI key 且 pgvector 可用時為 `true` |
-| `knowledgeAutoSyncMode` | 建議日常維護為 `disable` |
+| `knowledgeAutoSyncMode` | 日常維護建議為 `disable` |
+| `startupWarnings` | 可接受有提醒，但不可有啟動錯誤 |
 
 ## 5. PostgreSQL 與 Git JSON 的關係
 
@@ -204,14 +210,14 @@ npm.cmd run scan:pii
 3. 確認 AI 不承諾補點或退款。
 4. 後台確認對話有紀錄。
 5. 後台確認知識缺口與評分功能正常。
-6. 打開 `/healthz` 確認 database 狀態。
+6. 打開 `/healthz` 確認 database 狀態，必要時用 `/api/system/status` 確認 RAG 狀態。
 
 ## 10. 故障排除
 
 | 問題 | 可能原因 | 處理方式 |
 | --- | --- | --- |
 | AI 無法回答 | Claude key 失效、模型錯誤、API 額度問題 | 檢查 Render logs 與 `ANTHROPIC_API_KEY` |
-| 語意 RAG 未啟用 | 沒有 `OPENAI_API_KEY`、OpenAI 額度不足、pgvector 不可用 | 檢查 logs、billing 與 `/healthz` |
+| 語意 RAG 未啟用 | 沒有 `OPENAI_API_KEY`、OpenAI 額度不足、pgvector 不可用 | 檢查 logs、billing 與 `/api/system/status` |
 | 後台無法登入 | `ADMIN_KEY` 錯誤 | 確認 Render Environment Variables |
 | 知識更新後 AI 沒變 | 問法未命中、chunks 未重建、資料未儲存 | 檢查後台、logs，重新測試相近問法 |
 | PostgreSQL 連不上 | `DATABASE_URL` 錯誤、SSL 設定錯誤 | 檢查 Render 與 DB provider |
@@ -243,7 +249,7 @@ npm.cmd run scan:pii
 6. 前台測試 AI 是否讀到新知識。
 7. 封存或恢復一筆測試知識。
 8. 下載 JSON，確認知道此動作不會自動寫回 GitHub。
-9. 查看 `/healthz`。
+9. 查看 `/healthz` 與 `/api/system/status`。
 10. 確認知道部署與 GitHub 更新流程。
 
 ## 13. 維護原則
