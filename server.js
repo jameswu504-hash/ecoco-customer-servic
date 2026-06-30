@@ -23,7 +23,18 @@ const { anonymizeText } = require('./scripts/anonymize-pii');
 const app = express();
 app.set('trust proxy', 1);
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+      imgSrc: ["'self'", 'data:'],
+      connectSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+    },
+  },
   crossOriginEmbedderPolicy: false,
 }));
 app.use(express.json({ limit: '1mb' }));
@@ -97,20 +108,20 @@ async function syncKnowledgeFromImportFile() {
   const mode = getKnowledgeAutoSyncMode();
   if (mode === 'disable') {
     console.log('Knowledge auto-sync skipped: KNOWLEDGE_AUTO_SYNC=disable');
-    return;
+    return false;
   }
 
   const importPath = path.join(__dirname, 'data', 'ecoco-knowledge-import.json');
   if (!fs.existsSync(importPath)) {
     console.log('Knowledge auto-sync skipped: import file not found');
-    return;
+    return false;
   }
 
   const payload = JSON.parse(fs.readFileSync(importPath, 'utf8'));
   const sections = normalizeImportSections(Array.isArray(payload.sections) ? payload.sections : []);
   if (sections.length === 0) {
     console.log('Knowledge auto-sync skipped: no sections found');
-    return;
+    return false;
   }
 
   const now = new Date().toISOString();
@@ -138,16 +149,20 @@ async function syncKnowledgeFromImportFile() {
       }
 
       const existing = await db.query(
-        "SELECT id FROM knowledge_sections WHERE category = $1 AND COALESCE(archived_at, '') = '' ORDER BY id ASC LIMIT 1",
+        "SELECT id, content FROM knowledge_sections WHERE category = $1 AND COALESCE(archived_at, '') = '' ORDER BY id ASC LIMIT 1",
         [section.category]
       );
       if (existing.rowCount > 0) {
         if (mode === 'upsert') {
-          await db.query(
-            'UPDATE knowledge_sections SET content = $1, updated_at = $2 WHERE id = $3',
-            [section.content, now, existing.rows[0].id]
-          );
-          updated++;
+          if (existing.rows[0].content !== section.content) {
+            await db.query(
+              'UPDATE knowledge_sections SET content = $1, updated_at = $2 WHERE id = $3',
+              [section.content, now, existing.rows[0].id]
+            );
+            updated++;
+          } else {
+            skipped++;
+          }
         } else {
           skipped++;
         }
@@ -170,6 +185,7 @@ async function syncKnowledgeFromImportFile() {
   }
 
   console.log(`Knowledge auto-sync complete: mode=${mode} inserted=${inserted} updated=${updated} skipped=${skipped}`);
+  return inserted > 0 || updated > 0 || mode === 'replace';
 }
 
 function loadInitialKnowledgeSections() {
@@ -205,6 +221,26 @@ async function initDb(ragService) {
     }
     console.log(`Knowledge initialized from ${source}: ${sections.length} sections`);
   }
+}
+
+async function ensureKnowledgeChunksReady(syncChanged = false) {
+  const forceMode = String(process.env.REBUILD_KNOWLEDGE_CHUNKS_ON_START || '').toLowerCase();
+  const { rows } = await pool.query('SELECT COUNT(*) AS count FROM knowledge_chunks');
+  const chunkCount = Number(rows[0].count || 0);
+
+  if (forceMode === 'always') {
+    console.log('Knowledge chunks rebuild requested: REBUILD_KNOWLEDGE_CHUNKS_ON_START=always');
+    await ragService.rebuildKnowledgeChunks();
+    return;
+  }
+
+  if (syncChanged || chunkCount === 0) {
+    console.log(`Knowledge chunks rebuild needed: syncChanged=${syncChanged} chunkCount=${chunkCount}`);
+    await ragService.rebuildKnowledgeChunks();
+    return;
+  }
+
+  console.log(`Knowledge chunks rebuild skipped: existing chunks=${chunkCount}`);
 }
 
 const responsePolicyPayload = readJsonFile(path.join('data', 'ecoco-response-policies.json')) || {};
@@ -277,9 +313,9 @@ app.use('/api/knowledge', createKnowledgeRouter({
 async function start() {
   try {
     await initDb(ragService);
-    await syncKnowledgeFromImportFile();
+    const syncChanged = await syncKnowledgeFromImportFile();
     await refreshKnowledgeCache();
-    await ragService.rebuildKnowledgeChunks();
+    await ensureKnowledgeChunksReady(syncChanged);
     await purgeExpiredConversationData(pool, process.env);
     app.listen(PORT, () => {
       console.log(`ECOCO customer service server started: http://localhost:${PORT}`);

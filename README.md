@@ -83,6 +83,7 @@ npm start
 | `ADMIN_KEY` | 必填 | 後台與管理 API 權限 |
 | `OPENAI_API_KEY` | 建議 | 啟用 embedding 與 pgvector 語意檢索 |
 | `KNOWLEDGE_AUTO_SYNC` | 選填 | 控制 Git JSON 是否於啟動時同步到 PostgreSQL |
+| `REBUILD_KNOWLEDGE_CHUNKS_ON_START` | 選填 | 設為 `always` 時強制重建 RAG chunks |
 | `CONVERSATION_RETENTION_DAYS` | 選填 | 對話紀錄保存天數 |
 | `PGSSL` | 視環境 | PostgreSQL SSL 設定 |
 

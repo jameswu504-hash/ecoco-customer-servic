@@ -11,3 +11,6 @@ ecoco_chat.db
 # 系統檔案
 .DS_Store
 Thumbs.db
+
+# GitHub Actions 備份流程暫存標記
+scripts/.changed

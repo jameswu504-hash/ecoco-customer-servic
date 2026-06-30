@@ -110,14 +110,7 @@ function createChatRouter({
         console.error('DB conversation write error:', dbErr.message);
       }
 
-      res.json({
-        reply,
-        ragSources: rag.chunks.map(chunk => ({
-          category: chunk.category,
-          title: chunk.title,
-          score: chunk.score,
-        })),
-      });
+      res.json({ reply });
     } catch (err) {
       console.error('Claude API error:', err.message);
       res.status(500).json({ error: 'AI response failed. Please try again later.' });

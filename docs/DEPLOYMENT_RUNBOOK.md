@@ -33,6 +33,7 @@ Service -> Environment -> Environment Variables
 | `EMBEDDING_DIMENSIONS` | 選填 | 預設 `1536` | 不建議任意改，需和 embedding 模型維度一致 |
 | `EMBEDDING_TIMEOUT_MS` | 選填 | 預設 `10000` | embedding API 太久會 timeout，系統 fallback 關鍵字檢索 |
 | `KNOWLEDGE_AUTO_SYNC` | 選填 | 控制 Git JSON 是否在啟動時同步到 DB | 設錯可能覆蓋後台編輯 |
+| `REBUILD_KNOWLEDGE_CHUNKS_ON_START` | 選填 | 設為 `always` 時，啟動時強制重建 RAG chunks | 只在換 embedding key、修復 chunks 或大改知識庫時使用 |
 | `CONVERSATION_RETENTION_DAYS` | 選填 | 對話資料保存天數，`0` 代表不自動清除 | 未設定時對話會持續保存 |
 | `PGSSL` | 選填 | 雲端 DB 通常用 `require` | 本機開發可視情況設 `disable` |
 
@@ -52,7 +53,7 @@ PostgreSQL pgvector = 比對向量相似度
 ```
 
 如果 Render 只有 `ANTHROPIC_API_KEY`，客服仍能回答，但 RAG 只會靠關鍵字與同義詞。
-如果 Render 也有 `OPENAI_API_KEY`，重建 `knowledge_chunks` 時會補上 embedding，查詢時會使用語意檢索。
+如果 Render 也有 `OPENAI_API_KEY`，重建 `knowledge_chunks` 時會補上 embedding，查詢時會使用語意檢索。為避免每次重啟都產生 embedding 成本，系統不會無條件重建 chunks。
 
 ## 4. 健康檢查
 
@@ -105,19 +106,22 @@ KNOWLEDGE_AUTO_SYNC=disable
 ## 6. 新增 OpenAI Embedding Key 後要檢查什麼
 
 1. Render 新增 `OPENAI_API_KEY`。
-2. 手動 Redeploy。
-3. 看 Render Logs 是否出現：
+2. 暫時新增 `REBUILD_KNOWLEDGE_CHUNKS_ON_START=always`。
+3. 手動 Redeploy。
+4. 看 Render Logs 是否出現：
 
 ```text
 pgvector enabled for semantic RAG search
 Knowledge chunks rebuilt: ... chunks
 ```
 
-4. 打開 `/healthz`，確認：
+5. 打開 `/healthz`，確認：
 
 ```json
 "semanticRagEnabled": true
 ```
+
+6. 確認 chunks 已重建後，移除 `REBUILD_KNOWLEDGE_CHUNKS_ON_START=always`，避免之後每次重啟都重新產生成本。
 
 如果是 `false`，常見原因：
 

@@ -159,3 +159,35 @@ test('server exposes a health check route', () => {
 
   assert.match(server, /\/healthz/);
 });
+
+test('workflow scripts referenced by GitHub Actions exist', () => {
+  const backupWorkflow = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'backup.yml'), 'utf8');
+  const analysisWorkflow = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'ai-analysis.yml'), 'utf8');
+
+  assert.match(backupWorkflow, /node scripts\/backup\.mjs/);
+  assert.match(analysisWorkflow, /node scripts\/ai-analysis\.mjs/);
+  assert.equal(fs.existsSync(path.join(__dirname, '..', 'scripts', 'backup.mjs')), true);
+  assert.equal(fs.existsSync(path.join(__dirname, '..', 'scripts', 'ai-analysis.mjs')), true);
+});
+
+test('public chat response does not expose RAG source metadata', () => {
+  const chatRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'chat.routes.js'), 'utf8');
+
+  assert.equal(chatRoute.includes('ragSources'), false);
+});
+
+test('schema includes report and dashboard performance indexes', () => {
+  const schema = fs.readFileSync(path.join(__dirname, '..', 'db', 'schema.js'), 'utf8');
+
+  assert.match(schema, /idx_conv_timestamp/);
+  assert.match(schema, /idx_conv_role_timestamp/);
+  assert.match(schema, /idx_conv_session_ts/);
+  assert.match(schema, /idx_ratings_timestamp/);
+});
+
+test('knowledge chunks are not blindly rebuilt on every startup', () => {
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+
+  assert.match(server, /ensureKnowledgeChunksReady/);
+  assert.match(server, /REBUILD_KNOWLEDGE_CHUNKS_ON_START/);
+});

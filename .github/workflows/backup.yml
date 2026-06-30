@@ -16,18 +16,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: 安裝套件
-        working-directory: scripts
-        run: npm install
       - name: 執行備份
-        working-directory: scripts
         env:
           ECOCO_BASE_URL: ${{ secrets.ECOCO_BASE_URL }}
           ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
           MAIL_USER: ${{ secrets.MAIL_USER }}
           MAIL_PASS: ${{ secrets.MAIL_PASS }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
-        run: node backup.mjs
+        run: node scripts/backup.mjs
       - name: 有變更才 commit 備份檔
         run: |
           if [ -f scripts/.changed ]; then
