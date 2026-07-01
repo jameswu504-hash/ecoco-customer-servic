@@ -208,3 +208,9 @@ test('public health check does not expose internal runtime details by default', 
   assert.match(server, /includeDetails = false/);
   assert.match(server, /X-Robots-Tag/);
 });
+
+test('CSP allows dashboard inline event handlers until dashboard scripts are refactored', () => {
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+
+  assert.match(server, /scriptSrcAttr:\s*\[\s*["']'unsafe-inline'["']/);
+});
