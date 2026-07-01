@@ -176,6 +176,16 @@ test('public chat response does not expose RAG source metadata', () => {
   assert.equal(chatRoute.includes('ragSources'), false);
 });
 
+test('negative feedback is routed to unanswered questions for maintenance', () => {
+  const chatRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'chat.routes.js'), 'utf8');
+  const index = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+
+  assert.match(chatRoute, /type === 'negative'/);
+  assert.match(chatRoute, /INSERT INTO unanswered_questions/);
+  assert.match(chatRoute, /使用者點選「需改善」/);
+  assert.match(index, /"x-session-id": SESSION_ID/);
+});
+
 test('schema includes report and dashboard performance indexes', () => {
   const schema = fs.readFileSync(path.join(__dirname, '..', 'db', 'schema.js'), 'utf8');
 

@@ -123,16 +123,34 @@ function createChatRouter({
     if (!['positive', 'negative'].includes(type)) return res.status(400).json({ error: 'Invalid rating type.' });
 
     try {
+      const ts = new Date().toISOString();
+      const storedQuestion = maskSensitiveText(question).substring(0, 300);
+      const storedReply = maskSensitiveText(reply).substring(0, 300);
+
       await pool.query(
         'INSERT INTO ratings (msg_id, type, timestamp, question, reply) VALUES ($1, $2, $3, $4, $5)',
         [
           String(msgId).substring(0, 120),
           type,
-          new Date().toISOString(),
-          maskSensitiveText(question).substring(0, 300),
-          maskSensitiveText(reply).substring(0, 300),
+          ts,
+          storedQuestion,
+          storedReply,
         ]
       );
+
+      if (type === 'negative' && storedQuestion) {
+        await pool.query(
+          'INSERT INTO unanswered_questions (session_id, question, reply, reason, timestamp) VALUES ($1, $2, $3, $4, $5)',
+          [
+            getSafeSessionId(req.headers),
+            storedQuestion,
+            storedReply,
+            '使用者點選「需改善」，請客服確認是否需要補充或修正知識庫。',
+            ts,
+          ]
+        );
+      }
+
       res.json({ success: true });
     } catch (dbErr) {
       console.error('DB rating insert error:', dbErr.message);
