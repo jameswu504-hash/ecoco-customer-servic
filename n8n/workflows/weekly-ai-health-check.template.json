@@ -1,0 +1,148 @@
+{
+  "name": "ECOCO Weekly AI Knowledge Health Check",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [1],
+              "triggerAtHour": 9,
+              "triggerAtMinute": 20
+            }
+          ]
+        }
+      },
+      "id": "schedule-weekly-health-check",
+      "name": "Every Monday 09:20",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.ECOCO_BASE_URL || 'https://ecoco-customer-servic.onrender.com'}}/api/unanswered",
+        "responseFormat": "json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-admin-key",
+              "value": "={{$env.ECOCO_ADMIN_KEY}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "get-unanswered",
+      "name": "Get unanswered questions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, -120]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.ECOCO_BASE_URL || 'https://ecoco-customer-servic.onrender.com'}}/api/knowledge/overview",
+        "responseFormat": "json",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-admin-key",
+              "value": "={{$env.ECOCO_ADMIN_KEY}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "get-knowledge-overview",
+      "name": "Get knowledge overview",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 120]
+    },
+    {
+      "parameters": {
+        "jsCode": "const unanswered = $('Get unanswered questions').first().json;\nconst overview = $('Get knowledge overview').first().json;\nconst pending = Array.isArray(unanswered.items)\n  ? unanswered.items.filter(item => !item.status || item.status === 'pending')\n  : [];\nconst lines = [\n  '# ECOCO AI 客服每週健檢',\n  '',\n  `- PostgreSQL 知識分類：${overview.dbSectionCount ?? 'unknown'}`,\n  `- RAG chunks：${overview.ragChunkCount ?? 'unknown'}`,\n  `- 待處理知識缺口：${pending.length}`,\n  '',\n  '## 待處理問題樣本',\n  ...pending.slice(0, 10).map((item, index) => `${index + 1}. ${item.question || item.content || '未命名問題'}`),\n  '',\n  '請維護者確認是否需要新增或修正知識庫。'\n];\nreturn [{ json: { report: lines.join('\\n'), pendingCount: pending.length } }];"
+      },
+      "id": "build-health-report",
+      "name": "Build health report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [560, 0]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.MAINTAINER_EMAIL}}",
+        "toEmail": "={{$env.MAINTAINER_EMAIL}}",
+        "subject": "=ECOCO AI 客服每週健檢：待處理 {{$json.pendingCount}} 件",
+        "text": "={{$json.report}}"
+      },
+      "id": "send-health-report",
+      "name": "Send health report",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [820, 0]
+    }
+  ],
+  "connections": {
+    "Every Monday 09:20": {
+      "main": [
+        [
+          {
+            "node": "Get unanswered questions",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get knowledge overview",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get unanswered questions": {
+      "main": [
+        [
+          {
+            "node": "Build health report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get knowledge overview": {
+      "main": [
+        [
+          {
+            "node": "Build health report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build health report": {
+      "main": [
+        [
+          {
+            "node": "Send health report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

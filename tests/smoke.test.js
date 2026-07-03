@@ -266,6 +266,21 @@ test('n8n integration guide documents credentials and health monitoring', () => 
   assert.match(guide, /unanswered_questions/);
 });
 
+test('n8n workflow templates are sanitized importable JSON files', () => {
+  const workflowDir = path.join(__dirname, '..', 'n8n', 'workflows');
+  const files = fs.readdirSync(workflowDir).filter(file => file.endsWith('.json'));
+
+  assert.ok(files.length >= 3);
+  for (const file of files) {
+    const content = fs.readFileSync(path.join(workflowDir, file), 'utf8');
+    const workflow = JSON.parse(content);
+
+    assert.ok(workflow.name);
+    assert.ok(Array.isArray(workflow.nodes));
+    assert.equal(/sk-ant-|sk-proj-|ghp_|AIza/.test(content), false);
+  }
+});
+
 test('public chat response does not expose RAG source metadata', () => {
   const chatRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'chat.routes.js'), 'utf8');
 
