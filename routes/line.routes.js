@@ -1,8 +1,16 @@
 const crypto = require('crypto');
 const express = require('express');
+const {
+  detectKnowledgeGap,
+  loadServerConversationHistory,
+  normalizeModelMessages,
+} = require('./chat.routes');
 const { maskSensitiveText } = require('../services/privacy.service');
 
 const LINE_REPLY_ENDPOINT = 'https://api.line.me/v2/bot/message/reply';
+const LINE_TEXT_LIMIT = 4900;
+const LINE_MAX_INPUT_CHARS = 2000;
+const LINE_FALLBACK_REPLY = '抱歉，AI 回覆暫時失敗，請稍後再試，或改由人工客服協助。';
 
 function getLineConfig(env = process.env) {
   return {
@@ -28,6 +36,22 @@ function verifyLineSignature({ body, signature, channelSecret }) {
   return safeCompare(signature, digest);
 }
 
+function toLineText(text) {
+  const cleaned = String(text || '')
+    .replace(/```[a-zA-Z0-9_-]*\n?([\s\S]*?)```/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '$1 $2')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  if (!cleaned) return LINE_FALLBACK_REPLY;
+  if (cleaned.length <= LINE_TEXT_LIMIT) return cleaned;
+  return `${cleaned.slice(0, LINE_TEXT_LIMIT)}\n\n（回覆較長，已截斷）`;
+}
+
 async function replyToLine({ replyToken, text, channelAccessToken }) {
   const response = await fetch(LINE_REPLY_ENDPOINT, {
     method: 'POST',
@@ -37,7 +61,7 @@ async function replyToLine({ replyToken, text, channelAccessToken }) {
     },
     body: JSON.stringify({
       replyToken,
-      messages: [{ type: 'text', text }],
+      messages: [{ type: 'text', text: toLineText(text) }],
     }),
   });
 
@@ -52,7 +76,26 @@ function buildLineSessionId(event = {}) {
   return `line_${crypto.createHash('sha256').update(userId).digest('hex').slice(0, 32)}`;
 }
 
+async function buildLineModelMessages({ pool, sessionId, text }) {
+  const userMessage = {
+    role: 'user',
+    content: String(text || '').trim().slice(0, LINE_MAX_INPUT_CHARS),
+  };
+
+  if (!pool || !sessionId) return [userMessage];
+
+  try {
+    const storedHistory = await loadServerConversationHistory(pool, sessionId);
+    return normalizeModelMessages([...storedHistory, userMessage]);
+  } catch (err) {
+    console.error('LINE conversation history read error:', err.message);
+    return [userMessage];
+  }
+}
+
 async function buildAiReply({
+  pool,
+  sessionId,
   client,
   text,
   retrieveKnowledgeForQuestion,
@@ -61,19 +104,40 @@ async function buildAiReply({
   buildSystemPromptBlocks,
   defaultAnthropicModel,
 }) {
-  const rag = await retrieveKnowledgeForQuestion(text);
-  const runtimeGuardrails = buildRuntimeGuardrails(text, rag);
+  const question = String(text || '').trim().slice(0, LINE_MAX_INPUT_CHARS);
+  const rag = await retrieveKnowledgeForQuestion(question);
+  const runtimeGuardrails = buildRuntimeGuardrails(question, rag);
+  const modelMessages = await buildLineModelMessages({ pool, sessionId, text: question });
   const response = await client.messages.create({
     model: process.env.ANTHROPIC_MODEL || defaultAnthropicModel,
     max_tokens: 1024,
     system: buildSystemPromptBlocks
       ? buildSystemPromptBlocks(rag.context, runtimeGuardrails)
       : [{ type: 'text', text: buildSystemPrompt(rag.context, runtimeGuardrails) }],
-    messages: [{ role: 'user', content: text }],
+    messages: modelMessages,
   });
 
-  return response.content.find(block => block.type === 'text')?.text
-    || '抱歉，AI 客服暫時無法回覆，請稍後再試或改由人工客服協助。';
+  return response.content.find(block => block.type === 'text')?.text || LINE_FALLBACK_REPLY;
+}
+
+async function storeLineConversation({ pool, sessionId, question, reply }) {
+  const ts = new Date().toISOString();
+  const storedQuestion = maskSensitiveText(question);
+  const storedReply = maskSensitiveText(reply);
+
+  await pool.query(
+    `INSERT INTO conversations (session_id, role, content, timestamp)
+     VALUES ($1, $2, $3, $4), ($1, $5, $6, $4)`,
+    [sessionId, 'user', storedQuestion, ts, 'assistant', storedReply]
+  );
+
+  const gap = detectKnowledgeGap(reply);
+  if (gap.isGap) {
+    await pool.query(
+      'INSERT INTO unanswered_questions (session_id, question, reply, reason, timestamp) VALUES ($1, $2, $3, $4, $5)',
+      [sessionId, storedQuestion, storedReply, gap.reason, ts]
+    );
+  }
 }
 
 function createLineRouter({
@@ -106,12 +170,15 @@ function createLineRouter({
     for (const event of events) {
       if (event.type !== 'message' || event.message?.type !== 'text' || !event.replyToken) continue;
 
-      const userText = String(event.message.text || '').trim();
+      const userText = String(event.message.text || '').trim().slice(0, LINE_MAX_INPUT_CHARS);
       if (!userText) continue;
 
-      let reply = '抱歉，AI 客服暫時無法回覆，請稍後再試或改由人工客服協助。';
+      const sessionId = buildLineSessionId(event);
+      let reply = LINE_FALLBACK_REPLY;
       try {
         reply = await buildAiReply({
+          pool,
+          sessionId,
           client,
           text: userText,
           retrieveKnowledgeForQuestion,
@@ -135,16 +202,7 @@ function createLineRouter({
       }
 
       try {
-        const ts = new Date().toISOString();
-        const sessionId = buildLineSessionId(event);
-        await pool.query(
-          'INSERT INTO conversations (session_id, role, content, timestamp) VALUES ($1, $2, $3, $4)',
-          [sessionId, 'user', maskSensitiveText(userText), ts]
-        );
-        await pool.query(
-          'INSERT INTO conversations (session_id, role, content, timestamp) VALUES ($1, $2, $3, $4)',
-          [sessionId, 'assistant', maskSensitiveText(reply), ts]
-        );
+        await storeLineConversation({ pool, sessionId, question: userText, reply });
       } catch (err) {
         console.error('LINE conversation write error:', err.message);
       }
@@ -155,8 +213,16 @@ function createLineRouter({
 }
 
 module.exports = {
+  LINE_FALLBACK_REPLY,
+  LINE_MAX_INPUT_CHARS,
+  LINE_TEXT_LIMIT,
+  buildAiReply,
+  buildLineModelMessages,
   buildLineSessionId,
   createLineRouter,
   getLineConfig,
+  replyToLine,
+  storeLineConversation,
+  toLineText,
   verifyLineSignature,
 };

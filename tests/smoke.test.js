@@ -13,7 +13,7 @@ const {
 } = require('../routes/chat.routes');
 const { cleanKnowledgeInput } = require('../routes/knowledge.routes');
 const { maskSensitiveText } = require('../services/privacy.service');
-const { getLineConfig, verifyLineSignature } = require('../routes/line.routes');
+const { getLineConfig, toLineText, verifyLineSignature } = require('../routes/line.routes');
 const { createPromptService } = require('../services/prompt.service');
 const {
   buildRuntimeGuardrails,
@@ -309,6 +309,7 @@ test('LINE webhook signature verification accepts only valid signatures', () => 
 test('LINE route is wired and documented through environment variables', () => {
   const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
   const envExample = fs.readFileSync(path.join(__dirname, '..', '.env.example'), 'utf8');
+  const guide = fs.readFileSync(path.join(__dirname, '..', 'docs', 'LINE_INTEGRATION_GUIDE.md'), 'utf8');
   const config = getLineConfig({
     LINE_CHANNEL_SECRET: 'secret',
     LINE_CHANNEL_ACCESS_TOKEN: 'token',
@@ -318,10 +319,33 @@ test('LINE route is wired and documented through environment variables', () => {
   assert.match(server, /req\.rawBody = buf/);
   assert.match(envExample, /LINE_CHANNEL_SECRET/);
   assert.match(envExample, /LINE_CHANNEL_ACCESS_TOKEN/);
+  assert.match(envExample, /\/api\/line\/webhook/);
+  assert.match(guide, /\/api\/line\/webhook/);
+  assert.match(guide, /LINE_CHANNEL_SECRET/);
+  assert.match(guide, /LINE_CHANNEL_ACCESS_TOKEN/);
   assert.deepEqual(config, {
     channelSecret: 'secret',
     channelAccessToken: 'token',
   });
+});
+
+test('LINE replies are converted to plain text before sending', () => {
+  const text = toLineText('## 標題\n\n**重點**：請看 [ECOCO](https://ecoco.example.com)\n\n`code`');
+
+  assert.equal(text.includes('##'), false);
+  assert.equal(text.includes('**'), false);
+  assert.equal(text.includes('`'), false);
+  assert.match(text, /標題/);
+  assert.match(text, /ECOCO https:\/\/ecoco\.example\.com/);
+});
+
+test('LINE webhook reuses server-side conversation history', () => {
+  const lineRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'line.routes.js'), 'utf8');
+
+  assert.match(lineRoute, /loadServerConversationHistory/);
+  assert.match(lineRoute, /normalizeModelMessages/);
+  assert.match(lineRoute, /buildLineModelMessages/);
+  assert.match(lineRoute, /messages: modelMessages/);
 });
 
 test('weekly AI analysis script reads current API field names', () => {
