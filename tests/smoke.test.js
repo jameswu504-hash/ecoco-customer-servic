@@ -13,7 +13,12 @@ const {
 } = require('../routes/chat.routes');
 const { cleanKnowledgeInput } = require('../routes/knowledge.routes');
 const { maskSensitiveText } = require('../services/privacy.service');
-const { getLineConfig, toLineText, verifyLineSignature } = require('../routes/line.routes');
+const {
+  getLineConfig,
+  isLineRateLimited,
+  toLineText,
+  verifyLineSignature,
+} = require('../routes/line.routes');
 const {
   cleanWikiEntryInput,
   isInternalMode,
@@ -184,6 +189,17 @@ test('conversation persistence masks phone and email values', () => {
   assert.match(masked, /\[email\]/);
 });
 
+test('conversation persistence masks common id and long number values', () => {
+  const twId = 'A123456789';
+  const memberNumber = '12345678';
+  const masked = maskSensitiveText(`id ${twId} member ${memberNumber}`);
+
+  assert.equal(masked.includes(twId), false);
+  assert.equal(masked.includes(memberNumber), false);
+  assert.match(masked, /\[tw-id\]/);
+  assert.match(masked, /\[number\]/);
+});
+
 test('knowledge input is anonymized before it can be saved or exported', () => {
   const email = ['support', 'example.com'].join('@');
   const phone = ['0912', '345', '678'].join('-');
@@ -235,6 +251,19 @@ test('workflow scripts referenced by GitHub Actions exist', () => {
   assert.match(analysisWorkflow, /node scripts\/ai-analysis\.mjs/);
   assert.equal(fs.existsSync(path.join(__dirname, '..', 'scripts', 'backup.mjs')), true);
   assert.equal(fs.existsSync(path.join(__dirname, '..', 'scripts', 'ai-analysis.mjs')), true);
+});
+
+test('n8n integration guide documents credentials and health monitoring', () => {
+  const guidePath = path.join(__dirname, '..', 'docs', 'N8N_INTEGRATION_GUIDE.md');
+  const guide = fs.readFileSync(guidePath, 'utf8');
+
+  assert.match(guide, /Credentials/);
+  assert.match(guide, /x-admin-key/);
+  assert.match(guide, /\/healthz/);
+  assert.match(guide, /\/api\/knowledge\/export/);
+  assert.match(guide, /conversations/);
+  assert.match(guide, /ratings/);
+  assert.match(guide, /unanswered_questions/);
 });
 
 test('public chat response does not expose RAG source metadata', () => {
@@ -368,6 +397,17 @@ test('LINE webhook reuses server-side conversation history', () => {
   assert.match(lineRoute, /normalizeModelMessages/);
   assert.match(lineRoute, /buildLineModelMessages/);
   assert.match(lineRoute, /messages: modelMessages/);
+});
+
+test('LINE webhook rate limits a single sender before API calls', () => {
+  const env = { LINE_RATE_LIMIT_MAX_EVENTS: '2' };
+  const sessionId = `line_test_${Date.now()}`;
+  const now = 1000;
+
+  assert.equal(isLineRateLimited(sessionId, now, env), false);
+  assert.equal(isLineRateLimited(sessionId, now + 100, env), false);
+  assert.equal(isLineRateLimited(sessionId, now + 200, env), true);
+  assert.equal(isLineRateLimited(sessionId, now + 61_000, env), false);
 });
 
 test('weekly AI analysis script reads current API field names', () => {

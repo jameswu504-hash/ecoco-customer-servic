@@ -11,6 +11,11 @@ const LINE_REPLY_ENDPOINT = 'https://api.line.me/v2/bot/message/reply';
 const LINE_TEXT_LIMIT = 4900;
 const LINE_MAX_INPUT_CHARS = 2000;
 const LINE_FALLBACK_REPLY = '抱歉，AI 回覆暫時失敗，請稍後再試，或改由人工客服協助。';
+const LINE_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const LINE_RATE_LIMIT_DEFAULT_MAX = 8;
+const LINE_RATE_LIMIT_MAX_BUCKETS = 5000;
+const LINE_RATE_LIMIT_REPLY = '訊息有點密集，請稍後再試一次。';
+const lineRateBuckets = new Map();
 
 function getLineConfig(env = process.env) {
   return {
@@ -74,6 +79,36 @@ async function replyToLine({ replyToken, text, channelAccessToken }) {
 function buildLineSessionId(event = {}) {
   const userId = event.source?.userId || event.source?.groupId || event.source?.roomId || 'unknown';
   return `line_${crypto.createHash('sha256').update(userId).digest('hex').slice(0, 32)}`;
+}
+
+function getLineRateLimitMax(env = process.env) {
+  const maxEvents = Number(env.LINE_RATE_LIMIT_MAX_EVENTS || LINE_RATE_LIMIT_DEFAULT_MAX);
+  if (!Number.isFinite(maxEvents)) return LINE_RATE_LIMIT_DEFAULT_MAX;
+  return Math.floor(maxEvents);
+}
+
+function isLineRateLimited(sessionId, now = Date.now(), env = process.env) {
+  const maxEvents = getLineRateLimitMax(env);
+  if (!maxEvents || maxEvents < 1) return false;
+
+  if (lineRateBuckets.size > LINE_RATE_LIMIT_MAX_BUCKETS) {
+    for (const [bucketKey, bucket] of lineRateBuckets.entries()) {
+      if (now - bucket.windowStart >= LINE_RATE_LIMIT_WINDOW_MS) {
+        lineRateBuckets.delete(bucketKey);
+      }
+    }
+  }
+
+  const key = String(sessionId || 'unknown');
+  const current = lineRateBuckets.get(key);
+  if (!current || now - current.windowStart >= LINE_RATE_LIMIT_WINDOW_MS) {
+    lineRateBuckets.set(key, { windowStart: now, count: 1 });
+    return false;
+  }
+
+  if (current.count >= maxEvents) return true;
+  current.count += 1;
+  return false;
 }
 
 async function buildLineModelMessages({ pool, sessionId, text }) {
@@ -175,20 +210,24 @@ function createLineRouter({
 
       const sessionId = buildLineSessionId(event);
       let reply = LINE_FALLBACK_REPLY;
-      try {
-        reply = await buildAiReply({
-          pool,
-          sessionId,
-          client,
-          text: userText,
-          retrieveKnowledgeForQuestion,
-          buildRuntimeGuardrails,
-          buildSystemPrompt,
-          buildSystemPromptBlocks,
-          defaultAnthropicModel,
-        });
-      } catch (err) {
-        console.error('LINE AI reply error:', err.message);
+      if (isLineRateLimited(sessionId)) {
+        reply = LINE_RATE_LIMIT_REPLY;
+      } else {
+        try {
+          reply = await buildAiReply({
+            pool,
+            sessionId,
+            client,
+            text: userText,
+            retrieveKnowledgeForQuestion,
+            buildRuntimeGuardrails,
+            buildSystemPrompt,
+            buildSystemPromptBlocks,
+            defaultAnthropicModel,
+          });
+        } catch (err) {
+          console.error('LINE AI reply error:', err.message);
+        }
       }
 
       try {
@@ -215,12 +254,17 @@ function createLineRouter({
 module.exports = {
   LINE_FALLBACK_REPLY,
   LINE_MAX_INPUT_CHARS,
+  LINE_RATE_LIMIT_DEFAULT_MAX,
+  LINE_RATE_LIMIT_REPLY,
+  LINE_RATE_LIMIT_WINDOW_MS,
   LINE_TEXT_LIMIT,
   buildAiReply,
   buildLineModelMessages,
   buildLineSessionId,
   createLineRouter,
   getLineConfig,
+  getLineRateLimitMax,
+  isLineRateLimited,
   replyToLine,
   storeLineConversation,
   toLineText,

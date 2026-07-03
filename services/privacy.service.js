@@ -1,8 +1,14 @@
+const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+const TW_MOBILE_PATTERN = /09\d{2}[-\s]?\d{3}[-\s]?\d{3}|(?:\+?886[-\s]?)?9\d{2}[-\s]?\d{3}[-\s]?\d{3}/g;
+const TW_ID_PATTERN = /(?<![A-Z0-9])[A-Z][12]\d{8}(?![A-Z0-9])/gi;
+const LONG_NUMBER_PATTERN = /(?<![\d-])\d{8,}(?![\d-])/g;
+
 function maskSensitiveText(value) {
   return String(value || '')
-    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[email]')
-    .replace(/09\d{2}[-\s]?\d{3}[-\s]?\d{3}/g, '[phone]')
-    .replace(/(?:\+?886[-\s]?)?9\d{2}[-\s]?\d{3}[-\s]?\d{3}/g, '[phone]');
+    .replace(EMAIL_PATTERN, '[email]')
+    .replace(TW_MOBILE_PATTERN, '[phone]')
+    .replace(TW_ID_PATTERN, '[tw-id]')
+    .replace(LONG_NUMBER_PATTERN, '[number]');
 }
 
 function getRetentionDays(env = process.env) {
@@ -44,6 +50,10 @@ async function purgeExpiredConversationData(pool, env = process.env) {
 }
 
 module.exports = {
+  EMAIL_PATTERN,
+  LONG_NUMBER_PATTERN,
+  TW_ID_PATTERN,
+  TW_MOBILE_PATTERN,
   getRetentionDays,
   maskSensitiveText,
   purgeExpiredConversationData,
