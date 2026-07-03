@@ -55,6 +55,64 @@ function validateHistory(history) {
   return '';
 }
 
+function getLatestUserMessage(body = {}) {
+  const MAX_MSG_LEN = 2000;
+
+  if (typeof body.message === 'string') {
+    const content = body.message.trim();
+    if (!content) return { error: 'Missing user message.' };
+    if (content.length > MAX_MSG_LEN) {
+      return { error: `Message content must be under ${MAX_MSG_LEN} characters.` };
+    }
+    return { message: { role: 'user', content } };
+  }
+
+  const history = body.history;
+  const validationError = validateHistory(history);
+  if (validationError) return { error: validationError };
+
+  const latest = history[history.length - 1];
+  const content = latest.content.trim();
+  if (!content) return { error: 'Missing user message.' };
+
+  return {
+    message: {
+      role: 'user',
+      content,
+    },
+  };
+}
+
+function normalizeModelMessages(messages = []) {
+  const normalized = [];
+  for (const message of messages) {
+    if (!message || !['user', 'assistant'].includes(message.role)) continue;
+    const content = String(message.content || '').trim();
+    if (!content) continue;
+
+    const previous = normalized[normalized.length - 1];
+    if (previous && previous.role === message.role) {
+      previous.content = `${previous.content}\n\n${content}`;
+    } else {
+      normalized.push({ role: message.role, content });
+    }
+  }
+  return normalized;
+}
+
+async function loadServerConversationHistory(pool, sessionId, limit = 12) {
+  const { rows } = await pool.query(
+    `SELECT role, content
+     FROM conversations
+     WHERE session_id = $1
+     ORDER BY timestamp DESC, id DESC
+     LIMIT $2`,
+    [sessionId, limit]
+  );
+
+  return normalizeModelMessages(rows.reverse());
+}
+
 function getSafeSessionId(headers = {}) {
   const raw = String(headers['x-session-id'] || '').trim();
   if (/^session_[A-Za-z0-9_-]{8,80}$/.test(raw)) return raw;
@@ -70,31 +128,40 @@ function createChatRouter({
   retrieveKnowledgeForQuestion,
   buildRuntimeGuardrails,
   buildSystemPrompt,
+  buildSystemPromptBlocks,
   defaultAnthropicModel,
 }) {
   const router = express.Router();
 
   router.post('/chat', chatLimiter, async (req, res) => {
-    const { history } = req.body || {};
-    const validationError = validateHistory(history);
-    if (validationError) return res.status(400).json({ error: validationError });
+    const sessionId = getSafeSessionId(req.headers);
+    const { message: userMsg, error } = getLatestUserMessage(req.body || {});
+    if (error) return res.status(400).json({ error });
 
     try {
-      const userMsg = history[history.length - 1];
+      let modelMessages = [userMsg];
+      try {
+        const storedHistory = await loadServerConversationHistory(pool, sessionId);
+        modelMessages = normalizeModelMessages([...storedHistory, userMsg]);
+      } catch (historyErr) {
+        console.error('DB conversation history read error:', historyErr.message);
+      }
+
       const rag = await retrieveKnowledgeForQuestion(userMsg.content);
       const runtimeGuardrails = buildRuntimeGuardrails(userMsg.content, rag);
       const response = await client.messages.create({
         model: process.env.ANTHROPIC_MODEL || defaultAnthropicModel,
         max_tokens: 1024,
-        system: [{ type: 'text', text: buildSystemPrompt(rag.context, runtimeGuardrails), cache_control: { type: 'ephemeral' } }],
-        messages: history,
+        system: buildSystemPromptBlocks
+          ? buildSystemPromptBlocks(rag.context, runtimeGuardrails)
+          : [{ type: 'text', text: buildSystemPrompt(rag.context, runtimeGuardrails) }],
+        messages: modelMessages,
       });
 
       const reply = response.content.find(b => b.type === 'text')?.text
         ?? '目前無法產生回覆，請稍後再試或聯絡客服。';
 
       try {
-        const sessionId = getSafeSessionId(req.headers);
         const ts = new Date().toISOString();
         const storedQuestion = maskSensitiveText(userMsg.content);
         const storedReply = maskSensitiveText(reply);
@@ -207,6 +274,9 @@ module.exports = {
   KNOWLEDGE_GAP_MARKERS,
   createChatRouter,
   detectKnowledgeGap,
+  getLatestUserMessage,
   getSafeSessionId,
+  loadServerConversationHistory,
+  normalizeModelMessages,
   validateHistory,
 };

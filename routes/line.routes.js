@@ -58,6 +58,7 @@ async function buildAiReply({
   retrieveKnowledgeForQuestion,
   buildRuntimeGuardrails,
   buildSystemPrompt,
+  buildSystemPromptBlocks,
   defaultAnthropicModel,
 }) {
   const rag = await retrieveKnowledgeForQuestion(text);
@@ -65,11 +66,9 @@ async function buildAiReply({
   const response = await client.messages.create({
     model: process.env.ANTHROPIC_MODEL || defaultAnthropicModel,
     max_tokens: 1024,
-    system: [{
-      type: 'text',
-      text: buildSystemPrompt(rag.context, runtimeGuardrails),
-      cache_control: { type: 'ephemeral' },
-    }],
+    system: buildSystemPromptBlocks
+      ? buildSystemPromptBlocks(rag.context, runtimeGuardrails)
+      : [{ type: 'text', text: buildSystemPrompt(rag.context, runtimeGuardrails) }],
     messages: [{ role: 'user', content: text }],
   });
 
@@ -83,6 +82,7 @@ function createLineRouter({
   retrieveKnowledgeForQuestion,
   buildRuntimeGuardrails,
   buildSystemPrompt,
+  buildSystemPromptBlocks,
   defaultAnthropicModel,
 }) {
   const router = express.Router();
@@ -117,6 +117,7 @@ function createLineRouter({
           retrieveKnowledgeForQuestion,
           buildRuntimeGuardrails,
           buildSystemPrompt,
+          buildSystemPromptBlocks,
           defaultAnthropicModel,
         });
       } catch (err) {

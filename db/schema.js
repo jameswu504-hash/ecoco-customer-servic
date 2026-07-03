@@ -27,32 +27,6 @@ const SCHEMA = [
   `ALTER TABLE unanswered_questions ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending'`,
   `ALTER TABLE unanswered_questions ADD COLUMN IF NOT EXISTS note TEXT DEFAULT ''`,
   `ALTER TABLE unanswered_questions ADD COLUMN IF NOT EXISTS updated_at TEXT DEFAULT ''`,
-  `CREATE OR REPLACE FUNCTION ecoco_safe_timestamptz(value TEXT)
-     RETURNS TIMESTAMPTZ AS $$
-     BEGIN
-       RETURN NULLIF(value, '')::timestamptz;
-     EXCEPTION WHEN OTHERS THEN
-       RETURN NOW();
-     END;
-     $$ LANGUAGE plpgsql`,
-  `ALTER TABLE conversations
-     ALTER COLUMN timestamp TYPE TIMESTAMPTZ
-     USING CASE
-       WHEN NULLIF(timestamp::text, '') IS NULL THEN NOW()
-       ELSE ecoco_safe_timestamptz(timestamp::text)
-     END`,
-  `ALTER TABLE ratings
-     ALTER COLUMN timestamp TYPE TIMESTAMPTZ
-     USING CASE
-       WHEN NULLIF(timestamp::text, '') IS NULL THEN NOW()
-       ELSE ecoco_safe_timestamptz(timestamp::text)
-     END`,
-  `ALTER TABLE unanswered_questions
-     ALTER COLUMN timestamp TYPE TIMESTAMPTZ
-     USING CASE
-       WHEN NULLIF(timestamp::text, '') IS NULL THEN NOW()
-       ELSE ecoco_safe_timestamptz(timestamp::text)
-     END`,
   `CREATE TABLE IF NOT EXISTS knowledge_sections (
       id         SERIAL PRIMARY KEY,
       category   TEXT NOT NULL,
@@ -92,4 +66,75 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_kc_risk       ON knowledge_chunks(risk_level)`,
 ];
 
-module.exports = { SCHEMA };
+const TIMESTAMP_COLUMNS = [
+  { tableName: 'conversations', columnName: 'timestamp' },
+  { tableName: 'ratings', columnName: 'timestamp' },
+  { tableName: 'unanswered_questions', columnName: 'timestamp' },
+];
+
+async function migrateTimestampColumns(pool) {
+  const { rows } = await pool.query(
+    `SELECT table_name, column_name, data_type
+     FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND (table_name, column_name) IN (
+         ('conversations', 'timestamp'),
+         ('ratings', 'timestamp'),
+         ('unanswered_questions', 'timestamp')
+       )`
+  );
+
+  const typeByColumn = new Map(
+    rows.map(row => [`${row.table_name}.${row.column_name}`, row.data_type])
+  );
+
+  const pending = TIMESTAMP_COLUMNS.filter(({ tableName, columnName }) => (
+    typeByColumn.get(`${tableName}.${columnName}`) !== 'timestamp with time zone'
+  ));
+
+  if (pending.length === 0) {
+    console.log('Timestamp column migration skipped: already TIMESTAMPTZ');
+    return { migrated: [] };
+  }
+
+  const db = await pool.connect();
+  try {
+    await db.query('BEGIN');
+    await db.query(
+      `CREATE OR REPLACE FUNCTION ecoco_safe_timestamptz(value TEXT)
+       RETURNS TIMESTAMPTZ AS $$
+       BEGIN
+         RETURN NULLIF(value, '')::timestamptz;
+       EXCEPTION WHEN OTHERS THEN
+         RETURN NOW();
+       END;
+       $$ LANGUAGE plpgsql`
+    );
+
+    for (const { tableName, columnName } of pending) {
+      await db.query(
+        `ALTER TABLE ${tableName}
+         ALTER COLUMN ${columnName} TYPE TIMESTAMPTZ
+         USING CASE
+           WHEN NULLIF(${columnName}::text, '') IS NULL THEN NOW()
+           ELSE ecoco_safe_timestamptz(${columnName}::text)
+         END`
+      );
+    }
+
+    await db.query('COMMIT');
+    console.log(`Timestamp column migration complete: ${pending.map(item => `${item.tableName}.${item.columnName}`).join(', ')}`);
+    return { migrated: pending };
+  } catch (err) {
+    await db.query('ROLLBACK');
+    throw err;
+  } finally {
+    db.release();
+  }
+}
+
+module.exports = {
+  SCHEMA,
+  TIMESTAMP_COLUMNS,
+  migrateTimestampColumns,
+};

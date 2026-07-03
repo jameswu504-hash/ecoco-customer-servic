@@ -8,7 +8,7 @@ const { Pool } = require('pg');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 
-const { SCHEMA } = require('./db/schema');
+const { SCHEMA, migrateTimestampColumns } = require('./db/schema');
 const { requireAdminKey } = require('./middleware/admin-auth');
 const { createChatRouter } = require('./routes/chat.routes');
 const { createDashboardRouter } = require('./routes/dashboard.routes');
@@ -254,6 +254,7 @@ async function initDb(ragService) {
   for (const stmt of SCHEMA) {
     await pool.query(stmt);
   }
+  await migrateTimestampColumns(pool);
   await ragService.ensurePgVector();
 
   const { rows } = await pool.query('SELECT COUNT(*) AS count FROM knowledge_sections');
@@ -351,6 +352,7 @@ app.use('/api', createChatRouter({
   retrieveKnowledgeForQuestion: ragService.retrieveKnowledgeForQuestion,
   buildRuntimeGuardrails: ragService.buildRuntimeGuardrails,
   buildSystemPrompt: promptService.buildSystemPrompt,
+  buildSystemPromptBlocks: promptService.buildSystemPromptBlocks,
   defaultAnthropicModel: DEFAULT_ANTHROPIC_MODEL,
 }));
 app.use('/api', createLineRouter({
@@ -359,6 +361,7 @@ app.use('/api', createLineRouter({
   retrieveKnowledgeForQuestion: ragService.retrieveKnowledgeForQuestion,
   buildRuntimeGuardrails: ragService.buildRuntimeGuardrails,
   buildSystemPrompt: promptService.buildSystemPrompt,
+  buildSystemPromptBlocks: promptService.buildSystemPromptBlocks,
   defaultAnthropicModel: DEFAULT_ANTHROPIC_MODEL,
 }));
 app.use('/api', createDashboardRouter({ pool, requireAdminKey }));
