@@ -16,22 +16,47 @@ async function fetchJson(baseUrl, path, adminKey) {
   return response.json();
 }
 
-function buildDeterministicSummary({ health, overview, operations, unanswered }) {
+function countPendingUnanswered(unanswered) {
+  if (!Array.isArray(unanswered)) return 0;
+  return unanswered.filter(item => String(item.status || 'pending') === 'pending').length;
+}
+
+function buildDeterministicSummary({ status, overview, operations, unanswered }) {
+  const summary = operations.summary || {};
+  const knowledge = operations.knowledge || {};
+  const pendingUnanswered = countPendingUnanswered(unanswered);
   const lines = [];
-  lines.push('# ECOCO AI 客服週巡檢');
+
+  lines.push('# ECOCO AI 客服週巡檢摘要');
   lines.push('');
-  lines.push(`- 服務狀態：${health.ok ? '正常' : '異常'}`);
-  lines.push(`- DB 狀態：${health.database || 'unknown'}`);
-  lines.push(`- 模型：${health.model || 'unknown'}`);
-  lines.push(`- 語意 RAG：${health.semanticRag ? 'enabled' : 'disabled'}`);
-  lines.push(`- 知識同步：${health.knowledgeAutoSync || 'unknown'}`);
-  lines.push(`- PostgreSQL 分類：${overview.postgres_sections ?? 0}`);
-  lines.push(`- RAG chunks：${overview.rag_chunks ?? 0}`);
-  lines.push(`- 待確認衝突：${overview.conflicts_pending_review ?? 0}`);
-  lines.push(`- 本期客服案件：${operations.summary?.ticket_count ?? 0}`);
-  lines.push(`- 本期 AI 回覆：${operations.summary?.ai_replies ?? 0}`);
-  lines.push(`- 知識缺口：${operations.summary?.knowledge_gaps ?? 0}`);
-  lines.push(`- 未處理知識缺口：${unanswered.length ?? 0}`);
+  lines.push(`- 服務狀態：${status.status === 'ok' ? '正常' : '異常'}`);
+  lines.push(`- DB 狀態：${status.database || 'unknown'}`);
+  lines.push(`- 模型：${status.anthropicModel || overview.model || 'unknown'}`);
+  lines.push(`- 語意 RAG：${status.semanticRagEnabled ? 'enabled' : 'disabled'}`);
+  lines.push(`- 知識同步模式：${status.knowledgeAutoSyncMode || overview.effectiveAutoSyncMode || 'unknown'}`);
+  lines.push(`- PostgreSQL 知識分類：${overview.dbSectionCount ?? knowledge.dbSections ?? 0}`);
+  lines.push(`- RAG chunks：${overview.ragChunkCount ?? knowledge.ragChunks ?? 0}`);
+  lines.push(`- 待確認衝突：${knowledge.conflictsPendingReview ?? 0}`);
+  lines.push(`- 本週客服 session：${summary.sessions ?? 0}`);
+  lines.push(`- 本週使用者訊息：${summary.userMessages ?? 0}`);
+  lines.push(`- 本週 AI 回覆：${summary.aiReplies ?? 0}`);
+  lines.push(`- 本週知識缺口：${summary.knowledgeGaps ?? 0}`);
+  lines.push(`- 目前 pending 知識缺口：${pendingUnanswered}`);
+
+  if (Array.isArray(status.startupWarnings) && status.startupWarnings.length > 0) {
+    lines.push('');
+    lines.push('## 啟動警告');
+    status.startupWarnings.forEach(warning => lines.push(`- ${warning}`));
+  }
+
+  if (Array.isArray(operations.categories) && operations.categories.length > 0) {
+    lines.push('');
+    lines.push('## 本週主要問題分類');
+    operations.categories.slice(0, 5).forEach(item => {
+      lines.push(`- ${item.category}: ${item.count}`);
+    });
+  }
+
   return lines.join('\n');
 }
 
@@ -52,7 +77,7 @@ async function buildAiSummary(summary) {
       messages: [
         {
           role: 'user',
-          content: `請用繁體中文整理以下 ECOCO AI 客服週巡檢資料，輸出 3 點風險與 3 點下週建議。不要編造數字。\n\n${summary}`,
+          content: `請根據以下 ECOCO AI 客服週巡檢摘要，整理 3 點重點觀察與 3 點下週建議，語氣專業、簡潔、可交給主管閱讀。\n\n${summary}`,
         },
       ],
     }),
@@ -69,14 +94,14 @@ async function main() {
   const baseUrl = requiredEnv('ECOCO_BASE_URL').replace(/\/+$/, '');
   const adminKey = requiredEnv('ADMIN_KEY');
 
-  const [health, overview, operations, unanswered] = await Promise.all([
-    fetchJson(baseUrl, '/healthz'),
+  const [status, overview, operations, unanswered] = await Promise.all([
+    fetchJson(baseUrl, '/api/system/status', adminKey),
     fetchJson(baseUrl, '/api/knowledge/overview', adminKey),
     fetchJson(baseUrl, '/api/reports/operations?period=week', adminKey),
     fetchJson(baseUrl, '/api/unanswered', adminKey),
   ]);
 
-  const summary = buildDeterministicSummary({ health, overview, operations, unanswered });
+  const summary = buildDeterministicSummary({ status, overview, operations, unanswered });
   console.log(summary);
 
   try {
@@ -94,3 +119,8 @@ main().catch(err => {
   console.error(err.message);
   process.exit(1);
 });
+
+export {
+  buildDeterministicSummary,
+  countPendingUnanswered,
+};

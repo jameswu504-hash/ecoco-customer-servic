@@ -28,12 +28,16 @@ function detectKnowledgeGap(reply) {
 function validateHistory(history) {
   const MAX_HISTORY = 20;
   const MAX_MSG_LEN = 2000;
+  const MAX_TOTAL_CHARS = 8000;
 
   if (!Array.isArray(history) || history.length === 0) {
     return 'Missing conversation history.';
   }
   if (history.length > MAX_HISTORY) {
     return `Conversation history must be at most ${MAX_HISTORY} messages.`;
+  }
+  if (!history.every(m => m && typeof m === 'object' && !Array.isArray(m))) {
+    return 'Invalid message format.';
   }
   if (!history.every(m => ['user', 'assistant'].includes(m.role))) {
     return 'Conversation role must be user or assistant.';
@@ -43,6 +47,10 @@ function validateHistory(history) {
   }
   if (history.some(m => typeof m.content !== 'string' || m.content.length > MAX_MSG_LEN)) {
     return `Each message content must be a string under ${MAX_MSG_LEN} characters.`;
+  }
+  const totalChars = history.reduce((sum, m) => sum + m.content.length, 0);
+  if (totalChars > MAX_TOTAL_CHARS) {
+    return `Conversation history must be under ${MAX_TOTAL_CHARS} total characters.`;
   }
   return '';
 }
@@ -67,7 +75,7 @@ function createChatRouter({
   const router = express.Router();
 
   router.post('/chat', chatLimiter, async (req, res) => {
-    const { history } = req.body;
+    const { history } = req.body || {};
     const validationError = validateHistory(history);
     if (validationError) return res.status(400).json({ error: validationError });
 
@@ -118,7 +126,7 @@ function createChatRouter({
   });
 
   router.post('/rating', ratingLimiter, async (req, res) => {
-    const { msgId, type, question, reply } = req.body;
+    const { msgId, type, question, reply } = req.body || {};
     if (!msgId || !type) return res.status(400).json({ error: 'Missing rating fields.' });
     if (!['positive', 'negative'].includes(type)) return res.status(400).json({ error: 'Invalid rating type.' });
 

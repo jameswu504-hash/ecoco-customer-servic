@@ -11,6 +11,7 @@ const {
 } = require('../routes/chat.routes');
 const { cleanKnowledgeInput } = require('../routes/knowledge.routes');
 const { maskSensitiveText } = require('../services/privacy.service');
+const { getLineConfig, verifyLineSignature } = require('../routes/line.routes');
 const {
   buildRuntimeGuardrails,
   buildSearchTerms,
@@ -66,6 +67,23 @@ test('conversation history must end with user message', () => {
   ]);
 
   assert.match(error, /last conversation message/i);
+});
+
+test('conversation history rejects malformed message entries', () => {
+  assert.match(validateHistory([null]), /Invalid message format/);
+  assert.match(validateHistory(['bad']), /Invalid message format/);
+});
+
+test('conversation history rejects excessive total size', () => {
+  const error = validateHistory([
+    { role: 'user', content: 'x'.repeat(2000) },
+    { role: 'assistant', content: 'x'.repeat(2000) },
+    { role: 'user', content: 'x'.repeat(2000) },
+    { role: 'assistant', content: 'x'.repeat(2000) },
+    { role: 'user', content: 'x' },
+  ]);
+
+  assert.match(error, /total characters/);
 });
 
 test('unsafe client session id is replaced by server-generated id', () => {
@@ -219,8 +237,63 @@ test('public health check does not expose internal runtime details by default', 
   assert.match(server, /X-Robots-Tag/);
 });
 
+test('server handles database pool errors and Render shutdown signals', () => {
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+
+  assert.match(server, /pool\.on\('error'/);
+  assert.match(server, /process\.on\('unhandledRejection'/);
+  assert.match(server, /process\.on\('SIGTERM'/);
+  assert.match(server, /pool\.end\(\)/);
+});
+
 test('CSP allows dashboard inline event handlers until dashboard scripts are refactored', () => {
   const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 
   assert.match(server, /scriptSrcAttr:\s*\[\s*["']'unsafe-inline'["']/);
+});
+
+test('LINE webhook signature verification accepts only valid signatures', () => {
+  const channelSecret = 'line-test-secret';
+  const body = Buffer.from(JSON.stringify({ events: [] }));
+  const validSignature = require('node:crypto')
+    .createHmac('sha256', channelSecret)
+    .update(body)
+    .digest('base64');
+
+  assert.equal(verifyLineSignature({ body, signature: validSignature, channelSecret }), true);
+  assert.equal(verifyLineSignature({ body, signature: 'invalid', channelSecret }), false);
+});
+
+test('LINE route is wired and documented through environment variables', () => {
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  const envExample = fs.readFileSync(path.join(__dirname, '..', '.env.example'), 'utf8');
+  const config = getLineConfig({
+    LINE_CHANNEL_SECRET: 'secret',
+    LINE_CHANNEL_ACCESS_TOKEN: 'token',
+  });
+
+  assert.match(server, /createLineRouter/);
+  assert.match(server, /req\.rawBody = buf/);
+  assert.match(envExample, /LINE_CHANNEL_SECRET/);
+  assert.match(envExample, /LINE_CHANNEL_ACCESS_TOKEN/);
+  assert.deepEqual(config, {
+    channelSecret: 'secret',
+    channelAccessToken: 'token',
+  });
+});
+
+test('weekly AI analysis script reads current API field names', () => {
+  const script = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'ai-analysis.mjs'), 'utf8');
+
+  assert.match(script, /\/api\/system\/status/);
+  assert.match(script, /status\.anthropicModel/);
+  assert.match(script, /status\.semanticRagEnabled/);
+  assert.match(script, /overview\.dbSectionCount/);
+  assert.match(script, /overview\.ragChunkCount/);
+  assert.match(script, /summary\.sessions/);
+  assert.match(script, /summary\.aiReplies/);
+  assert.match(script, /countPendingUnanswered/);
+  assert.equal(script.includes('health.ok'), false);
+  assert.equal(script.includes('overview.postgres_sections'), false);
+  assert.equal(script.includes('operations.summary?.ticket_count'), false);
 });

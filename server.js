@@ -13,6 +13,7 @@ const { requireAdminKey } = require('./middleware/admin-auth');
 const { createChatRouter } = require('./routes/chat.routes');
 const { createDashboardRouter } = require('./routes/dashboard.routes');
 const { createKnowledgeRouter } = require('./routes/knowledge.routes');
+const { createLineRouter } = require('./routes/line.routes');
 const { createReportsRouter } = require('./routes/reports.routes');
 const { createUnansweredRouter } = require('./routes/unanswered.routes');
 const { createPromptService } = require('./services/prompt.service');
@@ -42,18 +43,27 @@ app.use((req, res, next) => {
   res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   next();
 });
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({
+  limit: '1mb',
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  },
+}));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
 const PORT = process.env.PORT || 3000;
 const startedAt = new Date().toISOString();
 let startupWarnings = [];
+let httpServer = null;
 
 const client = new Anthropic();
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.PGSSL === 'disable' ? false : { rejectUnauthorized: false },
+});
+pool.on('error', err => {
+  console.error('PG pool error:', err.message);
 });
 
 const chatLimiter = rateLimit({
@@ -108,6 +118,10 @@ function validateRuntimeConfig(env = process.env) {
 
   if (!env.OPENAI_API_KEY) {
     warnings.push('OPENAI_API_KEY is not set; semantic RAG will fall back to keyword search.');
+  }
+
+  if (!env.LINE_CHANNEL_SECRET || !env.LINE_CHANNEL_ACCESS_TOKEN) {
+    warnings.push('LINE webhook is not configured; set LINE_CHANNEL_SECRET and LINE_CHANNEL_ACCESS_TOKEN before LINE@ testing.');
   }
 
   if (['replace', 'upsert'].includes(getKnowledgeAutoSyncMode())) {
@@ -339,6 +353,14 @@ app.use('/api', createChatRouter({
   buildSystemPrompt: promptService.buildSystemPrompt,
   defaultAnthropicModel: DEFAULT_ANTHROPIC_MODEL,
 }));
+app.use('/api', createLineRouter({
+  pool,
+  client,
+  retrieveKnowledgeForQuestion: ragService.retrieveKnowledgeForQuestion,
+  buildRuntimeGuardrails: ragService.buildRuntimeGuardrails,
+  buildSystemPrompt: promptService.buildSystemPrompt,
+  defaultAnthropicModel: DEFAULT_ANTHROPIC_MODEL,
+}));
 app.use('/api', createDashboardRouter({ pool, requireAdminKey }));
 app.use('/api/reports', createReportsRouter({ pool, requireAdminKey, readJsonFile }));
 app.use('/api/unanswered', createUnansweredRouter({ pool, requireAdminKey }));
@@ -367,7 +389,7 @@ async function start() {
     await refreshKnowledgeCache();
     await ensureKnowledgeChunksReady(syncChanged);
     await purgeExpiredConversationData(pool, process.env);
-    app.listen(PORT, () => {
+    httpServer = app.listen(PORT, () => {
       console.log(`ECOCO customer service server started: http://localhost:${PORT}`);
     });
   } catch (err) {
@@ -377,7 +399,31 @@ async function start() {
   }
 }
 
+async function shutdown(signal) {
+  console.log(`${signal} received; shutting down gracefully.`);
+  if (httpServer) {
+    await new Promise(resolve => httpServer.close(resolve));
+  }
+  await pool.end();
+  process.exit(0);
+}
+
 if (require.main === module) {
+  process.on('unhandledRejection', err => {
+    console.error('Unhandled rejection:', err);
+  });
+  process.on('SIGTERM', () => {
+    shutdown('SIGTERM').catch(err => {
+      console.error('Graceful shutdown failed:', err.message);
+      process.exit(1);
+    });
+  });
+  process.on('SIGINT', () => {
+    shutdown('SIGINT').catch(err => {
+      console.error('Graceful shutdown failed:', err.message);
+      process.exit(1);
+    });
+  });
   start();
 }
 
@@ -390,5 +436,6 @@ module.exports = {
   start,
   syncKnowledgeFromImportFile,
   buildHealthStatus,
+  shutdown,
   validateRuntimeConfig,
 };
