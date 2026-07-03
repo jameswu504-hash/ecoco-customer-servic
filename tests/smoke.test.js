@@ -281,6 +281,20 @@ test('n8n workflow templates are sanitized importable JSON files', () => {
   }
 });
 
+test('go-live status report covers handoff and launch decisions', () => {
+  const report = fs.readFileSync(
+    path.join(__dirname, '..', 'docs', 'GO_LIVE_STATUS_REPORT_2026-07-03.md'),
+    'utf8'
+  );
+
+  assert.match(report, /LINE Developers/);
+  assert.match(report, /n8n/);
+  assert.match(report, /GitHub Actions/);
+  assert.match(report, /驗收題/);
+  assert.match(report, /公司帳號/);
+  assert.match(report, /小範圍試營運/);
+});
+
 test('public chat response does not expose RAG source metadata', () => {
   const chatRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'chat.routes.js'), 'utf8');
 
