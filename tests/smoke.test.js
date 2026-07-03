@@ -14,6 +14,13 @@ const {
 const { cleanKnowledgeInput } = require('../routes/knowledge.routes');
 const { maskSensitiveText } = require('../services/privacy.service');
 const { getLineConfig, toLineText, verifyLineSignature } = require('../routes/line.routes');
+const {
+  cleanWikiEntryInput,
+  isInternalMode,
+  normalizeDepartment,
+  normalizeVisibility,
+  validateWikiEntry,
+} = require('../services/internal-wiki.service');
 const { createPromptService } = require('../services/prompt.service');
 const {
   buildRuntimeGuardrails,
@@ -271,6 +278,21 @@ test('runtime config fails fast when required production secrets are missing', (
   assert.match(result.errors.join('\n'), /ADMIN_KEY/);
 });
 
+test('internal mode requires a staff key and customer mode does not', () => {
+  const { validateRuntimeConfig } = require('../server');
+  const baseEnv = {
+    DATABASE_URL: 'postgresql://example',
+    ANTHROPIC_API_KEY: 'anthropic-key',
+    ADMIN_KEY: 'admin-key-with-enough-length',
+  };
+
+  assert.equal(isInternalMode({ APP_MODE: 'internal' }), true);
+  assert.equal(isInternalMode({ APP_MODE: 'customer' }), false);
+  assert.equal(validateRuntimeConfig({ ...baseEnv, APP_MODE: 'customer' }).errors.includes('STAFF_KEY is required when APP_MODE=internal'), false);
+  assert.match(validateRuntimeConfig({ ...baseEnv, APP_MODE: 'internal' }).errors.join('\n'), /STAFF_KEY/);
+  assert.equal(validateRuntimeConfig({ ...baseEnv, APP_MODE: 'internal', STAFF_KEY: 'staff-key-with-enough-length' }).errors.length, 0);
+});
+
 test('public health check does not expose internal runtime details by default', () => {
   const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 
@@ -395,4 +417,40 @@ test('timestamp column migration is conditional instead of running ALTER on ever
 
   assert.equal(schemaText.includes('ALTER COLUMN timestamp TYPE TIMESTAMPTZ'), false);
   assert.equal(typeof migrateTimestampColumns, 'function');
+});
+
+test('internal wiki uses a separate staff-only schema and normalized filters', () => {
+  const schemaText = SCHEMA.join('\n');
+  const entry = cleanWikiEntryInput({
+    department: '客服 部門',
+    visibility: 'manager',
+    title: '  新人訓練 SOP  ',
+    content: '內部教材',
+    tags: ['training', '客服'],
+  });
+
+  assert.match(schemaText, /internal_wiki_entries/);
+  assert.match(schemaText, /idx_internal_wiki_department/);
+  assert.equal(normalizeDepartment('CS Team'), 'cs-team');
+  assert.equal(normalizeVisibility('unknown'), 'staff');
+  assert.deepEqual(entry, {
+    department: 'general',
+    visibility: 'manager',
+    title: '新人訓練 SOP',
+    content: '內部教材',
+    tags: 'training, 客服',
+  });
+  assert.equal(validateWikiEntry(entry), '');
+  assert.match(validateWikiEntry({ ...entry, title: '' }), /Title is required/);
+});
+
+test('internal wiki routes are mounted only for internal app mode', () => {
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  const envExample = fs.readFileSync(path.join(__dirname, '..', '.env.example'), 'utf8');
+
+  assert.match(server, /isInternalMode\(\)/);
+  assert.match(server, /\/api\/internal/);
+  assert.match(server, /createInternalRouter/);
+  assert.match(envExample, /APP_MODE=customer/);
+  assert.match(envExample, /STAFF_KEY=/);
 });

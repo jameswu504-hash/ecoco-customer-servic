@@ -10,12 +10,15 @@ const helmet = require('helmet');
 
 const { SCHEMA, migrateTimestampColumns } = require('./db/schema');
 const { requireAdminKey } = require('./middleware/admin-auth');
+const { requireStaffKey } = require('./middleware/staff-auth');
 const { createChatRouter } = require('./routes/chat.routes');
 const { createDashboardRouter } = require('./routes/dashboard.routes');
+const { createInternalRouter } = require('./routes/internal.routes');
 const { createKnowledgeRouter } = require('./routes/knowledge.routes');
 const { createLineRouter } = require('./routes/line.routes');
 const { createReportsRouter } = require('./routes/reports.routes');
 const { createUnansweredRouter } = require('./routes/unanswered.routes');
+const { isInternalMode } = require('./services/internal-wiki.service');
 const { createPromptService } = require('./services/prompt.service');
 const { createRagService } = require('./services/rag.service');
 const { purgeExpiredConversationData } = require('./services/privacy.service');
@@ -122,6 +125,10 @@ function validateRuntimeConfig(env = process.env) {
 
   if (!env.LINE_CHANNEL_SECRET || !env.LINE_CHANNEL_ACCESS_TOKEN) {
     warnings.push('LINE webhook is not configured; set LINE_CHANNEL_SECRET and LINE_CHANNEL_ACCESS_TOKEN before LINE@ testing.');
+  }
+
+  if (isInternalMode(env) && !env.STAFF_KEY) {
+    errors.push('STAFF_KEY is required when APP_MODE=internal');
   }
 
   if (['replace', 'upsert'].includes(getKnowledgeAutoSyncMode())) {
@@ -318,6 +325,7 @@ async function buildHealthStatus({ includeDetails = false } = {}) {
     health.semanticRagEnabled = ragService.shouldUseSemanticSearch();
     health.embeddingModel = process.env.EMBEDDING_MODEL || 'text-embedding-3-small';
     health.anthropicModel = process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL;
+    health.appMode = isInternalMode() ? 'internal' : 'customer';
     health.startupWarnings = startupWarnings;
   }
 
@@ -377,6 +385,9 @@ app.use('/api/knowledge', createKnowledgeRouter({
   getKnowledgeCache: () => knowledgeCache,
   defaultAnthropicModel: DEFAULT_ANTHROPIC_MODEL,
 }));
+if (isInternalMode()) {
+  app.use('/api/internal', createInternalRouter({ pool, requireStaffKey }));
+}
 
 async function start() {
   try {
@@ -441,4 +452,5 @@ module.exports = {
   buildHealthStatus,
   shutdown,
   validateRuntimeConfig,
+  isInternalMode,
 };

@@ -64,6 +64,21 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_kc_section    ON knowledge_chunks(section_id)`,
   `CREATE INDEX IF NOT EXISTS idx_kc_sort       ON knowledge_chunks(sort_order, id)`,
   `CREATE INDEX IF NOT EXISTS idx_kc_risk       ON knowledge_chunks(risk_level)`,
+  `CREATE TABLE IF NOT EXISTS internal_wiki_entries (
+      id          SERIAL PRIMARY KEY,
+      department  TEXT NOT NULL DEFAULT 'general',
+      visibility  TEXT NOT NULL DEFAULT 'staff',
+      title       TEXT NOT NULL,
+      content     TEXT NOT NULL DEFAULT '',
+      tags        TEXT NOT NULL DEFAULT '',
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      archived_at TIMESTAMPTZ
+    )`,
+  `CREATE INDEX IF NOT EXISTS idx_internal_wiki_department ON internal_wiki_entries(department)`,
+  `CREATE INDEX IF NOT EXISTS idx_internal_wiki_visibility ON internal_wiki_entries(visibility)`,
+  `CREATE INDEX IF NOT EXISTS idx_internal_wiki_archived ON internal_wiki_entries(archived_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_internal_wiki_sort ON internal_wiki_entries(sort_order, id)`,
 ];
 
 const TIMESTAMP_COLUMNS = [
