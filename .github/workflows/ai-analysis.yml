@@ -1,9 +1,12 @@
-name: 知識庫 AI 分析
+name: Weekly AI operations analysis
 
 on:
   schedule:
     - cron: '20 1 * * 1'
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   analysis:
@@ -13,12 +16,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: 執行 AI 分析
+      - name: Install dependencies
+        run: npm ci
+      - name: Run AI operations analysis and email report
         env:
           ECOCO_BASE_URL: ${{ secrets.ECOCO_BASE_URL }}
           ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ secrets.ANTHROPIC_MODEL }}
           MAIL_USER: ${{ secrets.MAIL_USER }}
           MAIL_PASS: ${{ secrets.MAIL_PASS }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
+          MAIL_FROM: ${{ secrets.MAIL_FROM }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_SECURE: ${{ secrets.SMTP_SECURE }}
         run: node scripts/ai-analysis.mjs

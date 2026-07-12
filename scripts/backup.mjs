@@ -3,7 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 const ROOT = process.cwd();
-const BACKUP_DIR = path.join(ROOT, 'backups');
+const BACKUP_DIR = path.join(ROOT, process.env.BACKUP_DIR || 'backups');
 const CHANGED_MARKER = path.join(ROOT, 'scripts', '.changed');
 
 function requiredEnv(name) {

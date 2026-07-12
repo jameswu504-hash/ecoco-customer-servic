@@ -1,4 +1,5 @@
 import process from 'node:process';
+import nodemailer from 'nodemailer';
 
 function requiredEnv(name) {
   const value = process.env[name];
@@ -90,6 +91,47 @@ async function buildAiSummary(summary) {
   return payload.content?.find(block => block.type === 'text')?.text || '';
 }
 
+function hasMailConfig(env = process.env) {
+  return Boolean(env.MAIL_USER && env.MAIL_PASS && env.MAIL_TO);
+}
+
+function buildMailTransport(env = process.env) {
+  const port = Number(env.SMTP_PORT || 465);
+  const explicitSecure = String(env.SMTP_SECURE || '').trim();
+
+  return nodemailer.createTransport({
+    host: env.SMTP_HOST || 'smtp.gmail.com',
+    port,
+    secure: explicitSecure ? explicitSecure.toLowerCase() !== 'false' : port !== 587,
+    auth: {
+      user: env.MAIL_USER,
+      pass: env.MAIL_PASS,
+    },
+  });
+}
+
+async function sendMailReport({ summary, aiSummary = '', env = process.env }) {
+  if (!hasMailConfig(env)) {
+    console.log('Mail report skipped: MAIL_USER, MAIL_PASS, or MAIL_TO is not set.');
+    return { sent: false };
+  }
+
+  const report = aiSummary
+    ? `${summary}\n\n## AI Summary\n\n${aiSummary}`
+    : summary;
+  const subjectDate = new Date().toISOString().slice(0, 10);
+  const transporter = buildMailTransport(env);
+  const info = await transporter.sendMail({
+    from: env.MAIL_FROM || env.MAIL_USER,
+    to: env.MAIL_TO,
+    subject: `ECOCO AI customer service weekly report ${subjectDate}`,
+    text: report,
+  });
+
+  console.log(`Mail report sent: ${info.messageId || 'sent'}`);
+  return { sent: true, messageId: info.messageId || '' };
+}
+
 async function main() {
   const baseUrl = requiredEnv('ECOCO_BASE_URL').replace(/\/+$/, '');
   const adminKey = requiredEnv('ADMIN_KEY');
@@ -103,15 +145,23 @@ async function main() {
 
   const summary = buildDeterministicSummary({ status, overview, operations, unanswered });
   console.log(summary);
+  let aiSummary = '';
 
   try {
-    const aiSummary = await buildAiSummary(summary);
+    aiSummary = await buildAiSummary(summary);
     if (aiSummary) {
       console.log('\n## AI 摘要\n');
       console.log(aiSummary);
     }
   } catch (err) {
     console.warn(`AI analysis skipped: ${err.message}`);
+  }
+
+  try {
+    await sendMailReport({ summary, aiSummary });
+  } catch (err) {
+    console.error(`Mail report failed: ${err.message}`);
+    process.exitCode = 1;
   }
 }
 
@@ -123,4 +173,6 @@ main().catch(err => {
 export {
   buildDeterministicSummary,
   countPendingUnanswered,
+  hasMailConfig,
+  sendMailReport,
 };

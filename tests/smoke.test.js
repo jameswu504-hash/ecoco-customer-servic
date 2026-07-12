@@ -265,7 +265,11 @@ test('workflow scripts referenced by GitHub Actions exist', () => {
   const analysisWorkflow = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'ai-analysis.yml'), 'utf8');
 
   assert.match(backupWorkflow, /node scripts\/backup\.mjs/);
+  assert.match(backupWorkflow, /actions\/upload-artifact@v4/);
+  assert.equal(backupWorkflow.includes('git push'), false);
+  assert.equal(backupWorkflow.includes('git commit'), false);
   assert.match(analysisWorkflow, /node scripts\/ai-analysis\.mjs/);
+  assert.match(analysisWorkflow, /MAIL_TO/);
   assert.equal(fs.existsSync(path.join(__dirname, '..', 'scripts', 'backup.mjs')), true);
   assert.equal(fs.existsSync(path.join(__dirname, '..', 'scripts', 'ai-analysis.mjs')), true);
 });
@@ -459,6 +463,11 @@ test('LINE webhook rate limits a single sender before API calls', () => {
 test('weekly AI analysis script reads current API field names', () => {
   const script = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'ai-analysis.mjs'), 'utf8');
 
+  assert.match(script, /nodemailer/);
+  assert.match(script, /sendMailReport/);
+  assert.match(script, /MAIL_USER/);
+  assert.match(script, /MAIL_PASS/);
+  assert.match(script, /MAIL_TO/);
   assert.match(script, /\/api\/system\/status/);
   assert.match(script, /status\.anthropicModel/);
   assert.match(script, /status\.semanticRagEnabled/);
