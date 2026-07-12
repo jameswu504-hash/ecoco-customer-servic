@@ -4,6 +4,7 @@ const {
   detectKnowledgeGap,
   loadServerConversationHistory,
   normalizeModelMessages,
+  stripKnowledgeGapMarker,
 } = require('./chat.routes');
 const { maskSensitiveText } = require('../services/privacy.service');
 
@@ -157,8 +158,9 @@ async function buildAiReply({
 
 async function storeLineConversation({ pool, sessionId, question, reply }) {
   const ts = new Date().toISOString();
+  const gap = detectKnowledgeGap(reply);
   const storedQuestion = maskSensitiveText(question);
-  const storedReply = maskSensitiveText(reply);
+  const storedReply = maskSensitiveText(stripKnowledgeGapMarker(reply));
 
   await pool.query(
     `INSERT INTO conversations (session_id, role, content, timestamp)
@@ -166,7 +168,6 @@ async function storeLineConversation({ pool, sessionId, question, reply }) {
     [sessionId, 'user', storedQuestion, ts, 'assistant', storedReply]
   );
 
-  const gap = detectKnowledgeGap(reply);
   if (gap.isGap) {
     await pool.query(
       'INSERT INTO unanswered_questions (session_id, question, reply, reason, timestamp) VALUES ($1, $2, $3, $4, $5)',
@@ -233,7 +234,7 @@ function createLineRouter({
       try {
         await replyToLine({
           replyToken: event.replyToken,
-          text: reply,
+          text: stripKnowledgeGapMarker(reply),
           channelAccessToken: config.channelAccessToken,
         });
       } catch (err) {

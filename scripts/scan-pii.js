@@ -1,6 +1,12 @@
 const fs = require('fs');
 const path = require('path');
-const { EMAIL_PATTERN, TW_MOBILE_PATTERN } = require('./anonymize-pii');
+const {
+  EMAIL_PATTERN,
+  LONG_NUMBER_PATTERN,
+  TW_ID_PATTERN,
+  TW_MOBILE_PATTERN,
+  countSensitiveLongNumbers,
+} = require('./anonymize-pii');
 
 const EXCLUDED_DIRS = new Set(['.git', 'node_modules', '.cache', 'dist', 'build']);
 const ALLOWED_EMAILS = new Set([
@@ -45,21 +51,28 @@ function scanFile(filePath) {
     filePath,
     phoneMatches: (content.match(TW_MOBILE_PATTERN) || []).length,
     emailMatches: emailMatches.length,
+    twIdMatches: (content.match(TW_ID_PATTERN) || []).length,
+    numberMatches: countSensitiveLongNumbers(content),
   };
 }
 
 function run() {
   const results = collectFiles(process.cwd())
     .map(scanFile)
-    .filter(result => result.phoneMatches > 0 || result.emailMatches > 0);
+    .filter(result => (
+      result.phoneMatches > 0
+      || result.emailMatches > 0
+      || result.twIdMatches > 0
+      || result.numberMatches > 0
+    ));
 
   if (results.length === 0) {
-    console.log('PII scan clean: no Taiwan mobile numbers or email addresses found.');
+    console.log('PII scan clean: no Taiwan mobile, email, Taiwan ID, or long number patterns found.');
     return;
   }
 
   for (const result of results) {
-    console.log(`${path.relative(process.cwd(), result.filePath)} phones=${result.phoneMatches} emails=${result.emailMatches}`);
+    console.log(`${path.relative(process.cwd(), result.filePath)} phones=${result.phoneMatches} emails=${result.emailMatches} twIds=${result.twIdMatches} longNumbers=${result.numberMatches}`);
   }
 
   console.log(`PII scan found ${results.length} file(s).`);

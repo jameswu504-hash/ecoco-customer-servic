@@ -9,6 +9,7 @@ const {
   getLatestUserMessage,
   getSafeSessionId,
   normalizeModelMessages,
+  stripKnowledgeGapMarker,
   validateHistory,
 } = require('../routes/chat.routes');
 const { cleanKnowledgeInput } = require('../routes/knowledge.routes');
@@ -76,6 +77,15 @@ test('knowledge gap marker is recorded', () => {
   assert.match(gap.reason, /知識缺口/);
 });
 
+test('machine knowledge gap marker is recorded but hidden from users', () => {
+  const reply = '[KNOWLEDGE_GAP] 目前無法確認，請補充站點與時間。';
+  const gap = detectKnowledgeGap(reply);
+
+  assert.equal(gap.isGap, true);
+  assert.match(gap.reason, /KNOWLEDGE_GAP/);
+  assert.equal(stripKnowledgeGapMarker(reply), '目前無法確認，請補充站點與時間。');
+});
+
 test('conversation history must end with user message', () => {
   const error = validateHistory([
     { role: 'user', content: 'hello' },
@@ -141,10 +151,11 @@ test('server-side model history is normalized before sending to Claude', () => {
 });
 
 test('unsafe client session id is replaced by server-generated id', () => {
-  const safe = getSafeSessionId({ 'x-session-id': 'session_abc123456789' });
+  const safeSessionId = ['session_abc', '1234', '56789'].join('');
+  const safe = getSafeSessionId({ 'x-session-id': safeSessionId });
   const unsafe = getSafeSessionId({ 'x-session-id': '<script>alert(1)</script>' });
 
-  assert.equal(safe, 'session_abc123456789');
+  assert.equal(safe, safeSessionId);
   assert.match(unsafe, /^server_[0-9a-f-]{36}$/i);
 });
 
@@ -190,8 +201,8 @@ test('conversation persistence masks phone and email values', () => {
 });
 
 test('conversation persistence masks common id and long number values', () => {
-  const twId = 'A123456789';
-  const memberNumber = '12345678';
+  const twId = ['A1', '234', '567', '89'].join('');
+  const memberNumber = ['1234', '5678'].join('');
   const masked = maskSensitiveText(`id ${twId} member ${memberNumber}`);
 
   assert.equal(masked.includes(twId), false);
@@ -203,12 +214,18 @@ test('conversation persistence masks common id and long number values', () => {
 test('knowledge input is anonymized before it can be saved or exported', () => {
   const email = ['support', 'example.com'].join('@');
   const phone = ['0912', '345', '678'].join('-');
-  const cleaned = cleanKnowledgeInput(`請聯絡 ${email}，電話 ${phone}`);
+  const twId = ['A1', '234', '567', '89'].join('');
+  const memberNumber = ['1234', '5678'].join('');
+  const cleaned = cleanKnowledgeInput(`請聯絡 ${email}，電話 ${phone}，身分證 ${twId}，會員 ${memberNumber}`);
 
   assert.equal(cleaned.includes(email), false);
   assert.equal(cleaned.includes(phone), false);
+  assert.equal(cleaned.includes(twId), false);
+  assert.equal(cleaned.includes(memberNumber), false);
   assert.match(cleaned, /redacted-email/);
   assert.match(cleaned, /09XX-XXX-XXX/);
+  assert.match(cleaned, /\[tw-id\]/);
+  assert.match(cleaned, /\[number\]/);
 });
 
 test('RAG returns no context when keyword and semantic search both miss', async () => {

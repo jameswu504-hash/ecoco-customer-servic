@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const express = require('express');
 const { maskSensitiveText } = require('../services/privacy.service');
 
+const KNOWLEDGE_GAP_MACHINE_MARKER = '[KNOWLEDGE_GAP]';
 const KNOWLEDGE_GAP_MARKERS = [
   '沒有確切資料',
   '目前沒有足夠資料',
@@ -14,6 +15,13 @@ function detectKnowledgeGap(reply) {
     return { isGap: false, reason: '' };
   }
 
+  if (reply.includes(KNOWLEDGE_GAP_MACHINE_MARKER)) {
+    return {
+      isGap: true,
+      reason: `AI reply included knowledge gap marker: ${KNOWLEDGE_GAP_MACHINE_MARKER}`,
+    };
+  }
+
   const marker = KNOWLEDGE_GAP_MARKERS.find(text => reply.includes(text));
   if (!marker) {
     return { isGap: false, reason: '' };
@@ -23,6 +31,10 @@ function detectKnowledgeGap(reply) {
     isGap: true,
     reason: `AI 回覆包含知識缺口標記：「${marker}」`,
   };
+}
+
+function stripKnowledgeGapMarker(reply) {
+  return String(reply || '').replaceAll(KNOWLEDGE_GAP_MACHINE_MARKER, '').trim();
 }
 
 function validateHistory(history) {
@@ -158,23 +170,21 @@ function createChatRouter({
         messages: modelMessages,
       });
 
-      const reply = response.content.find(b => b.type === 'text')?.text
+      const rawReply = response.content.find(b => b.type === 'text')?.text
         ?? '目前無法產生回覆，請稍後再試或聯絡客服。';
+      const gap = detectKnowledgeGap(rawReply);
+      const reply = stripKnowledgeGapMarker(rawReply);
 
       try {
         const ts = new Date().toISOString();
         const storedQuestion = maskSensitiveText(userMsg.content);
         const storedReply = maskSensitiveText(reply);
         await pool.query(
-          'INSERT INTO conversations (session_id, role, content, timestamp) VALUES ($1, $2, $3, $4)',
-          [sessionId, 'user', storedQuestion, ts]
-        );
-        await pool.query(
-          'INSERT INTO conversations (session_id, role, content, timestamp) VALUES ($1, $2, $3, $4)',
-          [sessionId, 'assistant', storedReply, ts]
+          `INSERT INTO conversations (session_id, role, content, timestamp)
+           VALUES ($1, $2, $3, $4), ($1, $5, $6, $4)`,
+          [sessionId, 'user', storedQuestion, ts, 'assistant', storedReply]
         );
 
-        const gap = detectKnowledgeGap(reply);
         if (gap.isGap) {
           await pool.query(
             'INSERT INTO unanswered_questions (session_id, question, reply, reason, timestamp) VALUES ($1, $2, $3, $4, $5)',
@@ -271,6 +281,7 @@ function createChatRouter({
 }
 
 module.exports = {
+  KNOWLEDGE_GAP_MACHINE_MARKER,
   KNOWLEDGE_GAP_MARKERS,
   createChatRouter,
   detectKnowledgeGap,
@@ -278,5 +289,6 @@ module.exports = {
   getSafeSessionId,
   loadServerConversationHistory,
   normalizeModelMessages,
+  stripKnowledgeGapMarker,
   validateHistory,
 };

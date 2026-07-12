@@ -1,18 +1,28 @@
 const fs = require('fs');
 const path = require('path');
+const {
+  EMAIL_PATTERN,
+  LONG_NUMBER_PATTERN,
+  TW_ID_PATTERN,
+  TW_MOBILE_PATTERN,
+  countSensitiveLongNumbers,
+  isLikelyPublicLongNumber,
+} = require('../services/privacy.service');
 
 const DEFAULT_TARGETS = [
   path.join('data', 'ecoco-knowledge-import.json'),
   path.join('data', 'ecoco-ai-customer-service-database.json'),
 ];
 
-const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
-const TW_MOBILE_PATTERN = /(?<!\d)(?:\+?886[-\s]?)?9\d{2}[-\s]?\d{3}[-\s]?\d{3}(?!\d)|(?<!\d)09\d{2}[-\s]?\d{3}[-\s]?\d{3}(?!\d)/g;
-
 function anonymizeText(input) {
-  return String(input || '')
+  const content = String(input || '');
+  return content
     .replace(EMAIL_PATTERN, 'redacted-email')
-    .replace(TW_MOBILE_PATTERN, '09XX-XXX-XXX');
+    .replace(TW_MOBILE_PATTERN, '09XX-XXX-XXX')
+    .replace(TW_ID_PATTERN, '[tw-id]')
+    .replace(LONG_NUMBER_PATTERN, (match, offset) => (
+      isLikelyPublicLongNumber(match, offset, content) ? match : '[number]'
+    ));
 }
 
 function anonymizeJsonValue(value) {
@@ -60,6 +70,8 @@ function anonymizeFile(filePath) {
     changed,
     emailMatches: (original.match(EMAIL_PATTERN) || []).length,
     phoneMatches: (original.match(TW_MOBILE_PATTERN) || []).length,
+    twIdMatches: (original.match(TW_ID_PATTERN) || []).length,
+    numberMatches: countSensitiveLongNumbers(original),
   };
 }
 
@@ -77,12 +89,14 @@ function run() {
   const changedCount = results.filter(result => result.changed).length;
   const emailCount = results.reduce((sum, result) => sum + result.emailMatches, 0);
   const phoneCount = results.reduce((sum, result) => sum + result.phoneMatches, 0);
+  const twIdCount = results.reduce((sum, result) => sum + result.twIdMatches, 0);
+  const numberCount = results.reduce((sum, result) => sum + result.numberMatches, 0);
 
   for (const result of results) {
     const relative = path.relative(process.cwd(), result.filePath);
-    console.log(`${result.changed ? 'updated' : 'clean'} ${relative} phones=${result.phoneMatches} emails=${result.emailMatches}`);
+    console.log(`${result.changed ? 'updated' : 'clean'} ${relative} phones=${result.phoneMatches} emails=${result.emailMatches} twIds=${result.twIdMatches} longNumbers=${result.numberMatches}`);
   }
-  console.log(`Anonymization complete: files=${files.length} changed=${changedCount} phones=${phoneCount} emails=${emailCount}`);
+  console.log(`Anonymization complete: files=${files.length} changed=${changedCount} phones=${phoneCount} emails=${emailCount} twIds=${twIdCount} longNumbers=${numberCount}`);
 }
 
 if (require.main === module) {
@@ -91,7 +105,11 @@ if (require.main === module) {
 
 module.exports = {
   EMAIL_PATTERN,
+  LONG_NUMBER_PATTERN,
+  TW_ID_PATTERN,
   TW_MOBILE_PATTERN,
   anonymizeJsonValue,
   anonymizeText,
+  countSensitiveLongNumbers,
+  isLikelyPublicLongNumber,
 };
