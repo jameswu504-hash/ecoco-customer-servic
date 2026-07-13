@@ -17,9 +17,11 @@ const { maskSensitiveText } = require('../services/privacy.service');
 const {
   getLineConfig,
   isLineRateLimited,
+  safeCompare,
   toLineText,
   verifyLineSignature,
 } = require('../routes/line.routes');
+const { normalizeAdminNote, MAX_ADMIN_NOTE_CHARS } = require('../routes/unanswered.routes');
 const {
   cleanWikiEntryInput,
   isInternalMode,
@@ -324,12 +326,12 @@ test('public chat response does not expose RAG source metadata', () => {
 
 test('negative feedback is routed to unanswered questions for maintenance', () => {
   const chatRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'chat.routes.js'), 'utf8');
-  const index = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+  const indexJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.js'), 'utf8');
 
   assert.match(chatRoute, /type === 'negative'/);
   assert.match(chatRoute, /INSERT INTO unanswered_questions/);
   assert.match(chatRoute, /使用者點選「需改善」/);
-  assert.match(index, /"x-session-id": SESSION_ID/);
+  assert.match(indexJs, /"x-session-id": SESSION_ID/);
 });
 
 test('schema includes report and dashboard performance indexes', () => {
@@ -389,10 +391,27 @@ test('server handles database pool errors and Render shutdown signals', () => {
   assert.match(server, /pool\.end\(\)/);
 });
 
-test('CSP allows dashboard inline event handlers until dashboard scripts are refactored', () => {
+test('CSP blocks inline JavaScript and inline style execution', () => {
   const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+  const dashboardHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard.html'), 'utf8');
+  const inlineHandlerPattern = /\son(?:click|change|input|keydown|submit)\s*=|\.onclick\s*=/i;
+  const inlineScriptPattern = /<script(?![^>]*\bsrc=)[^>]*>/i;
+  const inlineStylePattern = /\sstyle\s*=/i;
+  const inlineStyleBlockPattern = /<style[\s>]/i;
 
-  assert.match(server, /scriptSrcAttr:\s*\[\s*["']'unsafe-inline'["']/);
+  assert.doesNotMatch(server, /scriptSrc:\s*\[[^\]]*unsafe-inline/);
+  assert.match(server, /scriptSrcAttr:\s*\[\s*["']'none'["']/);
+  assert.doesNotMatch(server, /styleSrc:\s*\[[^\]]*unsafe-inline/);
+  assert.match(server, /styleSrcAttr:\s*\[\s*["']'none'["']/);
+  assert.doesNotMatch(indexHtml, inlineHandlerPattern);
+  assert.doesNotMatch(dashboardHtml, inlineHandlerPattern);
+  assert.doesNotMatch(indexHtml, inlineScriptPattern);
+  assert.doesNotMatch(dashboardHtml, inlineScriptPattern);
+  assert.doesNotMatch(indexHtml, inlineStylePattern);
+  assert.doesNotMatch(dashboardHtml, inlineStylePattern);
+  assert.doesNotMatch(indexHtml, inlineStyleBlockPattern);
+  assert.doesNotMatch(dashboardHtml, inlineStyleBlockPattern);
 });
 
 test('LINE webhook signature verification accepts only valid signatures', () => {
@@ -405,6 +424,14 @@ test('LINE webhook signature verification accepts only valid signatures', () => 
 
   assert.equal(verifyLineSignature({ body, signature: validSignature, channelSecret }), true);
   assert.equal(verifyLineSignature({ body, signature: 'invalid', channelSecret }), false);
+});
+
+test('LINE signature comparison pads unequal lengths before timing-safe compare', () => {
+  const lineRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'line.routes.js'), 'utf8');
+
+  assert.equal(safeCompare('abc', 'abc'), true);
+  assert.equal(safeCompare('abc', 'abcd'), false);
+  assert.equal(lineRoute.includes('left.length !== right.length) return false'), false);
 });
 
 test('LINE route is wired and documented through environment variables', () => {
@@ -548,4 +575,38 @@ test('internal wiki routes are mounted only for internal app mode', () => {
   assert.match(server, /createInternalRouter/);
   assert.match(envExample, /APP_MODE=customer/);
   assert.match(envExample, /STAFF_KEY=/);
+});
+
+test('internal wiki async handlers are wrapped with JSON error handling', () => {
+  const internalRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'internal.routes.js'), 'utf8');
+
+  assert.match(internalRoute, /function asyncHandler/);
+  assert.match(internalRoute, /catch\(next\)/);
+  assert.match(internalRoute, /Internal wiki route error/);
+});
+
+test('knowledge writes use transaction advisory locks around duplicate checks', () => {
+  const knowledgeRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'knowledge.routes.js'), 'utf8');
+
+  assert.match(knowledgeRoute, /pg_advisory_xact_lock/);
+  assert.match(knowledgeRoute, /await db\.query\('BEGIN'\)/);
+  assert.match(knowledgeRoute, /await db\.query\('COMMIT'\)/);
+  assert.match(knowledgeRoute, /Duplicate active knowledge category/);
+});
+
+test('admin notes are truncated before database writes', () => {
+  const longNote = 'x'.repeat(MAX_ADMIN_NOTE_CHARS + 50);
+  const normalized = normalizeAdminNote(`  ${longNote}  `);
+
+  assert.equal(normalized.length, MAX_ADMIN_NOTE_CHARS);
+});
+
+test('legacy knowledge cache is capped to avoid unbounded prompt fallback size', () => {
+  const { getKnowledgeCacheMaxChars, limitKnowledgeCache } = require('../server');
+  const env = { KNOWLEDGE_CACHE_MAX_CHARS: '1200' };
+  const capped = limitKnowledgeCache('x'.repeat(1500), env);
+
+  assert.equal(getKnowledgeCacheMaxChars(env), 1200);
+  assert.ok(capped.length < 1400);
+  assert.match(capped, /Knowledge cache truncated/);
 });

@@ -1,5 +1,11 @@
 const express = require('express');
 
+const MAX_ADMIN_NOTE_CHARS = 1000;
+
+function normalizeAdminNote(value) {
+  return String(value || '').trim().slice(0, MAX_ADMIN_NOTE_CHARS);
+}
+
 function createUnansweredRouter({ pool, requireAdminKey }) {
   const router = express.Router();
 
@@ -26,7 +32,7 @@ function createUnansweredRouter({ pool, requireAdminKey }) {
     const id = Number(req.params.id);
     const allowedStatuses = new Set(['pending', 'resolved', 'ignored', 'manual']);
     const status = String(req.body.status || '').trim();
-    const note = String(req.body.note || '').trim();
+    const note = normalizeAdminNote(req.body.note);
 
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'ID 格式錯誤' });
     if (!allowedStatuses.has(status)) return res.status(400).json({ error: '不支援的處理狀態' });
@@ -61,4 +67,8 @@ function createUnansweredRouter({ pool, requireAdminKey }) {
   return router;
 }
 
-module.exports = { createUnansweredRouter };
+module.exports = {
+  MAX_ADMIN_NOTE_CHARS,
+  createUnansweredRouter,
+  normalizeAdminNote,
+};

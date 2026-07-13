@@ -26,10 +26,11 @@ function getLineConfig(env = process.env) {
 }
 
 function safeCompare(a, b) {
-  const left = Buffer.from(String(a || ''));
+  const leftRaw = Buffer.from(String(a || ''));
   const right = Buffer.from(String(b || ''));
-  if (left.length !== right.length) return false;
-  return crypto.timingSafeEqual(left, right);
+  const left = Buffer.alloc(right.length);
+  leftRaw.copy(left, 0, 0, Math.min(leftRaw.length, right.length));
+  return crypto.timingSafeEqual(left, right) && leftRaw.length === right.length;
 }
 
 function verifyLineSignature({ body, signature, channelSecret }) {
@@ -267,6 +268,7 @@ module.exports = {
   getLineRateLimitMax,
   isLineRateLimited,
   replyToLine,
+  safeCompare,
   storeLineConversation,
   toLineText,
   verifyLineSignature,

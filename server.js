@@ -30,9 +30,10 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
-      scriptSrcAttr: ["'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      scriptSrc: ["'self'", 'https://cdn.jsdelivr.net'],
+      scriptSrcAttr: ["'none'"],
+      styleSrc: ["'self'", 'https://fonts.googleapis.com'],
+      styleSrcAttr: ["'none'"],
       fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
       imgSrc: ["'self'", 'data:'],
       connectSrc: ["'self'"],
@@ -86,6 +87,20 @@ const ratingLimiter = rateLimit({
 });
 
 let knowledgeCache = '';
+const DEFAULT_KNOWLEDGE_CACHE_MAX_CHARS = 250000;
+
+function getKnowledgeCacheMaxChars(env = process.env) {
+  const raw = Number(env.KNOWLEDGE_CACHE_MAX_CHARS || DEFAULT_KNOWLEDGE_CACHE_MAX_CHARS);
+  if (!Number.isFinite(raw) || raw < 1000) return DEFAULT_KNOWLEDGE_CACHE_MAX_CHARS;
+  return Math.floor(raw);
+}
+
+function limitKnowledgeCache(content, env = process.env) {
+  const text = String(content || '');
+  const maxChars = getKnowledgeCacheMaxChars(env);
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}\n\n[Knowledge cache truncated at ${maxChars} characters; RAG chunks remain the primary answer source.]`;
+}
 
 function readJsonFile(relativePath) {
   const filePath = path.join(__dirname, relativePath);
@@ -155,7 +170,7 @@ async function refreshKnowledgeCache() {
   const { rows } = await pool.query(
     "SELECT category, content FROM knowledge_sections WHERE COALESCE(archived_at, '') = '' ORDER BY sort_order ASC, id ASC"
   );
-  knowledgeCache = rows.map(r => `## ${r.category}\n${r.content}`).join('\n\n');
+  knowledgeCache = limitKnowledgeCache(rows.map(r => `## ${r.category}\n${r.content}`).join('\n\n'));
   console.log('Knowledge cache refreshed:', knowledgeCache.length);
 }
 
@@ -450,6 +465,8 @@ module.exports = {
   start,
   syncKnowledgeFromImportFile,
   buildHealthStatus,
+  getKnowledgeCacheMaxChars,
+  limitKnowledgeCache,
   shutdown,
   validateRuntimeConfig,
   isInternalMode,

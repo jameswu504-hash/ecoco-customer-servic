@@ -8,12 +8,16 @@ const {
   validateWikiEntry,
 } = require('../services/internal-wiki.service');
 
+function asyncHandler(handler) {
+  return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+}
+
 function createInternalRouter({ pool, requireStaffKey }) {
   const router = express.Router();
 
   router.use(requireStaffKey);
 
-  router.get('/status', async (req, res) => {
+  router.get('/status', asyncHandler(async (req, res) => {
     const [{ rows: entryCounts }, { rows: departmentCounts }] = await Promise.all([
       pool.query('SELECT COUNT(*) AS count FROM internal_wiki_entries WHERE archived_at IS NULL'),
       pool.query(
@@ -33,9 +37,9 @@ function createInternalRouter({ pool, requireStaffKey }) {
         count: Number(row.count || 0),
       })),
     });
-  });
+  }));
 
-  router.get('/wiki', async (req, res) => {
+  router.get('/wiki', asyncHandler(async (req, res) => {
     const includeArchived = String(req.query.include_archived || '').toLowerCase() === 'true';
     const department = normalizeDepartment(req.query.department);
     const params = [];
@@ -56,9 +60,9 @@ function createInternalRouter({ pool, requireStaffKey }) {
       params
     );
     res.json(rows.map(rowToWikiEntry));
-  });
+  }));
 
-  router.get('/wiki/search', async (req, res) => {
+  router.get('/wiki/search', asyncHandler(async (req, res) => {
     const q = normalizeSearchQuery(req.query.q);
     const department = normalizeDepartment(req.query.department);
     const visibility = normalizeVisibility(req.query.visibility);
@@ -94,9 +98,9 @@ function createInternalRouter({ pool, requireStaffKey }) {
       visibility,
       results: rows.map(rowToWikiEntry),
     });
-  });
+  }));
 
-  router.post('/wiki', async (req, res) => {
+  router.post('/wiki', asyncHandler(async (req, res) => {
     const entry = cleanWikiEntryInput(req.body);
     const validationError = validateWikiEntry(entry);
     if (validationError) return res.status(400).json({ error: validationError });
@@ -120,9 +124,9 @@ function createInternalRouter({ pool, requireStaffKey }) {
       ]
     );
     res.json({ success: true, id: rows[0].id });
-  });
+  }));
 
-  router.put('/wiki/:id', async (req, res) => {
+  router.put('/wiki/:id', asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id.' });
 
@@ -138,9 +142,9 @@ function createInternalRouter({ pool, requireStaffKey }) {
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'Wiki entry not found.' });
     res.json({ success: true });
-  });
+  }));
 
-  router.delete('/wiki/:id', async (req, res) => {
+  router.delete('/wiki/:id', asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id.' });
 
@@ -150,9 +154,9 @@ function createInternalRouter({ pool, requireStaffKey }) {
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'Wiki entry not found.' });
     res.json({ success: true });
-  });
+  }));
 
-  router.patch('/wiki/:id/restore', async (req, res) => {
+  router.patch('/wiki/:id/restore', asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id.' });
 
@@ -162,11 +166,17 @@ function createInternalRouter({ pool, requireStaffKey }) {
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'Wiki entry not found.' });
     res.json({ success: true });
+  }));
+
+  router.use((err, req, res, next) => {
+    console.error('Internal wiki route error:', err.message);
+    res.status(500).json({ error: 'Internal wiki request failed.' });
   });
 
   return router;
 }
 
 module.exports = {
+  asyncHandler,
   createInternalRouter,
 };

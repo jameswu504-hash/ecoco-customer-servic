@@ -1,64 +1,61 @@
-# ECOCO AI Customer Service
+# ECOCO AI 客服系統
 
-ECOCO AI Customer Service 是一套提供 ECOCO 使用者即時客服回覆、內部知識庫維護、知識缺口追蹤與營運報表的 AI 客服系統。
+ECOCO AI 客服系統是一套以官方知識庫為核心的客服輔助與自動回覆服務。系統支援網站客服、客服後台、PostgreSQL 知識庫、RAG 檢索、知識缺口紀錄、使用者回饋、主管報表、LINE Official Account Webhook 串接準備，以及 n8n / GitHub Actions 維運自動化。
 
-系統以 Node.js、Express、PostgreSQL、Claude API 與 RAG 檢索流程組成。客服回答會先查詢 ECOCO 知識庫，再由模型依照品牌語氣與風險規則產生回覆。
+本專案目標不是另外建立一套分散的 FAQ，而是讓網站、後台與未來 LINE@ 回覆共用同一份知識庫與同一套風險控管規則。
 
-## 文件入口
+## 目前狀態
 
-| 文件 | 對象 | 用途 |
-| --- | --- | --- |
-| [內部文件索引](docs/README.md) | 所有人 | 快速找到對應文件 |
-| [客服人員操作指南](docs/CUSTOMER_SUPPORT_GUIDE.md) | 客服、營運 | 日常後台操作、知識缺口、回覆風險 |
-| [PRD](docs/PRD_ECOCO_AI_CUSTOMER_SERVICE.md) | 主管、PM、維護者 | 產品目標、功能範圍、成功指標 |
-| [客服 Flow 圖底稿](docs/CUSTOMER_SERVICE_FLOW.md) | PM、主管、維護者 | Whimsical 流程圖繪製依據 |
-| [維運與交接手冊](docs/OPERATIONS_HANDOFF_GUIDE.md) | 維護者、工程協作者 | 部署、資料庫、交接與例行維護 |
-| [部署與環境手冊](docs/DEPLOYMENT_RUNBOOK.md) | 維護者 | Render、API key、PostgreSQL、健康檢查 |
-| [資料字典](docs/DATA_DICTIONARY.md) | 維護者、工程協作者 | PostgreSQL 資料表與 JSON 檔案說明 |
-| [資料來源清單](docs/DATA_SOURCES.md) | 維護者、客服主管 | 知識來源、使用限制與更新原則 |
-
-## 系統功能
-
-- 使用者可在前台詢問 ECOCO 服務、點數、站點、回收規則與 App 使用問題。
-- AI 會根據 PostgreSQL 知識庫與 RAG chunks 產生回答。
-- 高風險問題會套用保守回答規則，避免承諾補點、退款、補償或已完成處理。
-- 後台可查看對話紀錄、使用者評分、知識缺口與主管報表。
-- 後台可新增、修改、封存知識，並匯出目前 PostgreSQL 知識庫為 JSON。
-- 知識庫資料可透過 Git JSON 保存正式版本，方便交接與回復。
+- 網站 AI 客服可依 ECOCO 官方知識庫回答常見問題。
+- 後台可維護 `knowledge_sections`，新增或封存知識後會重建 RAG chunks。
+- 支援 pgvector / embedding 語意檢索；若 OpenAI embedding 失敗，會降級為關鍵字檢索。
+- 對話、評分與知識缺口會寫入 PostgreSQL。
+- LINE Messaging API Webhook 路由已預留，正式串接需公司提供 LINE Developers 權限。
+- n8n workflow 範本已整理，但是否採用 n8n 仍需依公司維運決策確認。
 
 ## 系統架構
 
 ```text
-使用者前台
+使用者網站 / LINE@
   -> Express API
   -> PostgreSQL knowledge_sections / knowledge_chunks
-  -> Claude API
-  -> AI 回覆
+  -> RAG 檢索與風險規則
+  -> Claude API 產生回覆
   -> conversations / ratings / unanswered_questions
-  -> 後台 dashboard
+  -> 客服後台與營運報表
 ```
 
-| 元件 | 說明 |
+| 模組 | 用途 |
 | --- | --- |
-| `server.js` | 後端入口、服務啟動、資料庫初始化與 route 註冊 |
-| `routes/` | API 模組，包含聊天、後台、知識庫、報表與知識缺口 |
-| `services/` | RAG、prompt、隱私遮罩與報表邏輯 |
-| `db/schema.js` | PostgreSQL 資料表 schema |
-| `public/index.html` | 使用者端 AI 客服前台 |
-| `public/dashboard.html` | 內部客服後台 |
-| `data/ecoco-knowledge-import.json` | 可匯入 PostgreSQL 的正式知識包 |
-| `data/ecoco-ai-customer-service-database.json` | 知識整合底稿與來源紀錄 |
+| `server.js` | Express 啟動入口、安全標頭、健康檢查與 route 掛載 |
+| `routes/` | 各 API 路由：客服對話、後台、知識庫、報表、LINE、內部 wiki |
+| `services/` | RAG、prompt、報表、隱私遮罩、內部知識服務 |
+| `db/schema.js` | PostgreSQL schema 初始化 |
+| `public/index.html` | 對外客服前台 |
+| `public/dashboard.html` | 管理後台 |
+| `data/ecoco-knowledge-import.json` | 正式匯入 PostgreSQL 的知識庫 JSON |
+| `data/ecoco-ai-customer-service-database.json` | 整合來源資料與稽核用資料庫 |
+| `n8n/workflows/` | n8n workflow 範本 |
+| `.github/workflows/` | GitHub Actions 自動備份與健檢 |
 
-## 環境需求
+## 必要環境變數
 
-- Node.js 20+
-- npm
-- PostgreSQL database URL
-- Anthropic API key
-- Admin key
-- OpenAI API key，選填，用於 embedding 語意檢索
+正式部署時，密鑰只放在 Render Environment Variables、GitHub Secrets 或 n8n Credentials，不得寫入 Git。
 
-## 本地啟動
+| 變數 | 必填 | 用途 |
+| --- | --- | --- |
+| `DATABASE_URL` | 是 | PostgreSQL / Neon 連線字串 |
+| `ANTHROPIC_API_KEY` | 是 | Claude 回覆生成 |
+| `ADMIN_KEY` | 是 | 後台與管理 API 存取 |
+| `OPENAI_API_KEY` | 選填 | embedding / pgvector 語意檢索 |
+| `CONVERSATION_RETENTION_DAYS` | 建議 | 對話紀錄保存天數，建議 `180` |
+| `KNOWLEDGE_AUTO_SYNC` | 選填 | 是否啟動時從 Git JSON 同步知識庫 |
+| `REBUILD_KNOWLEDGE_CHUNKS_ON_START` | 選填 | 是否啟動時強制重建 RAG chunks |
+| `LINE_CHANNEL_SECRET` | LINE 上線需要 | 驗證 LINE Webhook |
+| `LINE_CHANNEL_ACCESS_TOKEN` | LINE 上線需要 | 呼叫 LINE Reply API |
+| `STAFF_KEY` | 內部 wiki 模式需要 | 內部人員入口驗證 |
+
+## 本機開發
 
 ```bash
 npm install
@@ -66,55 +63,94 @@ copy .env.example .env
 npm start
 ```
 
-本地預設網址：
+本機預設入口：
 
 | 頁面 | URL |
 | --- | --- |
 | 客服前台 | `http://localhost:3000` |
-| 後台 | `http://localhost:3000/dashboard.html` |
+| 管理後台 | `http://localhost:3000/dashboard.html` |
 | 健康檢查 | `http://localhost:3000/healthz` |
-| 管理者詳細狀態 | `http://localhost:3000/api/system/status`，需 `x-admin-key` |
-
-## 環境變數
-
-| 變數 | 必要性 | 用途 |
-| --- | --- | --- |
-| `DATABASE_URL` | 必填 | PostgreSQL 連線字串 |
-| `ANTHROPIC_API_KEY` | 必填 | Claude API key |
-| `ADMIN_KEY` | 必填 | 後台與管理 API 權限 |
-| `OPENAI_API_KEY` | 建議 | 啟用 embedding 與 pgvector 語意檢索 |
-| `KNOWLEDGE_AUTO_SYNC` | 選填 | 控制 Git JSON 是否於啟動時同步到 PostgreSQL |
-| `REBUILD_KNOWLEDGE_CHUNKS_ON_START` | 選填 | 設為 `always` 時強制重建 RAG chunks |
-| `CONVERSATION_RETENTION_DAYS` | 選填 | 對話紀錄保存天數 |
-| `PGSSL` | 視環境 | PostgreSQL SSL 設定 |
-
-機密資料不得提交到 GitHub 或 GitLab，只能放在 Render Environment Variables 或本機 `.env`。
+| 詳細系統狀態 | `http://localhost:3000/api/system/status`，需 `x-admin-key` |
 
 ## 常用指令
 
 ```bash
-npm.cmd run lint
-npm.cmd test
-npm.cmd run scan:pii
-npm.cmd run build:knowledge
-npm.cmd run audit:knowledge
+npm run lint
+npm test
+npm run scan:pii
+npm run build:knowledge
+npm run audit:knowledge
 ```
 
-## 知識庫維護原則
+上線或交接前至少執行：
 
-PostgreSQL 是線上實際執行資料庫，AI 會讀取其中的 `knowledge_sections` 與 `knowledge_chunks`。
+```bash
+npm run lint
+npm test
+npm run scan:pii
+git diff --check
+```
 
-Git 裡的 `data/ecoco-knowledge-import.json` 是正式版本備份，不會因為後台修改而自動更新。重大改版、交接或備份前，請從後台下載 JSON，人工確認後放回 Git 並 commit / push。
+## 知識庫維護流程
 
-日常小修可直接在後台進行；重大版本更新需回寫 Git。
+1. 客服或維護者在後台新增、修改或封存知識。
+2. PostgreSQL 立即更新，AI 回覆會使用最新知識。
+3. 大改版、交接或備份前，在後台下載 JSON。
+4. 人工確認 JSON 後，覆蓋 `data/ecoco-knowledge-import.json`。
+5. commit / push，讓 Git 成為正式版本紀錄。
 
-## 安全原則
+注意：後台下載 JSON 只是把 PostgreSQL 目前狀態匯出成檔案，不會自動寫回 GitHub。
 
-- 不提交 API key、token、資料庫密碼或 `.env`。
-- 不提交真實手機、Email、會員資料或可識別個資。
-- 高風險客服問題不可讓 AI 承諾補點、退款、賠償或已完成處理。
-- 對話紀錄與使用者輸入需進行個資遮罩與保存期限評估。
+## LINE@ 串接方式
 
-## 專案狀態
+本專案採用 LINE Official Account Messaging API，不使用 LINE 後台內建的 AI 聊天機器人作為主要客服入口。
 
-目前系統已具備可運作的客服前台、內部後台、PostgreSQL 知識庫、RAG 檢索、知識缺口紀錄、使用者評分、主管報表與部署文件。後續重點為知識品質維護、語意檢索穩定性、資料保存政策與正式營運流程。
+正式串接流程：
+
+1. 公司提供 LINE Developers Messaging API Channel 權限。
+2. 將 `LINE_CHANNEL_SECRET` 與 `LINE_CHANNEL_ACCESS_TOKEN` 設定到 Render。
+3. 在 LINE Developers 設定 Webhook URL：
+
+```text
+https://ecoco-customer-servic.onrender.com/api/line/webhook
+```
+
+4. 啟用 Webhook 並按 Verify。
+5. 用測試帳號傳訊息，確認 AI 回覆、對話紀錄與知識缺口都正常。
+6. 檢查 LINE OA 內建自動回覆，避免和本系統重複回覆。
+
+詳細步驟請見 [`docs/LINE_INTEGRATION_GUIDE.md`](docs/LINE_INTEGRATION_GUIDE.md)。
+
+## 維運文件
+
+| 文件 | 用途 |
+| --- | --- |
+| [`docs/README.md`](docs/README.md) | 內部文件索引 |
+| [`docs/CUSTOMER_SUPPORT_GUIDE.md`](docs/CUSTOMER_SUPPORT_GUIDE.md) | 客服人員操作指南 |
+| [`docs/OPERATIONS_HANDOFF_GUIDE.md`](docs/OPERATIONS_HANDOFF_GUIDE.md) | 維護與交接總整理 |
+| [`docs/DEPLOYMENT_RUNBOOK.md`](docs/DEPLOYMENT_RUNBOOK.md) | Render 部署、環境變數與故障排查 |
+| [`docs/GO_LIVE_CHECKLIST.md`](docs/GO_LIVE_CHECKLIST.md) | 上線前檢查表 |
+| [`docs/LINE_INTEGRATION_GUIDE.md`](docs/LINE_INTEGRATION_GUIDE.md) | LINE@ 串接說明 |
+| [`docs/N8N_INTEGRATION_GUIDE.md`](docs/N8N_INTEGRATION_GUIDE.md) | n8n 自動化整合方式 |
+| [`docs/DATA_DICTIONARY.md`](docs/DATA_DICTIONARY.md) | PostgreSQL 與 JSON 欄位說明 |
+| [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) | 知識來源與資料治理說明 |
+| [`docs/PRD_ECOCO_AI_CUSTOMER_SERVICE.md`](docs/PRD_ECOCO_AI_CUSTOMER_SERVICE.md) | 產品需求文件 |
+
+## 安全與資料治理
+
+- API key、database URL、Admin Key、LINE token 不得 commit 到 Git。
+- 對話紀錄可能包含個資，寫入前會進行基本遮罩。
+- `scan:pii` 用於檢查 repo 中是否仍有手機、email、token 等敏感資料。
+- `/healthz` 只回基本狀態；詳細系統資訊需使用 Admin Key 查 `/api/system/status`。
+- 後台 API 使用 `x-admin-key` 驗證。
+- LINE Webhook 需驗證 `X-Line-Signature`。
+
+## 上線判斷
+
+目前系統已具備試營運條件。正式接入 ECOCO LINE@ 前，仍需確認：
+
+- 公司正式 Claude / OpenAI API key 與帳務歸屬。
+- 公司正式 Render / PostgreSQL / n8n 或 GitHub Actions 維運方式。
+- LINE Developers 權限與 Webhook 設定權限。
+- 客服人員是否已理解知識庫維護、知識缺口處理與 JSON 備份流程。
+- 已完成小範圍測試帳號驗收，再逐步導入正式流量。

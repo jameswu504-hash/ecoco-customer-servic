@@ -18,6 +18,14 @@ async function findDuplicateCategory(pool, category, ignoreId = null) {
   return rows[0] || null;
 }
 
+async function lockCategoryForWrite(db, category) {
+  await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [category]);
+}
+
+async function rollbackQuietly(db) {
+  await db.query('ROLLBACK').catch(() => {});
+}
+
 function createKnowledgeRouter({
   pool,
   requireAdminKey,
@@ -75,7 +83,7 @@ function createKnowledgeRouter({
       });
     } catch (err) {
       console.error('Knowledge overview error:', err.message);
-      res.status(500).json({ error: '讀取知識庫總覽失敗' });
+      res.status(500).json({ error: 'Failed to load knowledge overview.' });
     }
   });
 
@@ -91,7 +99,7 @@ function createKnowledgeRouter({
       res.json(rows);
     } catch (dbErr) {
       console.error('DB knowledge sections query error:', dbErr.message);
-      res.status(500).json({ error: '讀取知識分類失敗' });
+      res.status(500).json({ error: 'Failed to load knowledge sections.' });
     }
   });
 
@@ -109,7 +117,7 @@ function createKnowledgeRouter({
       const payload = {
         generated_at: new Date().toISOString(),
         source: 'PostgreSQL knowledge_sections export',
-        notes: '由 PostgreSQL 匯出的知識庫備份。匯出時會自動遮罩手機與 email；大改版或交接前，請人工確認後放回 data/ecoco-knowledge-import.json 並 commit / push。',
+        notes: 'Exported from PostgreSQL. Review manually before replacing data/ecoco-knowledge-import.json and committing to Git.',
         summary: {
           section_count: safeRows.length,
           content_chars: totalChars,
@@ -127,33 +135,43 @@ function createKnowledgeRouter({
       res.json(payload);
     } catch (dbErr) {
       console.error('DB knowledge export error:', dbErr.message);
-      res.status(500).json({ error: '匯出知識庫失敗' });
+      res.status(500).json({ error: 'Failed to export knowledge.' });
     }
   });
 
   router.post('/sections', async (req, res) => {
     const category = cleanKnowledgeInput(req.body.category);
     const content = cleanKnowledgeInput(req.body.content);
-    if (!category) {
-      return res.status(400).json({ error: '分類名稱不能空白' });
-    }
+    if (!category) return res.status(400).json({ error: 'Category is required.' });
 
+    const db = await pool.connect();
     try {
-      const duplicate = await findDuplicateCategory(pool, category);
-      if (duplicate) return res.status(409).json({ error: '已有相同分類名稱，請改用編輯既有分類' });
+      await db.query('BEGIN');
+      await lockCategoryForWrite(db, category);
 
-      const { rows } = await pool.query('SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM knowledge_sections');
+      const duplicate = await findDuplicateCategory(db, category);
+      if (duplicate) {
+        await db.query('ROLLBACK');
+        return res.status(409).json({ error: 'Duplicate active knowledge category.' });
+      }
+
+      const { rows } = await db.query('SELECT COALESCE(MAX(sort_order), -1) + 1 AS next FROM knowledge_sections');
       const sortOrder = Number(rows[0].next);
-      const { rows: inserted } = await pool.query(
+      const { rows: inserted } = await db.query(
         'INSERT INTO knowledge_sections (category, content, sort_order, updated_at) VALUES ($1, $2, $3, $4) RETURNING id',
         [category, content, sortOrder, new Date().toISOString()]
       );
+
+      await db.query('COMMIT');
       await refreshKnowledgeCache();
       await rebuildKnowledgeChunksForSection(inserted[0].id);
       res.json({ success: true, id: inserted[0].id });
     } catch (dbErr) {
+      await rollbackQuietly(db);
       console.error('DB knowledge insert error:', dbErr.message);
-      res.status(500).json({ error: '新增知識分類失敗' });
+      res.status(500).json({ error: 'Failed to create knowledge section.' });
+    } finally {
+      db.release();
     }
   });
 
@@ -161,69 +179,101 @@ function createKnowledgeRouter({
     const id = Number(req.params.id);
     const category = cleanKnowledgeInput(req.body.category);
     const content = cleanKnowledgeInput(req.body.content);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: 'ID 格式錯誤' });
-    if (!category) {
-      return res.status(400).json({ error: '分類名稱不能空白' });
-    }
+    if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id.' });
+    if (!category) return res.status(400).json({ error: 'Category is required.' });
 
+    const db = await pool.connect();
     try {
-      const duplicate = await findDuplicateCategory(pool, category, id);
-      if (duplicate) return res.status(409).json({ error: '已有相同分類名稱，請合併或改名後再儲存' });
+      await db.query('BEGIN');
+      await lockCategoryForWrite(db, category);
 
-      const result = await pool.query(
+      const duplicate = await findDuplicateCategory(db, category, id);
+      if (duplicate) {
+        await db.query('ROLLBACK');
+        return res.status(409).json({ error: 'Duplicate active knowledge category.' });
+      }
+
+      const result = await db.query(
         'UPDATE knowledge_sections SET category = $1, content = $2, updated_at = $3 WHERE id = $4',
         [category, content, new Date().toISOString(), id]
       );
-      if (result.rowCount === 0) return res.status(404).json({ error: '找不到這個知識分類' });
+      if (result.rowCount === 0) {
+        await db.query('ROLLBACK');
+        return res.status(404).json({ error: 'Knowledge section not found.' });
+      }
+
+      await db.query('COMMIT');
       await refreshKnowledgeCache();
       await rebuildKnowledgeChunksForSection(id);
       res.json({ success: true });
     } catch (dbErr) {
+      await rollbackQuietly(db);
       console.error('DB knowledge update error:', dbErr.message);
-      res.status(500).json({ error: '更新知識分類失敗' });
+      res.status(500).json({ error: 'Failed to update knowledge section.' });
+    } finally {
+      db.release();
     }
   });
 
   router.delete('/sections/:id', async (req, res) => {
     const id = Number(req.params.id);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: 'ID 格式錯誤' });
+    if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id.' });
 
     try {
       const result = await pool.query(
         "UPDATE knowledge_sections SET archived_at = $1, updated_at = $1 WHERE id = $2 AND COALESCE(archived_at, '') = ''",
         [new Date().toISOString(), id]
       );
-      if (result.rowCount === 0) return res.status(404).json({ error: '找不到這個知識分類' });
+      if (result.rowCount === 0) return res.status(404).json({ error: 'Knowledge section not found.' });
       await refreshKnowledgeCache();
       await rebuildKnowledgeChunksForSection(id);
       res.json({ success: true });
     } catch (dbErr) {
       console.error('DB knowledge archive error:', dbErr.message);
-      res.status(500).json({ error: '封存知識分類失敗' });
+      res.status(500).json({ error: 'Failed to archive knowledge section.' });
     }
   });
 
   router.patch('/sections/:id/restore', async (req, res) => {
     const id = Number(req.params.id);
-    if (!Number.isInteger(id)) return res.status(400).json({ error: 'ID 格式錯誤' });
+    if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id.' });
 
+    const db = await pool.connect();
     try {
-      const section = await pool.query('SELECT category FROM knowledge_sections WHERE id = $1', [id]);
-      if (section.rowCount === 0) return res.status(404).json({ error: '找不到這個知識分類' });
-      const duplicate = await findDuplicateCategory(pool, section.rows[0].category, id);
-      if (duplicate) return res.status(409).json({ error: '已有相同分類正在使用，請先改名再恢復' });
+      await db.query('BEGIN');
+      const section = await db.query('SELECT category FROM knowledge_sections WHERE id = $1', [id]);
+      if (section.rowCount === 0) {
+        await db.query('ROLLBACK');
+        return res.status(404).json({ error: 'Knowledge section not found.' });
+      }
 
-      const result = await pool.query(
+      const category = section.rows[0].category;
+      await lockCategoryForWrite(db, category);
+      const duplicate = await findDuplicateCategory(db, category, id);
+      if (duplicate) {
+        await db.query('ROLLBACK');
+        return res.status(409).json({ error: 'Duplicate active knowledge category.' });
+      }
+
+      const result = await db.query(
         "UPDATE knowledge_sections SET archived_at = '', updated_at = $1 WHERE id = $2",
         [new Date().toISOString(), id]
       );
-      if (result.rowCount === 0) return res.status(404).json({ error: '找不到這個知識分類' });
+      if (result.rowCount === 0) {
+        await db.query('ROLLBACK');
+        return res.status(404).json({ error: 'Knowledge section not found.' });
+      }
+
+      await db.query('COMMIT');
       await refreshKnowledgeCache();
       await rebuildKnowledgeChunksForSection(id);
       res.json({ success: true });
     } catch (dbErr) {
+      await rollbackQuietly(db);
       console.error('DB knowledge restore error:', dbErr.message);
-      res.status(500).json({ error: '恢復知識分類失敗' });
+      res.status(500).json({ error: 'Failed to restore knowledge section.' });
+    } finally {
+      db.release();
     }
   });
 
@@ -238,4 +288,5 @@ module.exports = {
   cleanKnowledgeInput,
   createKnowledgeRouter,
   findDuplicateCategory,
+  lockCategoryForWrite,
 };
