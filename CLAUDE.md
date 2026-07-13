@@ -12,7 +12,15 @@ npm run audit:knowledge     # 掃描 data/ 知識庫，找出重複與衝突
 npm run apply:knowledge-audit  # 將稽核結果套用（把重複項標為 archived，不刪除）
 npm run build:knowledge     # 從 data/ 組出 ecoco-knowledge-import.json
 npm run import:knowledge    # 把 ecoco-knowledge-import.json 匯入 PostgreSQL
+
+npm run lint                # 語法檢查（scripts/lint.mjs 自動掃描所有 .js/.mjs）
+npm test                    # 執行 tests/smoke.test.js（node --test）
+npm run eval:validate       # 驗證 evals/golden-set.json 格式
+npm run eval                # 對線上服務跑 golden set（需設 ECOCO_BASE_URL、ADMIN_KEY）
+npm run scan:pii            # 掃描 repo 是否含個資
 ```
+
+**修改程式碼後必須執行 `npm run lint` 與 `npm test`，全數通過才能 commit。**CI（.github/workflows/ci.yml）會再跑一次 lint、test、eval:validate、scan:pii。
 
 啟動需要 `.env`：
 
@@ -23,8 +31,6 @@ DATABASE_URL=postgresql://...
 KNOWLEDGE_AUTO_SYNC=disable       # 日常維護只用後台 PostgreSQL；大改版才匯出 JSON 回 Git
 # PGSSL=disable                   # Render 內部連線時啟用
 ```
-
-無測試指令、無 lint 設定。
 
 ## 架構
 
@@ -43,23 +49,26 @@ KNOWLEDGE_AUTO_SYNC=disable       # 日常維護只用後台 PostgreSQL；大改
 
 ### `server.js` 的啟動順序
 
-1. `initDb()` — 逐一執行 SCHEMA 建表（雲端 Postgres 不接受多語句，故分開執行）
-2. `KNOWLEDGE_AUTO_SYNC` 決定是否從 Git JSON 同步進 PostgreSQL
-3. `refreshKnowledgeCache()` — 把 `knowledge_sections` 全部載入記憶體字串 `knowledgeCache`
-4. 開始接請求
+1. `validateRuntimeConfig()` — 檢查必要環境變數，缺 `DATABASE_URL`／`ANTHROPIC_API_KEY`／`ADMIN_KEY` 直接啟動失敗
+2. `initDb()` — 逐一執行 SCHEMA 建表（雲端 Postgres 不接受多語句，故分開執行），並跑 timestamp 欄位遷移與 pgvector 初始化
+3. `KNOWLEDGE_AUTO_SYNC` 決定是否從 Git JSON 同步進 PostgreSQL
+4. `refreshKnowledgeCache()` — 把 `knowledge_sections` 載入記憶體（僅供後台檢視，不進 prompt）
+5. `ensureKnowledgeChunksReady()` — chunks 為空或同步有變更時重建 `knowledge_chunks`
+6. `purgeExpiredConversationData()` — 依 `CONVERSATION_RETENTION_DAYS` 清除過期對話
+7. 開始接請求
 
 ### RAG 流程
 
 `/api/chat` 收到問題後：
-1. 對 `knowledge_chunks` 做 PostgreSQL 關鍵字與同義詞檢索，取前 8 筆相關片段
-2. 把片段嵌入 system prompt（標記 `cache_control: ephemeral` 啟用 prompt caching）
-3. 呼叫 Claude（`claude-sonnet-4-6`，`max_tokens: 1024`）
+1. 檢索 `knowledge_chunks`：主要走 pgvector 語意檢索（需 `vector` extension + `OPENAI_API_KEY`），關鍵字／同義詞 `ILIKE` 檢索作為備援或混合來源，排序後取前 8 筆片段（`MAX_RAG_CHUNKS`）
+2. 靜態 system prompt 標記 `cache_control: ephemeral` 啟用 prompt caching；RAG 片段放在動態區塊
+3. 呼叫 Claude（預設 `claude-sonnet-4-6`，可用 `ANTHROPIC_MODEL` 環境變數覆蓋，`max_tokens: 1024`）
 
 `knowledge_chunks` 是從 `knowledge_sections` 自動切分的衍生資料，**不要手動編輯**。每次後台修改分類或伺服器重啟都會重建。
 
 ### 知識缺口偵測
 
-若 Claude 回覆包含「沒有確切資料」，系統自動寫一筆到 `unanswered_questions`。DB 寫入失敗不中斷對話（內層獨立 try/catch）。
+偵測順序：優先解析回覆結尾的 `<meta>{"gap":...}</meta>` JSON 標記，其次是 `[KNOWLEDGE_GAP]` 機器標記，最後才是「沒有確切資料」等字串比對（見 `routes/chat.routes.js` 的 `detectKnowledgeGap`）。命中即寫一筆到 `unanswered_questions`；標記在送給使用者前會被移除。DB 寫入失敗不中斷對話（內層獨立 try/catch）。
 
 ### KNOWLEDGE_AUTO_SYNC 模式
 
