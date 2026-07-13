@@ -1,6 +1,8 @@
-# ECOCO AI 客服 LINE@ 串接說明
+# ECOCO AI 客服 LINE@ 技術串接說明
 
 本文件說明 ECOCO AI 客服系統如何與 LINE Official Account（LINE@）結合使用。正式串接方式採用 LINE Messaging API，不使用 LINE 後台內建的「AI 聊天機器人（Beta）」。
+
+若要與客服主管、營運或 LINE OA 管理者討論上線權限、測試題與決策項目，請先使用 [LINE_ROLLOUT_CHECKLIST.md](LINE_ROLLOUT_CHECKLIST.md)。本文件主要供技術窗口設定 Webhook 與環境變數。
 
 ## 1. 整合架構
 

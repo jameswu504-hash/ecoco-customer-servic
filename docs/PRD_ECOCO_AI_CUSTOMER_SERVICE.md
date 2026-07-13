@@ -8,6 +8,8 @@
 | 文件目的 | 說明產品目標、功能範圍、資料流、風險控管、成功指標與後續規劃 |
 | 狀態 | 可運作版本，持續維護知識庫與檢索品質 |
 
+客服落地與 LINE@ 串接討論請搭配 [CUSTOMER_ROLLOUT_GUIDE.md](CUSTOMER_ROLLOUT_GUIDE.md) 與 [LINE_ROLLOUT_CHECKLIST.md](LINE_ROLLOUT_CHECKLIST.md)，避免 PRD 同時承載操作 SOP 與會議確認清單。
+
 ## 1. 背景
 
 ECOCO 客服知識來源分散於官網 FAQ、Excel FAQ、Meta AI 指令、舊 CommandCenter 專案、客服回覆素材、品牌規範與內部 SOP。資料分散會造成以下問題：

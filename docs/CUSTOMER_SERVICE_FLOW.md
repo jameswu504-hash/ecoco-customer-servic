@@ -1,6 +1,16 @@
-# ECOCO AI 客服 Flow 圖底稿
+# ECOCO AI 客服流程圖規格
 
-本文件是 ECOCO AI 客服流程圖的正式繪製底稿，可用於 Whimsical、簡報或交接文件。Flow 圖目標是讓非工程人員也能理解使用者提問後，系統如何檢索知識、套用規則、產生回答、紀錄缺口並回到知識庫維護流程。
+本文件是 ECOCO AI 客服流程圖的正式規格，可用於 Whimsical、簡報、交接文件或客服落地討論。流程圖目標是讓非工程人員也能理解：使用者提問後，系統如何查找 ECOCO 知識庫、套用客服規則、產生回答、紀錄知識缺口，並回到後台維護流程。
+
+建議搭配 [CUSTOMER_ROLLOUT_GUIDE.md](CUSTOMER_ROLLOUT_GUIDE.md) 與 [LINE_ROLLOUT_CHECKLIST.md](LINE_ROLLOUT_CHECKLIST.md) 使用。
+
+## 0. 對主管與客服的重點摘要
+
+- AI 不會直接自由回答，而是先查 ECOCO 知識庫。
+- 補點、退款、帳號、客訴、機台異常等高風險問題，AI 只能保守回覆並引導人工流程。
+- AI 無法確認的問題會形成知識缺口，供客服或營運後續補資料。
+- 後台修改會立即寫入 PostgreSQL，重大更新或交接前才需要下載 JSON 回寫 GitHub。
+- LINE@ 未來只是另一個入口，仍共用同一套知識庫與規則。
 
 ## 1. Flow 圖目標
 
@@ -12,7 +22,7 @@
 4. 客服人員如何從知識缺口回補知識庫。
 5. 大改版或交接前，資料如何從 PostgreSQL 匯出回 Git JSON。
 
-## 2. 建議 Whimsical 結構
+## 2. 建議流程圖結構
 
 建議使用 Swimlane 方式繪製，分成 5 條泳道。
 
@@ -129,9 +139,9 @@ flowchart TD
   -> Render 部署或保留版本
 ```
 
-## 8. Whimsical 繪製步驟
+## 8. 圖面繪製步驟
 
-1. 開啟 Whimsical，選擇 Flowchart。
+1. 使用 Whimsical 或其他流程圖工具建立 Flowchart。
 2. 建立 5 條泳道：使用者、前台客服頁、後端 API、AI 與知識庫、後台維護。
 3. 先畫主流程，從「使用者提問」到「AI 回覆與評分」。
 4. 在 RAG 後方加入判斷節點：「是否高風險？」與「是否有足夠依據？」。
@@ -139,7 +149,7 @@ flowchart TD
 6. 在右側另放「知識庫維護流程」與「JSON 版本流程」。
 7. 圖中避免放程式碼細節，只保留 `POST /api/chat`、`knowledge_sections`、`knowledge_chunks`、`Claude` 等必要名詞。
 
-## 9. 可直接貼進 Whimsical 的文字版
+## 9. 可直接貼進流程圖工具的文字版
 
 ```text
 使用者提問

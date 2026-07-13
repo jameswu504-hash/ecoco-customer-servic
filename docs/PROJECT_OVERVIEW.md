@@ -2,6 +2,8 @@
 
 本文件提供 ECOCO AI 客服系統的高層次總覽，協助內部主管、客服、營運與維護者快速理解系統定位、功能範圍、資料流程與維護方向。
 
+若要召開客服落地或 LINE@ 串接討論，請搭配 [CUSTOMER_ROLLOUT_GUIDE.md](CUSTOMER_ROLLOUT_GUIDE.md) 與 [LINE_ROLLOUT_CHECKLIST.md](LINE_ROLLOUT_CHECKLIST.md) 使用。
+
 ## 1. 專案定位
 
 ECOCO AI 客服是一套面向使用者的 AI 客服系統，並搭配內部後台進行知識庫維護、對話查看、評分追蹤、知識缺口管理與營運報表整理。

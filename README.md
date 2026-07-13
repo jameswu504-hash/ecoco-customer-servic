@@ -119,18 +119,20 @@ https://ecoco-customer-servic.onrender.com/api/line/webhook
 5. 用測試帳號傳訊息，確認 AI 回覆、對話紀錄與知識缺口都正常。
 6. 檢查 LINE OA 內建自動回覆，避免和本系統重複回覆。
 
-詳細步驟請見 [`docs/LINE_INTEGRATION_GUIDE.md`](docs/LINE_INTEGRATION_GUIDE.md)。
+與客服、主管或 LINE OA 管理者討論時，請先使用 [`docs/LINE_ROLLOUT_CHECKLIST.md`](docs/LINE_ROLLOUT_CHECKLIST.md)；技術設定細節請見 [`docs/LINE_INTEGRATION_GUIDE.md`](docs/LINE_INTEGRATION_GUIDE.md)。
 
 ## 維運文件
 
 | 文件 | 用途 |
 | --- | --- |
 | [`docs/README.md`](docs/README.md) | 內部文件索引 |
-| [`docs/CUSTOMER_SUPPORT_GUIDE.md`](docs/CUSTOMER_SUPPORT_GUIDE.md) | 客服人員操作指南 |
+| [`docs/CUSTOMER_ROLLOUT_GUIDE.md`](docs/CUSTOMER_ROLLOUT_GUIDE.md) | 客服落地討論指南，供客服、主管與營運確認實際使用流程 |
+| [`docs/CUSTOMER_SUPPORT_GUIDE.md`](docs/CUSTOMER_SUPPORT_GUIDE.md) | 客服人員後台操作指南 |
 | [`docs/OPERATIONS_HANDOFF_GUIDE.md`](docs/OPERATIONS_HANDOFF_GUIDE.md) | 維護與交接總整理 |
 | [`docs/DEPLOYMENT_RUNBOOK.md`](docs/DEPLOYMENT_RUNBOOK.md) | Render 部署、環境變數與故障排查 |
 | [`docs/archive/GO_LIVE_CHECKLIST.md`](docs/archive/GO_LIVE_CHECKLIST.md) | 上線前檢查表 |
-| [`docs/LINE_INTEGRATION_GUIDE.md`](docs/LINE_INTEGRATION_GUIDE.md) | LINE@ 串接說明 |
+| [`docs/LINE_ROLLOUT_CHECKLIST.md`](docs/LINE_ROLLOUT_CHECKLIST.md) | LINE@ 串接落地清單，列出權限、資源與測試項目 |
+| [`docs/LINE_INTEGRATION_GUIDE.md`](docs/LINE_INTEGRATION_GUIDE.md) | LINE@ 技術串接說明 |
 | [`docs/N8N_INTEGRATION_GUIDE.md`](docs/N8N_INTEGRATION_GUIDE.md) | n8n 自動化整合方式 |
 | [`docs/EVAL_OBSERVABILITY_GUIDE.md`](docs/EVAL_OBSERVABILITY_GUIDE.md) | 回覆品質評測、chat traces 與知識漂移檢查 |
 | [`docs/DATA_DICTIONARY.md`](docs/DATA_DICTIONARY.md) | PostgreSQL 與 JSON 欄位說明 |

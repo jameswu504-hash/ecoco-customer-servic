@@ -6,8 +6,8 @@
 
 | 角色 | 建議先讀 | 目的 |
 | --- | --- | --- |
-| 客服人員 | [客服人員操作指南](CUSTOMER_SUPPORT_GUIDE.md) | 了解日常後台操作與知識缺口處理 |
-| 客服主管 / 營運主管 | [PRD](PRD_ECOCO_AI_CUSTOMER_SERVICE.md)、[客服 Flow 圖底稿](CUSTOMER_SERVICE_FLOW.md) | 了解系統目標、流程與管理方式 |
+| 客服人員 | [客服落地討論指南](CUSTOMER_ROLLOUT_GUIDE.md)、[客服人員操作指南](CUSTOMER_SUPPORT_GUIDE.md) | 了解試營運流程、日常後台操作與知識缺口處理 |
+| 客服主管 / 營運主管 | [客服落地討論指南](CUSTOMER_ROLLOUT_GUIDE.md)、[LINE@ 串接落地清單](LINE_ROLLOUT_CHECKLIST.md)、[PRD](PRD_ECOCO_AI_CUSTOMER_SERVICE.md) | 確認上線範圍、LINE 權限、客服口徑與角色分工 |
 | 系統維護者 | [維運與交接手冊](OPERATIONS_HANDOFF_GUIDE.md)、[部署與環境手冊](DEPLOYMENT_RUNBOOK.md) | 了解部署、資料庫、知識更新與交接流程 |
 | 工程協作者 | [資料字典](DATA_DICTIONARY.md)、[資料來源清單](DATA_SOURCES.md) | 了解資料表、JSON、來源與限制 |
 | AI / LLM 評估者 | [Eval 與可觀測性](EVAL_OBSERVABILITY_GUIDE.md) | 了解回覆品質評測、RAG traces 與後續改善方向 |
@@ -17,11 +17,14 @@
 | 文件 | 說明 |
 | --- | --- |
 | [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) | 專案整體定位、主要功能與角色分工 |
+| [CUSTOMER_ROLLOUT_GUIDE.md](CUSTOMER_ROLLOUT_GUIDE.md) | 客服、主管與營運討論落地時使用的正式指南 |
 | [CUSTOMER_SUPPORT_GUIDE.md](CUSTOMER_SUPPORT_GUIDE.md) | 客服與營運人員的後台操作 SOP |
 | [PRD_ECOCO_AI_CUSTOMER_SERVICE.md](PRD_ECOCO_AI_CUSTOMER_SERVICE.md) | 產品需求文件，包含目標、範圍、功能、指標與風險 |
-| [CUSTOMER_SERVICE_FLOW.md](CUSTOMER_SERVICE_FLOW.md) | 客服流程與 Whimsical Flowchart 繪製底稿 |
+| [CUSTOMER_SERVICE_FLOW.md](CUSTOMER_SERVICE_FLOW.md) | 客服流程圖規格，可用於 Whimsical、簡報與交接 |
 | [OPERATIONS_HANDOFF_GUIDE.md](OPERATIONS_HANDOFF_GUIDE.md) | 維運、權限、資料庫、部署與交接標準 |
 | [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md) | Render、PostgreSQL、Claude、OpenAI embedding 與健康檢查 |
+| [LINE_ROLLOUT_CHECKLIST.md](LINE_ROLLOUT_CHECKLIST.md) | LINE@ 正式串接前的權限、資源、測試與決策清單 |
+| [LINE_INTEGRATION_GUIDE.md](LINE_INTEGRATION_GUIDE.md) | LINE Messaging API Webhook 技術串接方式 |
 
 ## 資料與知識庫文件
 
@@ -73,7 +76,7 @@
 若文件與實際系統不一致，應優先修正正式文件，再同步通知維護者檢查程式或資料庫設定。
 ## 正式上線確認
 
-正式接入 LINE@ 或擴大試營運前，請先使用 [LAUNCH_CONFIRMATION_CHECKLIST.md](archive/LAUNCH_CONFIRMATION_CHECKLIST.md) 完成內部確認。這份清單包含：
+正式接入 LINE@ 或擴大試營運前，請先使用 [CUSTOMER_ROLLOUT_GUIDE.md](CUSTOMER_ROLLOUT_GUIDE.md)、[LINE_ROLLOUT_CHECKLIST.md](LINE_ROLLOUT_CHECKLIST.md) 與 [LAUNCH_CONFIRMATION_CHECKLIST.md](archive/LAUNCH_CONFIRMATION_CHECKLIST.md) 完成內部確認。這些文件包含：
 
 - 知識庫內容與高風險回答確認
 - 公司 API key、Render、PostgreSQL、LINE 權限替換
