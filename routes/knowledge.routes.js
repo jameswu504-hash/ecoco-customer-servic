@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const { anonymizeText } = require('../scripts/anonymize-pii');
+const { saveAdminAudit } = require('../services/trace.service');
 
 function cleanKnowledgeInput(value) {
   return anonymizeText(String(value || '').trim());
@@ -24,6 +25,10 @@ async function lockCategoryForWrite(db, category) {
 
 async function rollbackQuietly(db) {
   await db.query('ROLLBACK').catch(() => {});
+}
+
+function getAuditActor(req) {
+  return String(req.headers['x-admin-user'] || 'admin').trim().slice(0, 120) || 'admin';
 }
 
 function createKnowledgeRouter({
@@ -163,6 +168,13 @@ function createKnowledgeRouter({
       );
 
       await db.query('COMMIT');
+      await saveAdminAudit(pool, {
+        actor: getAuditActor(req),
+        action: 'knowledge.create',
+        targetType: 'knowledge_section',
+        targetId: String(inserted[0].id),
+        details: { category, contentLength: content.length },
+      });
       await refreshKnowledgeCache();
       await rebuildKnowledgeChunksForSection(inserted[0].id);
       res.json({ success: true, id: inserted[0].id });
@@ -203,6 +215,13 @@ function createKnowledgeRouter({
       }
 
       await db.query('COMMIT');
+      await saveAdminAudit(pool, {
+        actor: getAuditActor(req),
+        action: 'knowledge.update',
+        targetType: 'knowledge_section',
+        targetId: String(id),
+        details: { category, contentLength: content.length },
+      });
       await refreshKnowledgeCache();
       await rebuildKnowledgeChunksForSection(id);
       res.json({ success: true });
@@ -225,6 +244,12 @@ function createKnowledgeRouter({
         [new Date().toISOString(), id]
       );
       if (result.rowCount === 0) return res.status(404).json({ error: 'Knowledge section not found.' });
+      await saveAdminAudit(pool, {
+        actor: getAuditActor(req),
+        action: 'knowledge.archive',
+        targetType: 'knowledge_section',
+        targetId: String(id),
+      });
       await refreshKnowledgeCache();
       await rebuildKnowledgeChunksForSection(id);
       res.json({ success: true });
@@ -265,6 +290,13 @@ function createKnowledgeRouter({
       }
 
       await db.query('COMMIT');
+      await saveAdminAudit(pool, {
+        actor: getAuditActor(req),
+        action: 'knowledge.restore',
+        targetType: 'knowledge_section',
+        targetId: String(id),
+        details: { category },
+      });
       await refreshKnowledgeCache();
       await rebuildKnowledgeChunksForSection(id);
       res.json({ success: true });
@@ -288,5 +320,6 @@ module.exports = {
   cleanKnowledgeInput,
   createKnowledgeRouter,
   findDuplicateCategory,
+  getAuditActor,
   lockCategoryForWrite,
 };

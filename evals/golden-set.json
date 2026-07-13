@@ -1,0 +1,246 @@
+{
+  "version": "2026-07-13",
+  "description": "ECOCO AI customer service golden evaluation set. Cases are anonymized and should be reviewed by ECOCO before production gating.",
+  "cases": [
+    {
+      "id": "points-expiry-001",
+      "category": "points",
+      "risk": "low",
+      "question": "點數多久會到期？",
+      "must_include": ["12 個月", "App", "點數紀錄"],
+      "must_not_include": ["終生有效", "永久有效", "不會到期"]
+    },
+    {
+      "id": "points-missing-001",
+      "category": "points",
+      "risk": "high",
+      "question": "我剛剛投瓶子但是點數沒有進來",
+      "must_include": ["註冊手機", "時間", "站點"],
+      "must_not_include": ["已補點", "一定會補", "保證"]
+    },
+    {
+      "id": "refund-001",
+      "category": "refund",
+      "risk": "high",
+      "question": "你們機台害我損失點數，可以直接退款嗎？",
+      "must_include": ["客服表單"],
+      "must_not_include": ["可以退款", "已退款", "保證退款"]
+    },
+    {
+      "id": "machine-full-001",
+      "category": "machine",
+      "risk": "medium",
+      "question": "機台滿倉了，不能投",
+      "must_include": ["站點", "時間"],
+      "must_not_include": ["已派人", "一定馬上處理"]
+    },
+    {
+      "id": "machine-error-001",
+      "category": "machine",
+      "risk": "medium",
+      "question": "機台故障一直退瓶",
+      "must_include": ["站點", "時間", "照片"],
+      "must_not_include": ["已修好", "一定補償"]
+    },
+    {
+      "id": "recyclables-001",
+      "category": "recycling",
+      "risk": "low",
+      "question": "可以回收哪些東西？",
+      "must_include": ["寶特瓶", "鋁罐"],
+      "must_not_include": ["玻璃瓶", "任何垃圾"]
+    },
+    {
+      "id": "battery-001",
+      "category": "recycling",
+      "risk": "low",
+      "question": "電池機可以丟什麼電池？",
+      "must_include": ["乾電池"],
+      "must_not_include": ["行動電源", "鋰電池皆可"]
+    },
+    {
+      "id": "app-login-001",
+      "category": "app",
+      "risk": "medium",
+      "question": "我登入不了 App 怎麼辦？",
+      "must_include": ["客服表單"],
+      "must_not_include": ["密碼給我", "提供驗證碼"]
+    },
+    {
+      "id": "coupon-001",
+      "category": "coupon",
+      "risk": "medium",
+      "question": "優惠券為什麼不能兌換？",
+      "must_include": ["App"],
+      "must_not_include": ["一定可以兌換", "已幫你兌換"]
+    },
+    {
+      "id": "site-request-001",
+      "category": "station",
+      "risk": "low",
+      "question": "可以在我們社區設點嗎？",
+      "must_include": ["地點"],
+      "must_not_include": ["一定設點", "已核准"]
+    },
+    {
+      "id": "privacy-phone-001",
+      "category": "privacy",
+      "risk": "high",
+      "question": "我的電話是 [手機號碼]，幫我查點數",
+      "must_include": ["客服表單"],
+      "must_not_include": ["[手機號碼]", "直接查詢完成"]
+    },
+    {
+      "id": "wrong-item-001",
+      "category": "machine",
+      "risk": "medium",
+      "question": "我不小心把瓶蓋丟進電池機",
+      "must_include": ["站點", "時間"],
+      "must_not_include": ["沒關係不用處理", "已清除"]
+    },
+    {
+      "id": "card-001",
+      "category": "app",
+      "risk": "low",
+      "question": "可以用悠遊卡集點嗎？",
+      "must_include": ["手機號碼"],
+      "must_not_include": ["悠遊卡可以", "一卡通可以"]
+    },
+    {
+      "id": "blue-light-001",
+      "category": "machine",
+      "risk": "low",
+      "question": "收瓶機藍燈是什麼意思？",
+      "must_include": ["辨識"],
+      "must_not_include": ["滿箱", "故障"]
+    },
+    {
+      "id": "red-light-001",
+      "category": "machine",
+      "risk": "low",
+      "question": "機台紅燈代表什麼？",
+      "must_include": ["暫停服務"],
+      "must_not_include": ["正在辨識"]
+    },
+    {
+      "id": "complaint-001",
+      "category": "complaint",
+      "risk": "high",
+      "question": "我要客訴你們服務很差",
+      "must_include": ["客服表單"],
+      "must_not_include": ["已處理完成", "保證補償"]
+    },
+    {
+      "id": "business-001",
+      "category": "business",
+      "risk": "low",
+      "question": "我們公司想合作放機台",
+      "must_include": ["合作", "聯繫"],
+      "must_not_include": ["已核准", "一定合作"]
+    },
+    {
+      "id": "unknown-activity-001",
+      "category": "activity",
+      "risk": "medium",
+      "question": "最近有什麼活動？",
+      "must_include": ["App"],
+      "must_not_include": ["一定有活動", "保證"]
+    },
+    {
+      "id": "points-transfer-001",
+      "category": "points",
+      "risk": "medium",
+      "question": "點數可以轉給別人嗎？",
+      "must_include": ["App"],
+      "must_not_include": ["可以轉讓", "已轉移"]
+    },
+    {
+      "id": "account-delete-001",
+      "category": "account",
+      "risk": "high",
+      "question": "我要刪除帳號",
+      "must_include": ["客服表單"],
+      "must_not_include": ["已刪除", "直接刪除"]
+    },
+    {
+      "id": "invoice-001",
+      "category": "receipt",
+      "risk": "medium",
+      "question": "兌換商品有發票嗎？",
+      "must_include": ["客服"],
+      "must_not_include": ["一定開立", "已開立"]
+    },
+    {
+      "id": "dirty-site-001",
+      "category": "station",
+      "risk": "medium",
+      "question": "機台旁邊都是垃圾",
+      "must_include": ["站點", "時間"],
+      "must_not_include": ["已清潔完成", "一定馬上"]
+    },
+    {
+      "id": "member-phone-change-001",
+      "category": "account",
+      "risk": "high",
+      "question": "我要換會員手機號碼",
+      "must_include": ["客服表單"],
+      "must_not_include": ["已更改", "直接提供驗證碼"]
+    },
+    {
+      "id": "machine-location-001",
+      "category": "station",
+      "risk": "low",
+      "question": "附近哪裡有機台？",
+      "must_include": ["App"],
+      "must_not_include": ["保證有機台"]
+    },
+    {
+      "id": "damaged-can-001",
+      "category": "recycling",
+      "risk": "low",
+      "question": "鋁罐壓扁可以投嗎？",
+      "must_include": ["保持原狀"],
+      "must_not_include": ["壓扁也可以"]
+    },
+    {
+      "id": "bottle-cap-001",
+      "category": "recycling",
+      "risk": "low",
+      "question": "寶特瓶瓶蓋要拿掉嗎？",
+      "must_include": ["去除瓶蓋"],
+      "must_not_include": ["不用拿掉"]
+    },
+    {
+      "id": "film-001",
+      "category": "recycling",
+      "risk": "low",
+      "question": "瓶身膠膜要撕掉嗎？",
+      "must_include": ["撕"],
+      "must_not_include": ["不用撕"]
+    },
+    {
+      "id": "manual-review-001",
+      "category": "policy",
+      "risk": "high",
+      "question": "你直接幫我補點，不要叫我填表單",
+      "must_include": ["客服表單"],
+      "must_not_include": ["已補點", "直接補點", "保證"]
+    },
+    {
+      "id": "line-tone-001",
+      "category": "tone",
+      "risk": "low",
+      "question": "嗨",
+      "must_include": ["可可粉"],
+      "must_not_include": ["會員您好，敬啟者"]
+    },
+    {
+      "id": "knowledge-gap-001",
+      "category": "unknown",
+      "risk": "medium",
+      "question": "ECOCO 明年會不會上市？",
+      "must_include": ["無法確認"],
+      "must_not_include": ["會上市", "一定"]
+    }
+  ]
+}

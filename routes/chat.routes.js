@@ -1,8 +1,11 @@
 const crypto = require('crypto');
 const express = require('express');
 const { maskSensitiveText } = require('../services/privacy.service');
+const { saveChatTrace } = require('../services/trace.service');
 
 const KNOWLEDGE_GAP_MACHINE_MARKER = '[KNOWLEDGE_GAP]';
+const KNOWLEDGE_GAP_META_PATTERN = /<meta>\s*({[\s\S]*?})\s*<\/meta>/i;
+const FRIENDLY_AI_ERROR_REPLY = '抱歉，AI 客服暫時連線不穩。請稍後再試，或透過客服表單補充問題：https://ecoco.tw/kWqgW';
 const KNOWLEDGE_GAP_MARKERS = [
   '沒有確切資料',
   '目前沒有足夠資料',
@@ -10,9 +13,41 @@ const KNOWLEDGE_GAP_MARKERS = [
   '需要人工補充或確認',
 ];
 
+function parseKnowledgeGapMeta(reply) {
+  if (typeof reply !== 'string') return null;
+  const match = reply.match(KNOWLEDGE_GAP_META_PATTERN);
+  if (!match) return null;
+
+  try {
+    const meta = JSON.parse(match[1]);
+    return {
+      gap: Boolean(meta.gap),
+      confidence: String(meta.confidence || '').trim().toLowerCase(),
+      reason: String(meta.reason || '').trim(),
+      raw: meta,
+    };
+  } catch (err) {
+    return {
+      gap: false,
+      confidence: '',
+      reason: `Invalid knowledge gap meta: ${err.message}`,
+      raw: null,
+    };
+  }
+}
+
 function detectKnowledgeGap(reply) {
   if (typeof reply !== 'string') {
     return { isGap: false, reason: '' };
+  }
+
+  const meta = parseKnowledgeGapMeta(reply);
+  if (meta && meta.gap) {
+    return {
+      isGap: true,
+      reason: `AI reply included structured knowledge gap meta: confidence=${meta.confidence || 'unknown'}${meta.reason ? `; ${meta.reason}` : ''}`,
+      confidence: meta.confidence || 'unknown',
+    };
   }
 
   if (reply.includes(KNOWLEDGE_GAP_MACHINE_MARKER)) {
@@ -34,7 +69,10 @@ function detectKnowledgeGap(reply) {
 }
 
 function stripKnowledgeGapMarker(reply) {
-  return String(reply || '').replaceAll(KNOWLEDGE_GAP_MACHINE_MARKER, '').trim();
+  return String(reply || '')
+    .replaceAll(KNOWLEDGE_GAP_MACHINE_MARKER, '')
+    .replace(KNOWLEDGE_GAP_META_PATTERN, '')
+    .trim();
 }
 
 function validateHistory(history) {
@@ -150,6 +188,8 @@ function createChatRouter({
     const { message: userMsg, error } = getLatestUserMessage(req.body || {});
     if (error) return res.status(400).json({ error });
 
+    const traceStart = Date.now();
+    let rag = { retrievalMode: 'none', chunks: [] };
     try {
       let modelMessages = [userMsg];
       try {
@@ -159,7 +199,7 @@ function createChatRouter({
         console.error('DB conversation history read error:', historyErr.message);
       }
 
-      const rag = await retrieveKnowledgeForQuestion(userMsg.content);
+      rag = await retrieveKnowledgeForQuestion(userMsg.content);
       const runtimeGuardrails = buildRuntimeGuardrails(userMsg.content, rag);
       const response = await client.messages.create({
         model: process.env.ANTHROPIC_MODEL || defaultAnthropicModel,
@@ -174,6 +214,19 @@ function createChatRouter({
         ?? '目前無法產生回覆，請稍後再試或聯絡客服。';
       const gap = detectKnowledgeGap(rawReply);
       const reply = stripKnowledgeGapMarker(rawReply);
+
+      if (response.stop_reason === 'max_tokens') {
+        console.warn(`Claude reply reached max_tokens: session=${sessionId}`);
+      }
+
+      await saveChatTrace(pool, {
+        sessionId,
+        channel: 'web',
+        question: userMsg.content,
+        rag,
+        latencyMs: Date.now() - traceStart,
+        response,
+      });
 
       try {
         const ts = new Date().toISOString();
@@ -198,7 +251,15 @@ function createChatRouter({
       res.json({ reply });
     } catch (err) {
       console.error('Claude API error:', err.message);
-      res.status(500).json({ error: 'AI response failed. Please try again later.' });
+      await saveChatTrace(pool, {
+        sessionId,
+        channel: 'web',
+        question: userMsg.content,
+        rag,
+        latencyMs: Date.now() - traceStart,
+        error: err.message,
+      });
+      res.status(503).json({ error: FRIENDLY_AI_ERROR_REPLY, reply: FRIENDLY_AI_ERROR_REPLY });
     }
   });
 
@@ -285,10 +346,12 @@ module.exports = {
   KNOWLEDGE_GAP_MARKERS,
   createChatRouter,
   detectKnowledgeGap,
+  FRIENDLY_AI_ERROR_REPLY,
   getLatestUserMessage,
   getSafeSessionId,
   loadServerConversationHistory,
   normalizeModelMessages,
+  parseKnowledgeGapMeta,
   stripKnowledgeGapMarker,
   validateHistory,
 };

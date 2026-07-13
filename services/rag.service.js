@@ -404,6 +404,8 @@ function createRagService({ pool, env = process.env }) {
   async function retrieveKnowledgeForQuestion(question) {
     const terms = buildSearchTerms(question);
     let rows = await retrieveSemanticRows(question);
+    const semanticHitCount = rows.length;
+    let keywordHitCount = 0;
 
     if (terms.length > 0) {
       const clauses = terms.map((_, idx) => `search_text ILIKE $${idx + 1}`).join(' OR ');
@@ -416,6 +418,7 @@ function createRagService({ pool, env = process.env }) {
          LIMIT 120`,
         values
       );
+      keywordHitCount = result.rows.length;
       const byId = new Map(rows.map(row => [row.id, row]));
       result.rows.forEach(row => {
         if (!byId.has(row.id)) byId.set(row.id, row);
@@ -424,10 +427,18 @@ function createRagService({ pool, env = process.env }) {
     }
 
     const ranked = rankKnowledgeRows(rows, terms);
+    const retrievalMode = semanticHitCount > 0 && keywordHitCount > 0
+      ? 'hybrid'
+      : semanticHitCount > 0
+        ? 'semantic'
+        : keywordHitCount > 0
+          ? 'keyword'
+          : 'none';
 
     return {
       terms,
       chunks: ranked,
+      retrievalMode,
       context: ranked.map((row, idx) => (
         `[RAG-${idx + 1}] ${row.category} / ${row.title}\n風險：${normalizeRiskLevel(row.risk_level)}\n${row.content}`
       )).join('\n\n'),

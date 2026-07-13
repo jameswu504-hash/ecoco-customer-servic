@@ -7,6 +7,7 @@ const {
   stripKnowledgeGapMarker,
 } = require('./chat.routes');
 const { maskSensitiveText } = require('../services/privacy.service');
+const { saveChatTrace } = require('../services/trace.service');
 
 const LINE_REPLY_ENDPOINT = 'https://api.line.me/v2/bot/message/reply';
 const LINE_TEXT_LIMIT = 4900;
@@ -142,7 +143,9 @@ async function buildAiReply({
   defaultAnthropicModel,
 }) {
   const question = String(text || '').trim().slice(0, LINE_MAX_INPUT_CHARS);
-  const rag = await retrieveKnowledgeForQuestion(question);
+  const traceStart = Date.now();
+  let rag = { retrievalMode: 'none', chunks: [] };
+  rag = await retrieveKnowledgeForQuestion(question);
   const runtimeGuardrails = buildRuntimeGuardrails(question, rag);
   const modelMessages = await buildLineModelMessages({ pool, sessionId, text: question });
   const response = await client.messages.create({
@@ -152,6 +155,19 @@ async function buildAiReply({
       ? buildSystemPromptBlocks(rag.context, runtimeGuardrails)
       : [{ type: 'text', text: buildSystemPrompt(rag.context, runtimeGuardrails) }],
     messages: modelMessages,
+  });
+
+  if (response.stop_reason === 'max_tokens') {
+    console.warn(`LINE Claude reply reached max_tokens: session=${sessionId}`);
+  }
+
+  await saveChatTrace(pool, {
+    sessionId,
+    channel: 'line',
+    question,
+    rag,
+    latencyMs: Date.now() - traceStart,
+    response,
   });
 
   return response.content.find(block => block.type === 'text')?.text || LINE_FALLBACK_REPLY;
@@ -229,6 +245,13 @@ function createLineRouter({
           });
         } catch (err) {
           console.error('LINE AI reply error:', err.message);
+          await saveChatTrace(pool, {
+            sessionId,
+            channel: 'line',
+            question: userText,
+            rag: { retrievalMode: 'none', chunks: [] },
+            error: err.message,
+          });
         }
       }
 

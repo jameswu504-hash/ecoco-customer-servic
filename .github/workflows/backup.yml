@@ -22,6 +22,12 @@ jobs:
           ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
           BACKUP_DIR: backup-artifacts
         run: node scripts/backup.mjs
+      - name: Check Git JSON and PostgreSQL knowledge drift
+        continue-on-error: true
+        env:
+          ECOCO_BASE_URL: ${{ secrets.ECOCO_BASE_URL }}
+          ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
+        run: node scripts/check-knowledge-drift.mjs
       - name: Upload knowledge backup artifact
         uses: actions/upload-artifact@v4
         with:

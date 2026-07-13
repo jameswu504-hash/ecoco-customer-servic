@@ -14,3 +14,6 @@ Thumbs.db
 
 # GitHub Actions 備份流程暫存標記
 scripts/.changed
+
+# Local eval and analysis reports generated during QA
+evals/reports/

@@ -45,6 +45,12 @@ function createPromptService({ responsePolicies = [] } = {}) {
 
 ${responsePolicyPrompt}
 
+## 機器可讀標記
+- 每次回覆最後都必須附上一個 '<meta>...</meta>' 標記。
+- 若回答有足夠知識庫依據，請附上：'<meta>{"gap":false,"confidence":"high"}</meta>'
+- 若知識庫不足、答案不確定或需要人工確認，請附上：'<meta>{"gap":true,"confidence":"low","reason":"missing official knowledge"}</meta>'
+- 不要向使用者解釋這個標記；後端會在送出前移除。
+
 ## 回覆格式
 1. 先簡短回應使用者情緒或問題。
 2. 再列出可以確認的事實或處理步驟。

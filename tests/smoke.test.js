@@ -6,14 +6,18 @@ const path = require('node:path');
 const { requireAdminKey } = require('../middleware/admin-auth');
 const {
   detectKnowledgeGap,
+  FRIENDLY_AI_ERROR_REPLY,
   getLatestUserMessage,
   getSafeSessionId,
   normalizeModelMessages,
+  parseKnowledgeGapMeta,
   stripKnowledgeGapMarker,
   validateHistory,
 } = require('../routes/chat.routes');
 const { cleanKnowledgeInput } = require('../routes/knowledge.routes');
+const { requireStaffKey } = require('../middleware/staff-auth');
 const { maskSensitiveText } = require('../services/privacy.service');
+const { summarizeRagChunks } = require('../services/trace.service');
 const {
   getLineConfig,
   isLineRateLimited,
@@ -85,6 +89,18 @@ test('machine knowledge gap marker is recorded but hidden from users', () => {
 
   assert.equal(gap.isGap, true);
   assert.match(gap.reason, /KNOWLEDGE_GAP/);
+  assert.equal(stripKnowledgeGapMarker(reply), '目前無法確認，請補充站點與時間。');
+});
+
+test('structured knowledge gap metadata is parsed and stripped from user replies', () => {
+  const reply = '目前無法確認，請補充站點與時間。\n<meta>{"gap":true,"confidence":"low","reason":"missing station policy"}</meta>';
+  const meta = parseKnowledgeGapMeta(reply);
+  const gap = detectKnowledgeGap(reply);
+
+  assert.equal(meta.gap, true);
+  assert.equal(meta.confidence, 'low');
+  assert.equal(gap.isGap, true);
+  assert.match(gap.reason, /structured knowledge gap meta/);
   assert.equal(stripKnowledgeGapMarker(reply), '目前無法確認，請補充站點與時間。');
 });
 
@@ -191,6 +207,38 @@ test('admin middleware rejects missing admin key', () => {
   assert.ok(body.error);
 });
 
+test('staff middleware requires staff key and does not fall back to admin key', () => {
+  const previousStaff = process.env.STAFF_KEY;
+  process.env.STAFF_KEY = 'staff-secret-for-test';
+
+  let statusCode = 0;
+  const res = {
+    status(code) {
+      statusCode = code;
+      return this;
+    },
+    json(payload) {
+      this.body = payload;
+      return this;
+    },
+  };
+  let nextCalled = false;
+
+  requireStaffKey({ headers: { 'x-admin-key': 'staff-secret-for-test' } }, res, () => {
+    nextCalled = true;
+  });
+  assert.equal(statusCode, 401);
+  assert.equal(nextCalled, false);
+
+  statusCode = 0;
+  requireStaffKey({ headers: { 'x-staff-key': 'staff-secret-for-test' } }, res, () => {
+    nextCalled = true;
+  });
+
+  process.env.STAFF_KEY = previousStaff;
+  assert.equal(nextCalled, true);
+});
+
 test('conversation persistence masks phone and email values', () => {
   const phone = ['0912', '345', '678'].join('-');
   const email = ['test', 'example.com'].join('@');
@@ -241,6 +289,27 @@ test('RAG returns no context when keyword and semantic search both miss', async 
 
   assert.deepEqual(result.chunks, []);
   assert.equal(result.context, '');
+  assert.equal(result.retrievalMode, 'none');
+});
+
+test('chat trace summaries include retrieved chunk ids and scores without full content', () => {
+  const summary = summarizeRagChunks({
+    chunks: [
+      {
+        id: 12,
+        category: '點數規則',
+        title: '點數效期',
+        content: 'x'.repeat(2000),
+        risk_level: 'Low',
+        score: 18,
+      },
+    ],
+  });
+
+  assert.equal(summary.length, 1);
+  assert.equal(summary[0].id, 12);
+  assert.equal(summary[0].score, 18);
+  assert.equal(Object.hasOwn(summary[0], 'content'), false);
 });
 
 test('dashboard keeps dynamic click handlers usable', () => {
@@ -265,15 +334,24 @@ test('server exposes a health check route', () => {
 test('workflow scripts referenced by GitHub Actions exist', () => {
   const backupWorkflow = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'backup.yml'), 'utf8');
   const analysisWorkflow = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'ai-analysis.yml'), 'utf8');
+  const ciWorkflow = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'ci.yml'), 'utf8');
 
   assert.match(backupWorkflow, /node scripts\/backup\.mjs/);
+  assert.match(backupWorkflow, /node scripts\/check-knowledge-drift\.mjs/);
   assert.match(backupWorkflow, /actions\/upload-artifact@v4/);
   assert.equal(backupWorkflow.includes('git push'), false);
   assert.equal(backupWorkflow.includes('git commit'), false);
   assert.match(analysisWorkflow, /node scripts\/ai-analysis\.mjs/);
   assert.match(analysisWorkflow, /MAIL_TO/);
+  assert.match(ciWorkflow, /npm run lint/);
+  assert.match(ciWorkflow, /npm test/);
+  assert.match(ciWorkflow, /npm run eval:validate/);
+  assert.match(ciWorkflow, /npm run scan:pii/);
   assert.equal(fs.existsSync(path.join(__dirname, '..', 'scripts', 'backup.mjs')), true);
   assert.equal(fs.existsSync(path.join(__dirname, '..', 'scripts', 'ai-analysis.mjs')), true);
+  assert.equal(fs.existsSync(path.join(__dirname, '..', 'scripts', 'check-knowledge-drift.mjs')), true);
+  assert.equal(fs.existsSync(path.join(__dirname, '..', 'scripts', 'run-evals.mjs')), true);
+  assert.equal(fs.existsSync(path.join(__dirname, '..', 'evals', 'golden-set.json')), true);
 });
 
 test('n8n integration guide documents credentials and health monitoring', () => {
@@ -334,6 +412,31 @@ test('negative feedback is routed to unanswered questions for maintenance', () =
   assert.match(indexJs, /"x-session-id": SESSION_ID/);
 });
 
+test('golden eval set has enough reviewed cases and high-risk coverage', () => {
+  const golden = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'evals', 'golden-set.json'), 'utf8'));
+  const cases = golden.cases || [];
+
+  assert.ok(cases.length >= 30);
+  assert.ok(cases.some(item => item.risk === 'high'));
+  for (const item of cases) {
+    assert.ok(item.id);
+    assert.ok(item.question);
+    assert.ok(Array.isArray(item.must_include));
+    assert.ok(Array.isArray(item.must_not_include));
+  }
+});
+
+test('knowledge drift comparison detects changed section hashes', async () => {
+  const { compareKnowledgeMaps, hasDrift, toSectionMap } = await import('../scripts/check-knowledge-drift.mjs');
+  const local = toSectionMap({ sections: [{ category: 'A', content: 'old' }] });
+  const remote = toSectionMap({ sections: [{ category: 'A', content: 'new' }, { category: 'B', content: 'new' }] });
+  const diff = compareKnowledgeMaps(local, remote);
+
+  assert.equal(hasDrift(diff), true);
+  assert.deepEqual(diff.remoteOnly, ['B']);
+  assert.equal(diff.changed[0].category, 'A');
+});
+
 test('schema includes report and dashboard performance indexes', () => {
   const schema = fs.readFileSync(path.join(__dirname, '..', 'db', 'schema.js'), 'utf8');
 
@@ -341,6 +444,8 @@ test('schema includes report and dashboard performance indexes', () => {
   assert.match(schema, /idx_conv_role_timestamp/);
   assert.match(schema, /idx_conv_session_ts/);
   assert.match(schema, /idx_ratings_timestamp/);
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS chat_traces/);
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS admin_audit_logs/);
 });
 
 test('knowledge chunks are not blindly rebuilt on every startup', () => {
