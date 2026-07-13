@@ -384,7 +384,7 @@ test('n8n workflow templates are sanitized importable JSON files', () => {
 
 test('go-live status report covers handoff and launch decisions', () => {
   const report = fs.readFileSync(
-    path.join(__dirname, '..', 'docs', 'GO_LIVE_STATUS_REPORT_2026-07-03.md'),
+    path.join(__dirname, '..', 'docs', 'archive', 'GO_LIVE_STATUS_REPORT_2026-07-03.md'),
     'utf8'
   );
 

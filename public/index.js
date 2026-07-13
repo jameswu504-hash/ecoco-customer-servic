@@ -1,4 +1,8 @@
-const SESSION_ID = "session_" + Date.now();
+const SESSION_ID = "session_" + (
+  (window.crypto && typeof window.crypto.randomUUID === "function")
+    ? window.crypto.randomUUID().replace(/-/g, "")
+    : `${Date.now()}_${Math.random().toString(36).slice(2, 12)}`
+);
     let chatHistory = [];
 
     document.getElementById("initTime").textContent = getTime();

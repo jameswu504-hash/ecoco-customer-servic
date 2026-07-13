@@ -17,3 +17,7 @@ scripts/.changed
 
 # Local eval and analysis reports generated during QA
 evals/reports/
+
+# 知識庫備份（改由 GitHub Actions artifact 保存，不再進版控）
+backups/
+backup-artifacts/

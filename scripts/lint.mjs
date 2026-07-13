@@ -2,9 +2,10 @@
 // 取代 package.json 內原本手動列出 28 個檔案的 lint 指令（新增檔案時常忘記加入清單）
 import { execFileSync } from 'node:child_process';
 import { readdirSync, statSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
+const ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const INCLUDE_DIRS = ['db', 'middleware', 'routes', 'services', 'scripts', 'public', 'config', 'tests'];
 const EXTENSIONS = new Set(['.js', '.mjs']);
 

@@ -38,9 +38,9 @@
 | 文件 | 說明 |
 | --- | --- |
 | [security-keys.md](security-keys.md) | API key、token、`.env` 與 Render 環境變數的安全原則 |
-| [PII_HISTORY_CLEANUP_PLAN.md](PII_HISTORY_CLEANUP_PLAN.md) | 個資外洩止血與 Git 歷史清除方案 |
+| [PII_HISTORY_CLEANUP_PLAN.md](archive/PII_HISTORY_CLEANUP_PLAN.md) | 個資外洩止血與 Git 歷史清除方案 |
 | [REPO_FILE_AUDIT.md](REPO_FILE_AUDIT.md) | Git repository 檔案用途與不必要檔案稽核 |
-| [commandcenter-migration.md](commandcenter-migration.md) | 舊 CommandCenter 專案可沿用與不建議沿用內容 |
+| [commandcenter-migration.md](archive/commandcenter-migration.md) | 舊 CommandCenter 專案可沿用與不建議沿用內容 |
 
 ## 重要維護原則
 
@@ -65,7 +65,7 @@
 若文件與實際系統不一致，應優先修正正式文件，再同步通知維護者檢查程式或資料庫設定。
 ## 正式上線確認
 
-正式接入 LINE@ 或擴大試營運前，請先使用 [LAUNCH_CONFIRMATION_CHECKLIST.md](LAUNCH_CONFIRMATION_CHECKLIST.md) 完成內部確認。這份清單包含：
+正式接入 LINE@ 或擴大試營運前，請先使用 [LAUNCH_CONFIRMATION_CHECKLIST.md](archive/LAUNCH_CONFIRMATION_CHECKLIST.md) 完成內部確認。這份清單包含：
 
 - 知識庫內容與高風險回答確認
 - 公司 API key、Render、PostgreSQL、LINE 權限替換

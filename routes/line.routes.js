@@ -144,8 +144,7 @@ async function buildAiReply({
 }) {
   const question = String(text || '').trim().slice(0, LINE_MAX_INPUT_CHARS);
   const traceStart = Date.now();
-  let rag = { retrievalMode: 'none', chunks: [] };
-  rag = await retrieveKnowledgeForQuestion(question);
+  const rag = await retrieveKnowledgeForQuestion(question);
   const runtimeGuardrails = buildRuntimeGuardrails(question, rag);
   const modelMessages = await buildLineModelMessages({ pool, sessionId, text: question });
   const response = await client.messages.create({
