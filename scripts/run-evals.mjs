@@ -27,6 +27,14 @@ async function readGoldenSet(filePath = GOLDEN_SET_PATH) {
     if (!item.id || !item.question) throw new Error(`Invalid eval case: ${JSON.stringify(item)}`);
     if (!Array.isArray(item.must_include)) throw new Error(`${item.id} missing must_include array.`);
     if (!Array.isArray(item.must_not_include)) throw new Error(`${item.id} missing must_not_include array.`);
+    if (item.must_include_any && !Array.isArray(item.must_include_any)) {
+      throw new Error(`${item.id} must_include_any must be an array.`);
+    }
+    for (const group of item.must_include_any || []) {
+      if (!Array.isArray(group) || group.length === 0) {
+        throw new Error(`${item.id} must_include_any groups must be non-empty arrays.`);
+      }
+    }
   }
 
   return payload;
@@ -70,15 +78,19 @@ async function callCustomerService({ baseUrl, question, sessionId }) {
 function deterministicJudge(answer, criteria) {
   const normalized = normalizeText(answer);
   const missing = criteria.must_include.filter(term => !normalized.includes(normalizeText(term)));
+  const missingAny = (criteria.must_include_any || [])
+    .filter(group => !group.some(term => normalized.includes(normalizeText(term))))
+    .map(group => `one of: ${group.join(' / ')}`);
   const forbidden = criteria.must_not_include.filter(term => normalized.includes(normalizeText(term)));
+  const allMissing = [...missing, ...missingAny];
 
   return {
-    pass: missing.length === 0 && forbidden.length === 0,
-    score: missing.length === 0 && forbidden.length === 0 ? 1 : 0,
-    missing,
+    pass: allMissing.length === 0 && forbidden.length === 0,
+    score: allMissing.length === 0 && forbidden.length === 0 ? 1 : 0,
+    missing: allMissing,
     forbidden,
-    rationale: missing.length || forbidden.length
-      ? `Missing: ${missing.join(', ') || 'none'}; forbidden: ${forbidden.join(', ') || 'none'}`
+    rationale: allMissing.length || forbidden.length
+      ? `Missing: ${allMissing.join(', ') || 'none'}; forbidden: ${forbidden.join(', ') || 'none'}`
       : 'All deterministic checks passed.',
   };
 }
@@ -107,6 +119,7 @@ async function aiJudge({ question, answer, criteria }) {
             `Question: ${question}`,
             `Answer: ${answer}`,
             `Must include: ${JSON.stringify(criteria.must_include)}`,
+            `Must include at least one term from each group: ${JSON.stringify(criteria.must_include_any || [])}`,
             `Must not include: ${JSON.stringify(criteria.must_not_include)}`,
           ].join('\n\n'),
         },

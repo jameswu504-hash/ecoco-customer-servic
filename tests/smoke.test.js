@@ -418,12 +418,27 @@ test('golden eval set has enough reviewed cases and high-risk coverage', () => {
 
   assert.ok(cases.length >= 30);
   assert.ok(cases.some(item => item.risk === 'high'));
+  assert.ok(cases.some(item => Array.isArray(item.must_include_any)));
   for (const item of cases) {
     assert.ok(item.id);
     assert.ok(item.question);
     assert.ok(Array.isArray(item.must_include));
     assert.ok(Array.isArray(item.must_not_include));
   }
+});
+
+test('eval deterministic judge supports required synonym groups', async () => {
+  const { deterministicJudge } = await import('../scripts/run-evals.mjs');
+  const result = deterministicJudge('點數效期為一年，可以在 App 的我的點數查看到期日。', {
+    must_include: ['App'],
+    must_include_any: [
+      ['12 個月', '一年'],
+      ['點數紀錄', '我的點數'],
+    ],
+    must_not_include: ['終身有效'],
+  });
+
+  assert.equal(result.pass, true);
 });
 
 test('knowledge drift comparison detects changed section hashes', async () => {
