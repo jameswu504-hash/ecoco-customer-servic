@@ -63,3 +63,15 @@
 - 讓同一件事散落在多份文件且內容互相矛盾。
 
 若文件與實際系統不一致，應優先修正正式文件，再同步通知維護者檢查程式或資料庫設定。
+## 正式上線確認
+
+正式接入 LINE@ 或擴大試營運前，請先使用 [LAUNCH_CONFIRMATION_CHECKLIST.md](LAUNCH_CONFIRMATION_CHECKLIST.md) 完成內部確認。這份清單包含：
+
+- 知識庫內容與高風險回答確認
+- 公司 API key、Render、PostgreSQL、LINE 權限替換
+- UptimeRobot `/healthz` 監控
+- PostgreSQL / GitHub Actions 備份確認
+- n8n 每週 AI 健檢與寄信確認
+- 客服、主管、技術窗口、專案維護者的角色分工
+
+Render 環境變數可參考 [config/render-production.env.example](../config/render-production.env.example)。
