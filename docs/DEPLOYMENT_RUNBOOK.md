@@ -139,7 +139,7 @@ Knowledge chunks rebuilt: ... chunks
 
 - 不要把 `.env`、API key、Render 環境變數截圖貼到 GitHub 或文件。
 - GitHub repo 若曾公開，請先改 Private。
-- `data/*.json` 與 `backups/*.json` 必須先跑個資掃描。
+- `data/*.json` 必須先跑個資掃描；每週備份改由 GitHub Actions artifact 保存，不再把 `backups/*.json` commit 進 repo。
 - 匯入或輸出知識庫前，應確認手機與 email 已匿名化。
 - 大量改知識庫前，先從後台下載 JSON 備份。
 

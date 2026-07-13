@@ -52,7 +52,7 @@
 | 檔案 | 注意事項 |
 | --- | --- |
 | `knowledge.js` | 雖然不是主要知識來源，但仍是空資料庫初始化 fallback，所以暫時保留 |
-| `docs/RAG_WORKFLOW.md` | 舊版 RAG 第一版說明，已由維運手冊與現行文件取代，不再作為主要入口 |
+| `docs/RAG_WORKFLOW.md` | 舊版 RAG 第一版說明已移除，現行 RAG 與維運內容以 `docs/DEPLOYMENT_RUNBOOK.md`、`docs/EVAL_OBSERVABILITY_GUIDE.md` 與 `docs/README.md` 為準 |
 
 ## 六、結論
 

@@ -10,7 +10,7 @@
 | 客服主管 / 營運主管 | [PRD](PRD_ECOCO_AI_CUSTOMER_SERVICE.md)、[客服 Flow 圖底稿](CUSTOMER_SERVICE_FLOW.md) | 了解系統目標、流程與管理方式 |
 | 系統維護者 | [維運與交接手冊](OPERATIONS_HANDOFF_GUIDE.md)、[部署與環境手冊](DEPLOYMENT_RUNBOOK.md) | 了解部署、資料庫、知識更新與交接流程 |
 | 工程協作者 | [資料字典](DATA_DICTIONARY.md)、[資料來源清單](DATA_SOURCES.md) | 了解資料表、JSON、來源與限制 |
-| AI / LLM 評估者 | [LLM Wiki、Rule 與模型策略](LLM_WIKI_RULE_MODEL_STRATEGY.md) | 了解模型、Rule、RAG 與後續擴充方向 |
+| AI / LLM 評估者 | [Eval 與可觀測性](EVAL_OBSERVABILITY_GUIDE.md) | 了解回覆品質評測、RAG traces 與後續改善方向 |
 
 ## 核心交付文件
 
@@ -41,6 +41,14 @@
 | [PII_HISTORY_CLEANUP_PLAN.md](archive/PII_HISTORY_CLEANUP_PLAN.md) | 個資外洩止血與 Git 歷史清除方案 |
 | [REPO_FILE_AUDIT.md](REPO_FILE_AUDIT.md) | Git repository 檔案用途與不必要檔案稽核 |
 | [commandcenter-migration.md](archive/commandcenter-migration.md) | 舊 CommandCenter 專案可沿用與不建議沿用內容 |
+
+## 未啟用的未來模組
+
+| 文件 | 說明 |
+| --- | --- |
+| [future/internal-wiki/README.md](future/internal-wiki/README.md) | 內部 Wiki / 員工訓練知識系統規劃，目前 production 不啟用 |
+| [future/internal-wiki/INTERNAL_WIKI_GUIDE.md](future/internal-wiki/INTERNAL_WIKI_GUIDE.md) | 內部 Wiki 的部署、API 與資料表設計 |
+| [future/internal-wiki/LLM_WIKI_RULE_MODEL_STRATEGY.md](future/internal-wiki/LLM_WIKI_RULE_MODEL_STRATEGY.md) | LLM Wiki、Rule 與本地模型策略討論 |
 
 ## 重要維護原則
 
