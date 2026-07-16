@@ -357,8 +357,7 @@ function getKbSidebarItems(section, content) {
 
 function kbItemMatchesSearch(item, normalizedQuery) {
   if (!normalizedQuery) return true;
-  return normalizeKbText(item.heading).includes(normalizedQuery)
-    || normalizeKbText(item.body).includes(normalizedQuery);
+  return normalizeKbText(item.heading).includes(normalizedQuery);
 }
 
 function getKbSidebarMatch(section, normalizedQuery) {
@@ -420,7 +419,7 @@ function renderKbSidebar() {
   if (hint) {
     hint.textContent = query
       ? `找到 ${sectionMatches.length} 個分類、${matchedQuestionCount} 個題目`
-      : '可搜尋分類名稱與題目內容。封存分類不會提供給 AI 使用。';
+      : '可搜尋分類名稱與題目標題。封存分類不會提供給 AI 使用。';
   }
 
   if (kbSections.length === 0) {
