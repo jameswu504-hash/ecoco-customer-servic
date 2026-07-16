@@ -138,13 +138,14 @@
             <label class="kb-label">本分類問題列表 <span id="kbItemsCount"></span></label>
           </div>
           <div id="kbItemsList"></div>
-          <div class="kb-builder">
+          <details class="kb-builder" id="kbBuilder">
+            <summary>＋ 新增客服問題</summary>
             <div class="kb-builder-head">
               <div>
-                <div class="kb-builder-title">客服知識表單</div>
-                <div class="kb-builder-note">填幾個重點後按「產生內容」，會自動整理成 AI 比較好讀的格式。</div>
+                <div class="kb-builder-title">新增一筆客服問題</div>
+                <div class="kb-builder-note">填寫後按「加入問題列表」，會新增到本分類問題列表與原始內容。</div>
               </div>
-              <button class="kb-builder-btn" id="kbTemplateBtn" type="button">產生內容</button>
+              <button class="kb-builder-btn" id="kbTemplateBtn" type="button">加入問題列表</button>
             </div>
             <div class="kb-builder-grid">
               <input class="kb-builder-field" id="kbTplTitle" placeholder="問題標題，例如：點數未入帳" />
@@ -154,7 +155,7 @@
               <textarea class="kb-builder-field" id="kbTplAvoid" placeholder="不能承諾事項：例如不要承諾補點、退款、已處理"></textarea>
               <textarea class="kb-builder-field kb-builder-wide" id="kbTplInternal" placeholder="內部備註：給客服或維護者看的提醒"></textarea>
             </div>
-          </div>
+          </details>
           <details class="kb-raw-details" id="kbRawDetails">
             <summary>進階：檢視／編輯原始內容</summary>
             <label class="kb-label">內容</label>

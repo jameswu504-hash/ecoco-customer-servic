@@ -500,7 +500,7 @@ function renderKbItems(preserveRawOpen = false) {
   const items = getRenderableKbItems(parsed, textarea.value);
   if (count) count.textContent = items.length ? `（${items.length} 題）` : '';
   if (items.length === 0) {
-    list.innerHTML = '<div class="empty-state kb-items-empty">此分類目前沒有內容，請先使用「客服知識表單」或下方原始內容新增。</div>';
+    list.innerHTML = '<div class="empty-state kb-items-empty">此分類目前沒有內容，可用「＋ 新增客服問題」加入第一題。</div>';
     if (rawDetails) rawDetails.open = true;
     updateKbDetail();
     return;
@@ -602,6 +602,13 @@ function getTemplateValue(id) {
   return document.getElementById(id)?.value.trim() || '';
 }
 
+function clearKnowledgeTemplateFields() {
+  ['kbTplTitle', 'kbTplContext', 'kbTplReply', 'kbTplCollect', 'kbTplAvoid', 'kbTplInternal'].forEach(id => {
+    const field = document.getElementById(id);
+    if (field) field.value = '';
+  });
+}
+
 function applyKnowledgeTemplate() {
   const title = getTemplateValue('kbTplTitle') || document.getElementById('kbName').value.trim() || '未命名問題';
   const context = getTemplateValue('kbTplContext');
@@ -627,7 +634,10 @@ function applyKnowledgeTemplate() {
   }
   kbCharCount();
   renderKbItems();
-  document.getElementById('kbMsg').textContent = '已產生標準格式，請確認後儲存';
+  clearKnowledgeTemplateFields();
+  const builder = document.getElementById('kbBuilder');
+  if (builder) builder.open = false;
+  document.getElementById('kbMsg').textContent = '已加入問題列表，請確認後儲存';
   document.getElementById('kbMsg').className = 'save-msg ok';
 }
 

@@ -441,6 +441,12 @@
       border:1px solid #e0ede8; border-radius:8px; padding:12px;
       background:var(--green-ghost); margin-bottom:12px;
     }
+    .kb-builder summary {
+      cursor:pointer; color:var(--green-dark); font-size:13px;
+      font-weight:700; list-style:none;
+    }
+    .kb-builder summary::-webkit-details-marker { display:none; }
+    .kb-builder[open] summary { margin-bottom:10px; }
     .kb-builder-head {
       display:flex; justify-content:space-between; align-items:center;
       gap:10px; margin-bottom:10px; flex-wrap:wrap;
