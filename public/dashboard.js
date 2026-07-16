@@ -280,6 +280,7 @@ function downloadReportMarkdown() {
 let kbSections = [];     // 目前所有分類
 let kbCurrentId = null;  // 正在編輯的 id（null = 新增中尚未存）
 let kbRawRenderTimer = null;
+let kbCurrentItemIndex = 0;
 let kbSyncLock = false;
 
 async function loadKnowledge() {
@@ -341,6 +342,36 @@ function getKbSearchQuery() {
   return input ? input.value.trim() : '';
 }
 
+function renderKbSidebarItems(section) {
+  if (section.id !== kbCurrentId) return '';
+  const textarea = document.getElementById('kbContent');
+  const content = textarea ? textarea.value : section.content;
+  const parsed = getKbParserApi().parseKbContent(content || '');
+  const items = getRenderableKbItems(parsed, content);
+
+  if (kbCurrentItemIndex >= items.length) {
+    kbCurrentItemIndex = Math.max(0, items.length - 1);
+  }
+
+  if (!items.length) {
+    return `
+      <div class="kb-sidebar-items empty">
+        <div class="kb-sidebar-items-title">問題列表</div>
+        <div class="kb-sidebar-empty">尚無問題</div>
+      </div>`;
+  }
+
+  return `
+    <div class="kb-sidebar-items">
+      <div class="kb-sidebar-items-title">問題列表（${items.length}）</div>
+      ${items.map((item, idx) => `
+        <button class="kb-question-btn ${idx === kbCurrentItemIndex ? 'active' : ''}" type="button" data-kb-nav-item-index="${idx}">
+          <span class="kb-question-title">${escapeHtml(item.heading || `未命名問題 ${idx + 1}`)}</span>
+        </button>
+      `).join('')}
+    </div>`;
+}
+
 function renderKbSidebar() {
   const el = document.getElementById('kbSidebar');
   const hint = document.getElementById('kbSearchHint');
@@ -367,11 +398,15 @@ function renderKbSidebar() {
     return;
   }
   el.innerHTML = sections.map(s => `
-    <button class="kb-cat-btn ${s.id === kbCurrentId ? 'active' : ''} ${isArchivedSection(s) ? 'archived' : ''}" data-section-id="${s.id}">
-      <span class="kb-cat-name">${escapeHtml(displayCategoryName(s.category))}</span>
-      ${isArchivedSection(s) ? '<span class="kb-archive-badge">封存</span>' : ''}
-      <span class="kb-cat-size">${s.content.length}字</span>
-    </button>
+    <div class="kb-cat-group ${s.id === kbCurrentId ? 'open' : ''}">
+      <button class="kb-cat-btn ${s.id === kbCurrentId ? 'active' : ''} ${isArchivedSection(s) ? 'archived' : ''}" data-section-id="${s.id}">
+        <span class="kb-cat-arrow">${s.id === kbCurrentId ? '⌄' : '›'}</span>
+        <span class="kb-cat-name">${escapeHtml(displayCategoryName(s.category))}</span>
+        ${isArchivedSection(s) ? '<span class="kb-archive-badge">封存</span>' : ''}
+        <span class="kb-cat-size">${s.content.length}字</span>
+      </button>
+      ${renderKbSidebarItems(s)}
+    </div>
   `).join('');
 }
 
@@ -491,33 +526,44 @@ function getRenderableKbItems(parsed, content) {
 }
 
 function renderKbItems(preserveRawOpen = false) {
-  const list = document.getElementById('kbItemsList');
-  const count = document.getElementById('kbItemsCount');
+  const panel = document.getElementById('kbCurrentItemPanel');
   const rawDetails = document.getElementById('kbRawDetails');
   const textarea = document.getElementById('kbContent');
-  if (!list || !textarea) return;
+  if (!panel || !textarea) return;
   const parsed = parseCurrentKbContent();
   const items = getRenderableKbItems(parsed, textarea.value);
-  if (count) count.textContent = items.length ? `（${items.length} 題）` : '';
   if (items.length === 0) {
-    list.innerHTML = '<div class="empty-state kb-items-empty">此分類目前沒有內容，可用「＋ 新增客服問題」加入第一題。</div>';
+    kbCurrentItemIndex = 0;
+    panel.innerHTML = '<div class="empty-state kb-items-empty">此分類目前沒有問題，可用「＋ 新增客服問題」加入第一題。</div>';
     if (rawDetails) rawDetails.open = true;
     updateKbDetail();
+    renderKbSidebar();
     return;
   }
-  list.innerHTML = items.map((item, idx) => `
-    <details class="kb-item ${item.fallback ? 'kb-item-fallback' : ''}">
-      <summary>${escapeHtml(item.heading || `未命名問題 ${idx + 1}`)}</summary>
+  if (kbCurrentItemIndex >= items.length) {
+    kbCurrentItemIndex = Math.max(0, items.length - 1);
+  }
+  const item = items[kbCurrentItemIndex];
+  panel.innerHTML = `
+    <div class="kb-current-item ${item.fallback ? 'kb-item-fallback' : ''}">
+      <div class="kb-current-item-head">
+        <div>
+          <div class="kb-current-item-title">${escapeHtml(item.heading || `未命名問題 ${kbCurrentItemIndex + 1}`)}</div>
+          <div class="kb-current-item-note">從左側問題列表切換目前編輯項目。</div>
+        </div>
+        <span class="kb-current-item-count">${kbCurrentItemIndex + 1} / ${items.length}</span>
+      </div>
       ${item.fallback ? '<div class="kb-item-note">此分類尚未用 ### 分題，先以完整分類內容呈現。</div>' : `
         <label class="kb-label">題目標題</label>
-        <input class="kb-item-title" data-kb-item-index="${idx}" data-kb-item-field="heading" value="${escapeHtml(item.heading)}" />
+        <input class="kb-item-title" data-kb-item-index="${kbCurrentItemIndex}" data-kb-item-field="heading" value="${escapeHtml(item.heading)}" />
       `}
       <label class="kb-label">題目內容</label>
-      <textarea class="kb-item-editor" data-kb-item-index="${idx}" data-kb-item-field="body" ${item.fallback ? 'data-kb-fallback="1"' : ''} spellcheck="false">${escapeHtml(item.body)}</textarea>
-    </details>
-  `).join('');
+      <textarea class="kb-item-editor" data-kb-item-index="${kbCurrentItemIndex}" data-kb-item-field="body" ${item.fallback ? 'data-kb-fallback="1"' : ''} spellcheck="false">${escapeHtml(item.body)}</textarea>
+    </div>
+  `;
   if (rawDetails && !preserveRawOpen) rawDetails.open = false;
   updateKbDetail();
+  renderKbSidebar();
 }
 
 function updateKbItemFromField(field) {
@@ -531,6 +577,7 @@ function updateKbItemFromField(field) {
     textarea.value = field.value;
     kbSyncLock = false;
     kbCharCount();
+    renderKbSidebar();
     return;
   }
   const parsed = parseCurrentKbContent();
@@ -547,6 +594,7 @@ function updateKbItemFromField(field) {
   textarea.value = getKbParserApi().assembleKbContent(parsed);
   kbSyncLock = false;
   kbCharCount();
+  if (fieldName === 'heading') renderKbSidebar();
 }
 
 function handleRawKbInput() {
@@ -561,6 +609,7 @@ function selectSection(id) {
   if (!s) return;
   const archived = isArchivedSection(s);
   kbCurrentId = id;
+  kbCurrentItemIndex = 0;
   document.getElementById('kbName').value = displayCategoryName(s.category);
   document.getElementById('kbContent').value = s.content;
   setHidden('kbDelBtn', archived);
@@ -579,6 +628,7 @@ function selectSection(id) {
 
 function newSection() {
   kbCurrentId = null;
+  kbCurrentItemIndex = 0;
   document.getElementById('kbName').value = '';
   document.getElementById('kbContent').value = '';
   setHidden('kbDelBtn', true); // 還沒存，不給刪
@@ -632,6 +682,9 @@ function applyKnowledgeTemplate() {
   } else {
     textarea.value = `${textarea.value.trim()}\n\n${content}`;
   }
+  const parsed = parseCurrentKbContent();
+  const items = getRenderableKbItems(parsed, textarea.value);
+  kbCurrentItemIndex = Math.max(0, items.length - 1);
   kbCharCount();
   renderKbItems();
   clearKnowledgeTemplateFields();
@@ -1231,7 +1284,7 @@ function bindDashboardEvents() {
   document.getElementById('kbName')?.addEventListener('focus', renderCategorySuggestions);
   document.getElementById('kbTemplateBtn')?.addEventListener('click', applyKnowledgeTemplate);
   document.getElementById('kbContent')?.addEventListener('input', handleRawKbInput);
-  document.getElementById('kbItemsList')?.addEventListener('input', event => {
+  document.getElementById('kbCurrentItemPanel')?.addEventListener('input', event => {
     const field = event.target.closest('[data-kb-item-index][data-kb-item-field]');
     if (field) updateKbItemFromField(field);
   });
@@ -1261,6 +1314,13 @@ function bindDashboardEvents() {
     const retryButton = event.target.closest('[data-retry-target]');
     if (retryButton) {
       SECTION_LOADERS[retryButton.dataset.retryTarget]?.();
+      return;
+    }
+
+    const kbNavItem = event.target.closest('[data-kb-nav-item-index]');
+    if (kbNavItem) {
+      kbCurrentItemIndex = Number(kbNavItem.dataset.kbNavItemIndex) || 0;
+      renderKbItems();
       return;
     }
 
