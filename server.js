@@ -53,6 +53,12 @@ app.use(express.json({
     req.rawBody = buf;
   },
 }));
+app.use((req, res, next) => {
+  if (['/dashboard.html', '/dashboard.css', '/dashboard.js'].includes(req.path)) {
+    res.setHeader('Cache-Control', 'no-store');
+  }
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
