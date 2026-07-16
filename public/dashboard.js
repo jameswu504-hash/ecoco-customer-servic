@@ -365,7 +365,7 @@ function renderKbSidebarItems(section) {
     <div class="kb-sidebar-items">
       <div class="kb-sidebar-items-title">問題列表（${items.length}）</div>
       ${items.map((item, idx) => `
-        <button class="kb-question-btn ${idx === kbCurrentItemIndex ? 'active' : ''}" type="button" data-kb-nav-item-index="${idx}">
+        <button class="kb-question-btn ${idx === kbCurrentItemIndex ? 'active' : ''}" type="button" data-kb-nav-item-index="${idx}" id="kb-question-${idx}">
           <span class="kb-question-title">${escapeHtml(item.heading || `未命名問題 ${idx + 1}`)}</span>
         </button>
       `).join('')}
@@ -408,6 +408,16 @@ function renderKbSidebar() {
       ${renderKbSidebarItems(s)}
     </div>
   `).join('');
+}
+
+function focusKbSidebarItem(index = kbCurrentItemIndex) {
+  requestAnimationFrame(() => {
+    const item = document.getElementById(`kb-question-${index}`);
+    if (!item) return;
+    item.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    item.classList.add('just-added');
+    setTimeout(() => item.classList.remove('just-added'), 1800);
+  });
 }
 
 function getMatchingCategories(query) {
@@ -584,8 +594,8 @@ function updateKbBuilderCopy() {
   } else {
     summary.textContent = '＋ 新增一題';
     title.textContent = '新增一題客服會遇到的問題';
-    note.textContent = '用來在目前分類底下補一個新問題，填完後按儲存才會生效。';
-    button.textContent = '加入這個分類';
+    note.textContent = '填完後會加到左側問題列表並自動選取，最後按儲存才會生效。';
+    button.textContent = '加入左側問題列表';
   }
 }
 
@@ -715,11 +725,12 @@ function applyKnowledgeTemplate() {
   kbCurrentItemIndex = Math.max(0, items.length - 1);
   kbCharCount();
   renderKbItems();
+  focusKbSidebarItem(kbCurrentItemIndex);
   clearKnowledgeTemplateFields();
   const builder = document.getElementById('kbBuilder');
   if (builder) builder.open = false;
   updateKbBuilderCopy();
-  document.getElementById('kbMsg').textContent = '已加入問題列表，請確認後儲存';
+  document.getElementById('kbMsg').textContent = `已加入左側問題列表第 ${kbCurrentItemIndex + 1} 題，請按「儲存」才會生效`;
   document.getElementById('kbMsg').className = 'save-msg ok';
 }
 
