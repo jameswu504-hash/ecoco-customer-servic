@@ -197,6 +197,20 @@
       <input class="search-input" id="searchInput" type="text" placeholder="🔍 搜尋對話內容（輸入關鍵字）" />
       <div class="search-hint" id="searchHint"></div>
     </div>
+    <div class="sessions-toolbar" id="sessionsToolbar">
+      <label>每頁
+        <select id="pageSizeSelect">
+          <option value="10" selected>10</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select> 筆
+      </label>
+      <div class="pager">
+        <button id="pagePrevBtn">‹ 上一頁</button>
+        <span id="pageInfo"></span>
+        <button id="pageNextBtn">下一頁 ›</button>
+      </div>
+    </div>
     <div id="sessionsList"><div class="loading">載入中...</div></div>
   </div>
 

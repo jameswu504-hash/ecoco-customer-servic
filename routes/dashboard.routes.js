@@ -1,15 +1,15 @@
 const express = require('express');
 
+function getLimit(value, fallback, max) {
+  const limit = Number(value || fallback);
+  if (!Number.isInteger(limit) || limit <= 0) return fallback;
+  return Math.min(limit, max);
+}
+
 function createDashboardRouter({ pool, requireAdminKey }) {
   const router = express.Router();
 
   router.use(requireAdminKey);
-
-  function getLimit(value, fallback, max) {
-    const limit = Number(value || fallback);
-    if (!Number.isInteger(limit) || limit <= 0) return fallback;
-    return Math.min(limit, max);
-  }
 
   async function attachMessagesToSessions(sessions) {
     if (sessions.length === 0) return [];
@@ -39,8 +39,14 @@ function createDashboardRouter({ pool, requireAdminKey }) {
   }
 
   router.get('/sessions', async (req, res) => {
-    const limit = getLimit(req.query.limit, 50, 200);
+    const limit = getLimit(req.query.limit, 10, 200);
+    const offsetRaw = Number(req.query.offset || 0);
+    const offset = Number.isInteger(offsetRaw) && offsetRaw >= 0 ? offsetRaw : 0;
     try {
+      const { rows: countRows } = await pool.query(
+        'SELECT COUNT(DISTINCT session_id) AS total FROM conversations'
+      );
+      const total = Number(countRows[0]?.total || 0);
       const { rows: sessions } = await pool.query(`
         SELECT session_id,
                COUNT(*)       AS message_count,
@@ -49,12 +55,41 @@ function createDashboardRouter({ pool, requireAdminKey }) {
         FROM conversations
         GROUP BY session_id
         ORDER BY started_at DESC
-        LIMIT $1
-      `, [limit]);
-      res.json(await attachMessagesToSessions(sessions));
+        LIMIT $1 OFFSET $2
+      `, [limit, offset]);
+      res.json({
+        total,
+        limit,
+        offset,
+        sessions: sessions.map(session => ({
+          ...session,
+          message_count: Number(session.message_count),
+        })),
+      });
     } catch (dbErr) {
       console.error('DB sessions query error:', dbErr.message);
       res.status(500).json({ error: '讀取對話紀錄失敗' });
+    }
+  });
+
+  router.get('/session-messages', async (req, res) => {
+    const sessionId = String(req.query.session_id || '').trim();
+    if (!sessionId || sessionId.length > 200) {
+      return res.status(400).json({ error: 'session_id 格式錯誤' });
+    }
+    try {
+      const { rows } = await pool.query(
+        `SELECT role, content, timestamp
+         FROM conversations
+         WHERE session_id = $1
+         ORDER BY timestamp ASC, id ASC
+         LIMIT 500`,
+        [sessionId]
+      );
+      return res.json(rows);
+    } catch (dbErr) {
+      console.error('DB session messages query error:', dbErr.message);
+      return res.status(500).json({ error: '讀取對話內容失敗' });
     }
   });
 
@@ -122,4 +157,4 @@ function createDashboardRouter({ pool, requireAdminKey }) {
   return router;
 }
 
-module.exports = { createDashboardRouter };
+module.exports = { createDashboardRouter, getLimit };

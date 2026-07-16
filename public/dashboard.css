@@ -479,6 +479,29 @@
     }
     .search-input:focus { border-color:var(--green-mid); background:var(--white); }
     .search-hint { font-size:11px; color:var(--gray-mid); margin-top:5px; font-family:'Space Mono',monospace; }
+    .sessions-toolbar {
+      display:flex; justify-content:space-between; align-items:center;
+      gap:12px; flex-wrap:wrap; margin:0 0 14px;
+      color:var(--gray-mid); font-size:12px;
+    }
+    .sessions-toolbar select {
+      border:1px solid #cce0d8; border-radius:8px; padding:6px 8px;
+      background:white; color:var(--black); font-family:'Noto Sans TC',sans-serif;
+      margin:0 4px;
+    }
+    .pager {
+      display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    }
+    .pager button {
+      border:1px solid var(--green-main); background:white; color:var(--green-main);
+      border-radius:8px; padding:6px 10px; cursor:pointer; font-size:12px;
+      font-family:'Noto Sans TC',sans-serif;
+    }
+    .pager button:hover:not(:disabled) { background:var(--green-main); color:white; }
+    .pager button:disabled {
+      border-color:var(--gray-light); color:var(--gray-light); cursor:not-allowed;
+      background:var(--green-ghost);
+    }
 
     /* 評分明細 */
     .ratings-card {

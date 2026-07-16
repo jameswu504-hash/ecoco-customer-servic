@@ -595,13 +595,17 @@ function handleSearch(val) {
   const hint = document.getElementById('searchHint');
   if (val.trim().length === 0) {
     hint.textContent = '';
+    setSessionsToolbarHidden(false);
+    sessionPage = 0;
     safeLoad('sessionsList', loadSessions);
     return;
   }
   if (val.trim().length < 2) {
+    setSessionsToolbarHidden(true);
     hint.textContent = '請輸入至少 2 個字';
     return;
   }
+  setSessionsToolbarHidden(true);
   hint.textContent = '搜尋中...';
   searchTimer = setTimeout(() => runSearch(val.trim()), 400);
 }
@@ -943,46 +947,82 @@ function toggleGap(idx) {
 }
 
 // 對話紀錄
+let sessionPage = 0;
+let sessionPageSize = 10;
+let sessionTotal = 0;
+const sessionMessagesCache = new Map();
+
+function setSessionsToolbarHidden(hidden) {
+  const toolbar = document.getElementById('sessionsToolbar');
+  if (toolbar) toolbar.hidden = Boolean(hidden);
+}
+
 function renderSessions(data) {
   if (data.length === 0) {
     document.getElementById('sessionsList').innerHTML = '<div class="empty-state">找不到相關對話紀錄</div>';
     return;
   }
   document.getElementById('sessionsList').innerHTML = data.map((session, idx) => {
+    const sessionId = String(session.session_id || '');
     const startTime = new Date(session.started_at).toLocaleString('zh-TW');
-    const msgCount  = Math.floor(session.message_count / 2);
-    const messages  = session.messages.map(msg => `
-      <div class="msg-item">
-        <span class="msg-role ${msg.role}">${msg.role === 'user' ? '用戶' : 'AI'}</span>
-        <div class="msg-content">${escapeHtml(msg.content)}</div>
-        <div class="msg-time">${new Date(msg.timestamp).toLocaleTimeString('zh-TW', { hour:'2-digit', minute:'2-digit' })}</div>
-      </div>
-    `).join('');
+    const msgCount = Math.floor(Number(session.message_count || 0) / 2);
+    const hasInline = Array.isArray(session.messages);
+    const inner = hasInline ? renderMessages(session.messages) : '<div class="loading">載入中...</div>';
 
     return `
       <div class="session-item">
-        <div class="session-header" data-session-target="sess-${idx}" data-session-index="${idx}">
-          <span class="session-id">${escapeHtml(session.session_id.substring(0, 20))}…</span>
+        <div class="session-header" data-session-target="sess-${idx}" data-session-index="${idx}"
+             data-session-id="${escapeHtml(sessionId)}" data-session-loaded="${hasInline ? '1' : '0'}">
+          <span class="session-id">${escapeHtml(sessionId.substring(0, 20))}…</span>
           <span class="session-meta">${startTime}</span>
           <span class="session-count">${msgCount} 問答</span>
           <span class="session-toggle" id="toggle-${idx}">▼</span>
         </div>
         <div class="session-messages" id="sess-${idx}">
-          ${messages}
+          ${inner}
         </div>
       </div>
     `;
   }).join('');
 }
 
+function renderMessages(messages) {
+  return messages.map(msg => `
+    <div class="msg-item">
+      <span class="msg-role ${msg.role === 'user' ? 'user' : 'assistant'}">${msg.role === 'user' ? '用戶' : 'AI'}</span>
+      <div class="msg-content">${escapeHtml(msg.content)}</div>
+      <div class="msg-time">${new Date(msg.timestamp).toLocaleTimeString('zh-TW', { hour:'2-digit', minute:'2-digit' })}</div>
+    </div>
+  `).join('');
+}
+
 async function loadSessions() {
-  const data = await adminFetch('/api/sessions');
-  if (!Array.isArray(data)) throw new Error('對話資料格式異常');
-  if (data.length === 0) {
-    document.getElementById('sessionsList').innerHTML = '<div class="empty-state">尚無對話紀錄，對話後會自動出現在這裡</div>';
-    return;
+  const offset = sessionPage * sessionPageSize;
+  const data = await adminFetch(`/api/sessions?limit=${sessionPageSize}&offset=${offset}`);
+  if (!data || !Array.isArray(data.sessions)) throw new Error('對話資料格式異常');
+  sessionTotal = Number(data.total || 0);
+  if (data.sessions.length === 0 && sessionTotal > 0 && sessionPage > 0) {
+    sessionPage = Math.max(0, Math.ceil(sessionTotal / sessionPageSize) - 1);
+    return loadSessions();
   }
-  renderSessions(data);
+  if (sessionTotal === 0) {
+    document.getElementById('sessionsList').innerHTML = '<div class="empty-state">尚無對話紀錄，對話後會自動出現在這裡</div>';
+  } else {
+    renderSessions(data.sessions);
+  }
+  renderSessionPager();
+}
+
+function renderSessionPager() {
+  const totalPages = Math.max(1, Math.ceil(sessionTotal / sessionPageSize));
+  const pageInfo = document.getElementById('pageInfo');
+  const prevBtn = document.getElementById('pagePrevBtn');
+  const nextBtn = document.getElementById('pageNextBtn');
+  if (pageInfo) {
+    pageInfo.textContent = `第 ${sessionPage + 1} / ${totalPages} 頁，共 ${sessionTotal} 場對話`;
+  }
+  if (prevBtn) prevBtn.disabled = sessionPage <= 0;
+  if (nextBtn) nextBtn.disabled = sessionPage >= totalPages - 1;
 }
 
 function toggleSession(id, idx) {
@@ -990,6 +1030,17 @@ function toggleSession(id, idx) {
   const toggle = document.getElementById('toggle-' + idx);
   el.classList.toggle('open');
   toggle.textContent = el.classList.contains('open') ? '▲' : '▼';
+}
+
+async function loadSessionMessages(sessionId, targetId) {
+  let messages = sessionMessagesCache.get(sessionId);
+  if (!messages) {
+    messages = await adminFetch(`/api/session-messages?session_id=${encodeURIComponent(sessionId)}`);
+    if (!Array.isArray(messages)) throw new Error('對話內容格式異常');
+    sessionMessagesCache.set(sessionId, messages);
+  }
+  const box = document.getElementById(targetId);
+  if (box) box.innerHTML = renderMessages(messages);
 }
 
 function bindDashboardEvents() {
@@ -1036,6 +1087,21 @@ function bindDashboardEvents() {
 
   document.getElementById('gapFilter')?.addEventListener('change', renderUnansweredList);
   document.getElementById('searchInput')?.addEventListener('input', event => handleSearch(event.currentTarget.value));
+  document.getElementById('pageSizeSelect')?.addEventListener('change', event => {
+    sessionPageSize = Number(event.target.value) || 10;
+    sessionPage = 0;
+    safeLoad('sessionsList', loadSessions);
+  });
+  document.getElementById('pagePrevBtn')?.addEventListener('click', () => {
+    if (sessionPage > 0) {
+      sessionPage -= 1;
+      safeLoad('sessionsList', loadSessions);
+    }
+  });
+  document.getElementById('pageNextBtn')?.addEventListener('click', () => {
+    sessionPage += 1;
+    safeLoad('sessionsList', loadSessions);
+  });
 
   document.addEventListener('click', event => {
     const retryButton = event.target.closest('[data-retry-target]');
@@ -1084,6 +1150,15 @@ function bindDashboardEvents() {
     const sessionHeader = event.target.closest('[data-session-target][data-session-index]');
     if (sessionHeader) {
       toggleSession(sessionHeader.dataset.sessionTarget, Number(sessionHeader.dataset.sessionIndex));
+      if (sessionHeader.dataset.sessionLoaded === '0') {
+        sessionHeader.dataset.sessionLoaded = '1';
+        loadSessionMessages(sessionHeader.dataset.sessionId, sessionHeader.dataset.sessionTarget)
+          .catch(err => {
+            const box = document.getElementById(sessionHeader.dataset.sessionTarget);
+            if (box) box.innerHTML = `<div class="load-error"><span>⚠️ ${escapeHtml(err.message)}</span></div>`;
+            sessionHeader.dataset.sessionLoaded = '0';
+          });
+      }
     }
   });
 }
