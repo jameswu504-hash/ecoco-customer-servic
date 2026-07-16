@@ -342,30 +342,65 @@ function getKbSearchQuery() {
   return input ? input.value.trim() : '';
 }
 
-function renderKbSidebarItems(section) {
-  if (section.id !== kbCurrentId) return '';
-  const textarea = document.getElementById('kbContent');
-  const content = textarea ? textarea.value : section.content;
-  const parsed = getKbParserApi().parseKbContent(content || '');
-  const items = getRenderableKbItems(parsed, content);
+function getKbSectionContentForSidebar(section) {
+  if (section.id === kbCurrentId) {
+    const textarea = document.getElementById('kbContent');
+    return textarea ? textarea.value : section.content;
+  }
+  return section.content || '';
+}
 
-  if (kbCurrentItemIndex >= items.length) {
+function getKbSidebarItems(section, content) {
+  const parsed = getKbParserApi().parseKbContent(content || '');
+  return getRenderableKbItems(parsed, content);
+}
+
+function kbItemMatchesSearch(item, normalizedQuery) {
+  if (!normalizedQuery) return true;
+  return normalizeKbText(item.heading).includes(normalizedQuery)
+    || normalizeKbText(item.body).includes(normalizedQuery);
+}
+
+function getKbSidebarMatch(section, normalizedQuery) {
+  const content = getKbSectionContentForSidebar(section);
+  const categoryMatch = normalizeKbText(displayCategoryName(section.category)).includes(normalizedQuery);
+  const items = getKbSidebarItems(section, content);
+  const indexedItems = items.map((item, idx) => ({ item, idx }));
+  const matchingItems = normalizedQuery
+    ? indexedItems.filter(({ item }) => kbItemMatchesSearch(item, normalizedQuery))
+    : indexedItems;
+  return {
+    categoryMatch,
+    items,
+    matchingItems,
+    matches: !normalizedQuery || categoryMatch || matchingItems.length > 0,
+  };
+}
+
+function renderKbSidebarItems(section, match) {
+  const query = getKbSearchQuery();
+  const showItems = section.id === kbCurrentId || query;
+  if (!showItems) return '';
+  const items = match?.items || getKbSidebarItems(section, getKbSectionContentForSidebar(section));
+  const displayItems = query && !match?.categoryMatch ? (match?.matchingItems || []) : items.map((item, idx) => ({ item, idx }));
+
+  if (section.id === kbCurrentId && kbCurrentItemIndex >= items.length) {
     kbCurrentItemIndex = Math.max(0, items.length - 1);
   }
 
-  if (!items.length) {
+  if (!displayItems.length) {
     return `
       <div class="kb-sidebar-items empty">
         <div class="kb-sidebar-items-title">問題列表</div>
-        <div class="kb-sidebar-empty">尚無問題</div>
+        <div class="kb-sidebar-empty">${query ? '沒有符合的題目' : '尚無問題'}</div>
       </div>`;
   }
 
   return `
     <div class="kb-sidebar-items">
-      <div class="kb-sidebar-items-title">問題列表（${items.length}）</div>
-      ${items.map((item, idx) => `
-        <button class="kb-question-btn ${idx === kbCurrentItemIndex ? 'active' : ''}" type="button" data-kb-nav-item-index="${idx}" id="kb-question-${idx}">
+      <div class="kb-sidebar-items-title">問題列表（${displayItems.length}${query && displayItems.length !== items.length ? ` / ${items.length}` : ''}）</div>
+      ${displayItems.map(({ item, idx }) => `
+        <button class="kb-question-btn ${section.id === kbCurrentId && idx === kbCurrentItemIndex ? 'active' : ''}" type="button" data-kb-nav-section-id="${section.id}" data-kb-nav-item-index="${idx}" id="kb-question-${section.id}-${idx}">
           <span class="kb-question-title">${escapeHtml(item.heading || `未命名問題 ${idx + 1}`)}</span>
         </button>
       `).join('')}
@@ -377,42 +412,41 @@ function renderKbSidebar() {
   const hint = document.getElementById('kbSearchHint');
   const query = getKbSearchQuery();
   const normalizedQuery = normalizeKbText(query);
-  const sections = normalizedQuery
-    ? kbSections.filter(s =>
-        normalizeKbText(displayCategoryName(s.category)).includes(normalizedQuery)
-      )
-    : kbSections;
+  const sectionMatches = kbSections
+    .map(section => ({ section, match: getKbSidebarMatch(section, normalizedQuery) }))
+    .filter(({ match }) => match.matches);
+  const matchedQuestionCount = sectionMatches.reduce((sum, { match }) => sum + match.matchingItems.length, 0);
 
   if (hint) {
     hint.textContent = query
-      ? `找到 ${sections.length} / ${kbSections.length} 個分類`
-      : '搜尋只比對分類名稱，不會搜尋完整內容。封存分類不會提供給 AI 使用。';
+      ? `找到 ${sectionMatches.length} 個分類、${matchedQuestionCount} 個題目`
+      : '可搜尋分類名稱與題目內容。封存分類不會提供給 AI 使用。';
   }
 
   if (kbSections.length === 0) {
     el.innerHTML = '<div class="empty-state">尚無分類，按「＋ 新增分類」開始</div>';
     return;
   }
-  if (sections.length === 0) {
+  if (sectionMatches.length === 0) {
     el.innerHTML = '<div class="empty-state">找不到相近分類，可以按「＋ 新增分類」建立</div>';
     return;
   }
-  el.innerHTML = sections.map(s => `
-    <div class="kb-cat-group ${s.id === kbCurrentId ? 'open' : ''}">
-      <button class="kb-cat-btn ${s.id === kbCurrentId ? 'active' : ''} ${isArchivedSection(s) ? 'archived' : ''}" data-section-id="${s.id}">
-        <span class="kb-cat-arrow">${s.id === kbCurrentId ? '⌄' : '›'}</span>
-        <span class="kb-cat-name">${escapeHtml(displayCategoryName(s.category))}</span>
-        ${isArchivedSection(s) ? '<span class="kb-archive-badge">封存</span>' : ''}
-        <span class="kb-cat-size">${s.content.length}字</span>
+  el.innerHTML = sectionMatches.map(({ section, match }) => `
+    <div class="kb-cat-group ${section.id === kbCurrentId || query ? 'open' : ''}">
+      <button class="kb-cat-btn ${section.id === kbCurrentId ? 'active' : ''} ${isArchivedSection(section) ? 'archived' : ''}" data-section-id="${section.id}">
+        <span class="kb-cat-arrow">${section.id === kbCurrentId || query ? '⌄' : '›'}</span>
+        <span class="kb-cat-name">${escapeHtml(displayCategoryName(section.category))}</span>
+        ${isArchivedSection(section) ? '<span class="kb-archive-badge">封存</span>' : ''}
+        <span class="kb-cat-size">${section.content.length}字</span>
       </button>
-      ${renderKbSidebarItems(s)}
+      ${renderKbSidebarItems(section, match)}
     </div>
   `).join('');
 }
 
-function focusKbSidebarItem(index = kbCurrentItemIndex) {
+function focusKbSidebarItem(index = kbCurrentItemIndex, sectionId = kbCurrentId) {
   requestAnimationFrame(() => {
-    const item = document.getElementById(`kb-question-${index}`);
+    const item = document.getElementById(`kb-question-${sectionId}-${index}`);
     if (!item) return;
     item.scrollIntoView({ behavior: 'smooth', block: 'center' });
     item.classList.add('just-added');
@@ -512,6 +546,45 @@ function getKbHeadingLineEnding(raw, fallbackText) {
   return match ? match[1] : detectKbLineEnding(fallbackText);
 }
 
+const KB_CREATED_AT_RE = /^\s*<!--\s*created_at:\s*([^>]+?)\s*-->\s*/i;
+
+function getKbItemMetadata(raw) {
+  const body = getKbItemBody(raw);
+  const match = body.match(KB_CREATED_AT_RE);
+  return {
+    createdAt: match ? match[1].trim() : '',
+  };
+}
+
+function stripKbItemMetadata(body) {
+  return String(body || '').replace(KB_CREATED_AT_RE, '');
+}
+
+function composeKbItemBody(body, metadata = {}) {
+  const cleanBody = stripKbItemMetadata(body).replace(/^\s+/, '');
+  const createdAt = String(metadata.createdAt || '').trim();
+  if (!createdAt) return cleanBody;
+  return `<!-- created_at: ${createdAt} -->\n\n${cleanBody}`.trimEnd();
+}
+
+function buildEmptyKbItem() {
+  return `### \n\n<!-- created_at: ${new Date().toISOString()} -->\n\n`;
+}
+
+function formatKbTimestamp(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('zh-TW', {
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 function getFallbackKbItemTitle() {
   const current = kbSections.find(s => s.id === kbCurrentId);
   return displayCategoryName(current?.category) || document.getElementById('kbName')?.value.trim() || '本分類內容';
@@ -519,11 +592,15 @@ function getFallbackKbItemTitle() {
 
 function getRenderableKbItems(parsed, content) {
   if (parsed.items.length > 0) {
-    return parsed.items.map(item => ({
-      heading: item.heading,
-      body: getKbItemBody(item.raw),
-      fallback: false,
-    }));
+    return parsed.items.map(item => {
+      const metadata = getKbItemMetadata(item.raw);
+      return {
+        heading: item.heading,
+        body: stripKbItemMetadata(getKbItemBody(item.raw)),
+        createdAt: metadata.createdAt,
+        fallback: false,
+      };
+    });
   }
   if (String(content || '').trim()) {
     return [{
@@ -560,6 +637,7 @@ function renderKbItems(preserveRawOpen = false) {
         <div>
           <div class="kb-current-item-title">${escapeHtml(item.heading || `未命名問題 ${kbCurrentItemIndex + 1}`)}</div>
           <div class="kb-current-item-note">這裡是 AI 會參考的客服回答內容，從左側問題列表切換題目。</div>
+          ${item.createdAt ? `<div class="kb-current-item-meta">新增時間：${escapeHtml(formatKbTimestamp(item.createdAt))}</div>` : ''}
         </div>
         <span class="kb-current-item-count">${kbCurrentItemIndex + 1} / ${items.length}</span>
       </div>
@@ -597,12 +675,14 @@ function updateKbItemFromField(field) {
   const item = parsed.items[index];
   if (!item || !textarea) return;
   const previousRaw = item.raw;
+  const metadata = getKbItemMetadata(previousRaw);
   const heading = fieldName === 'heading' ? field.value : item.heading;
-  const body = fieldName === 'body' ? field.value : getKbItemBody(item.raw);
+  const body = fieldName === 'body' ? field.value : stripKbItemMetadata(getKbItemBody(item.raw));
   const eol = getKbHeadingLineEnding(previousRaw, textarea.value);
   const hadHeadingEol = /^###\s.*?(\r\n|\n)/.test(previousRaw);
+  const composedBody = composeKbItemBody(body, metadata);
   item.heading = heading;
-  item.raw = `### ${heading}` + (body.length > 0 || hadHeadingEol ? eol : '') + body;
+  item.raw = `### ${heading}` + (composedBody.length > 0 || hadHeadingEol ? eol : '') + composedBody;
   kbSyncLock = true;
   textarea.value = getKbParserApi().assembleKbContent(parsed);
   kbSyncLock = false;
@@ -643,7 +723,7 @@ function newSection() {
   kbCurrentId = null;
   kbCurrentItemIndex = 0;
   document.getElementById('kbName').value = '';
-  document.getElementById('kbContent').value = '### \n\n';
+  document.getElementById('kbContent').value = buildEmptyKbItem();
   setHidden('kbDelBtn', true); // 還沒存，不給刪
   setHidden('kbRestoreBtn', true);
   document.getElementById('kbSaveBtn').disabled = false;
@@ -664,7 +744,7 @@ function kbCharCount() {
 function addKbItem() {
   const textarea = document.getElementById('kbContent');
   if (!textarea) return;
-  const content = '### \n\n';
+  const content = buildEmptyKbItem();
   textarea.value = textarea.value.trim()
     ? `${textarea.value.trim()}\n\n${content}`
     : content;
@@ -1386,6 +1466,10 @@ function bindDashboardEvents() {
 
     const kbNavItem = event.target.closest('[data-kb-nav-item-index]');
     if (kbNavItem) {
+      const sectionId = Number(kbNavItem.dataset.kbNavSectionId);
+      if (Number.isInteger(sectionId) && sectionId !== kbCurrentId) {
+        selectSection(sectionId);
+      }
       kbCurrentItemIndex = Number(kbNavItem.dataset.kbNavItemIndex) || 0;
       renderKbItems();
       return;

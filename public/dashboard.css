@@ -537,6 +537,10 @@
     .kb-current-item-note {
       font-size:11px; color:var(--gray-mid); margin-top:2px;
     }
+    .kb-current-item-meta {
+      font-size:11px; color:var(--gray-mid); margin-top:4px;
+      font-family:'Space Mono','Noto Sans TC',monospace;
+    }
     .kb-current-item-count {
       font-size:11px; color:var(--green-main);
       font-family:'Space Mono',monospace; flex-shrink:0;
