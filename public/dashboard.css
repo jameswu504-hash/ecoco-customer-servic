@@ -660,7 +660,7 @@
     }
     .retry-btn:hover { background:#a94434; color:#fff; }
     .back-to-top {
-      position:fixed; right:28px; bottom:28px; width:44px; height:44px;
+      position:fixed; right:28px; bottom:72px; width:44px; height:44px;
       border-radius:50%; border:none; background:var(--green-dark); color:#fff;
       font-size:20px; cursor:pointer; box-shadow:0 4px 12px rgba(26,43,109,.35);
       z-index:900; transition:opacity .2s; font-family:'Noto Sans TC',sans-serif;
