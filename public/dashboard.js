@@ -448,7 +448,8 @@ function parseCurrentKbContent() {
 }
 
 function countKbItems(content) {
-  return getKbParserApi().parseKbContent(content).items.length;
+  const parsed = getKbParserApi().parseKbContent(content);
+  return parsed.items.length || (String(content || '').trim() ? 1 : 0);
 }
 
 function getKbItemBody(raw) {
@@ -466,6 +467,29 @@ function getKbHeadingLineEnding(raw, fallbackText) {
   return match ? match[1] : detectKbLineEnding(fallbackText);
 }
 
+function getFallbackKbItemTitle() {
+  const current = kbSections.find(s => s.id === kbCurrentId);
+  return displayCategoryName(current?.category) || document.getElementById('kbName')?.value.trim() || '本分類內容';
+}
+
+function getRenderableKbItems(parsed, content) {
+  if (parsed.items.length > 0) {
+    return parsed.items.map(item => ({
+      heading: item.heading,
+      body: getKbItemBody(item.raw),
+      fallback: false,
+    }));
+  }
+  if (String(content || '').trim()) {
+    return [{
+      heading: getFallbackKbItemTitle(),
+      body: content,
+      fallback: true,
+    }];
+  }
+  return [];
+}
+
 function renderKbItems(preserveRawOpen = false) {
   const list = document.getElementById('kbItemsList');
   const count = document.getElementById('kbItemsCount');
@@ -473,20 +497,23 @@ function renderKbItems(preserveRawOpen = false) {
   const textarea = document.getElementById('kbContent');
   if (!list || !textarea) return;
   const parsed = parseCurrentKbContent();
-  if (count) count.textContent = parsed.items.length ? `（${parsed.items.length} 題）` : '';
-  if (parsed.items.length === 0) {
-    list.innerHTML = '<div class="empty-state kb-items-empty">此分類尚未使用 ### 分題，可直接在下方原始內容編輯。</div>';
+  const items = getRenderableKbItems(parsed, textarea.value);
+  if (count) count.textContent = items.length ? `（${items.length} 題）` : '';
+  if (items.length === 0) {
+    list.innerHTML = '<div class="empty-state kb-items-empty">此分類目前沒有內容，請先使用「客服知識表單」或下方原始內容新增。</div>';
     if (rawDetails) rawDetails.open = true;
     updateKbDetail();
     return;
   }
-  list.innerHTML = parsed.items.map((item, idx) => `
-    <details class="kb-item">
+  list.innerHTML = items.map((item, idx) => `
+    <details class="kb-item ${item.fallback ? 'kb-item-fallback' : ''}">
       <summary>${escapeHtml(item.heading || `未命名問題 ${idx + 1}`)}</summary>
-      <label class="kb-label">題目標題</label>
-      <input class="kb-item-title" data-kb-item-index="${idx}" data-kb-item-field="heading" value="${escapeHtml(item.heading)}" />
+      ${item.fallback ? '<div class="kb-item-note">此分類尚未用 ### 分題，先以完整分類內容呈現。</div>' : `
+        <label class="kb-label">題目標題</label>
+        <input class="kb-item-title" data-kb-item-index="${idx}" data-kb-item-field="heading" value="${escapeHtml(item.heading)}" />
+      `}
       <label class="kb-label">題目內容</label>
-      <textarea class="kb-item-editor" data-kb-item-index="${idx}" data-kb-item-field="body" spellcheck="false">${escapeHtml(getKbItemBody(item.raw))}</textarea>
+      <textarea class="kb-item-editor" data-kb-item-index="${idx}" data-kb-item-field="body" ${item.fallback ? 'data-kb-fallback="1"' : ''} spellcheck="false">${escapeHtml(item.body)}</textarea>
     </details>
   `).join('');
   if (rawDetails && !preserveRawOpen) rawDetails.open = false;
@@ -499,6 +526,13 @@ function updateKbItemFromField(field) {
   const fieldName = field.dataset.kbItemField;
   if (!Number.isInteger(index)) return;
   const textarea = document.getElementById('kbContent');
+  if (field.dataset.kbFallback === '1') {
+    kbSyncLock = true;
+    textarea.value = field.value;
+    kbSyncLock = false;
+    kbCharCount();
+    return;
+  }
   const parsed = parseCurrentKbContent();
   const item = parsed.items[index];
   if (!item || !textarea) return;

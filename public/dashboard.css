@@ -481,6 +481,12 @@
     }
     .kb-item[open] summary { border-bottom:1px solid #e0ede8; }
     .kb-item[open] summary::after { content:'▲'; }
+    .kb-item-fallback summary { background:#f8fafc; }
+    .kb-item-note {
+      margin:10px 12px 0; padding:8px 10px; border-radius:8px;
+      background:var(--green-ghost); color:var(--gray-mid);
+      font-size:12px; line-height:1.6;
+    }
     .kb-item-title,
     .kb-item-editor {
       width:calc(100% - 24px); margin:10px 12px 0;
