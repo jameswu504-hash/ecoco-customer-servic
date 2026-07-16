@@ -11,12 +11,68 @@ function escapeHtml(str) {
 // ── Admin Key 管理 ────────────────────────────────────────
 function getAdminKey() { return sessionStorage.getItem('adminKey') || ''; }
 
-function adminFetch(url) {
-  return fetch(url, { headers: { 'x-admin-key': getAdminKey() } })
-    .then(res => {
-      if (res.status === 401) { showLogin(); throw new Error('401'); }
-      return res.json();
+const LOAD_TIMEOUT_MS = 15000;
+const SECTION_LOADERS = {};
+
+async function adminFetch(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), LOAD_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(url, {
+      headers: { 'x-admin-key': getAdminKey() },
+      signal: controller.signal,
     });
+  } catch (err) {
+    throw new Error(err.name === 'AbortError' ? '連線逾時（15 秒），伺服器可能正在喚醒' : '網路連線失敗');
+  } finally {
+    clearTimeout(timer);
+  }
+  if (res.status === 401) {
+    showLogin();
+    throw new Error('需要重新登入');
+  }
+  let payload = null;
+  try {
+    payload = await res.json();
+  } catch {
+    // 非 JSON 回應會在非 2xx 時轉成可讀錯誤；2xx 則回傳 null。
+  }
+  if (!res.ok) {
+    throw new Error((payload && payload.error) || `伺服器錯誤（HTTP ${res.status}）`);
+  }
+  return payload;
+}
+
+function renderLoading(id) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = '<div class="loading">載入中...</div>';
+}
+
+function renderLoadError(id, err) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = `
+    <div class="load-error">
+      <span>⚠️ 載入失敗：${escapeHtml(err.message)}</span>
+      <button class="retry-btn" type="button" data-retry-target="${escapeHtml(id)}">重試</button>
+    </div>`;
+}
+
+async function safeLoad(targetIds, loader) {
+  const ids = Array.isArray(targetIds) ? targetIds : [targetIds];
+  ids.forEach(id => {
+    SECTION_LOADERS[id] = () => {
+      ids.forEach(renderLoading);
+      return safeLoad(ids, loader);
+    };
+  });
+  try {
+    await loader();
+  } catch (err) {
+    ids.forEach(id => renderLoadError(id, err));
+    console.error(`[dashboard] ${ids.join(', ')} 載入失敗:`, err);
+  }
 }
 
 function widthClass(value) {
@@ -51,7 +107,16 @@ async function submitLogin() {
 }
 
 async function loadAll() {
-  await Promise.all([loadStats(), loadOperationsReport(reportPeriod), loadKnowledgeOverview(), loadKeywords(), loadSessions(), loadUnanswered(), loadRatingDetails(), loadKnowledge()]);
+  await Promise.allSettled([
+    safeLoad(['supportWorkbench', 'statsGrid', 'ratingChart'], loadStats),
+    safeLoad('operationsReport', () => loadOperationsReport(reportPeriod)),
+    safeLoad('knowledgeOverview', loadKnowledgeOverview),
+    safeLoad('keywordList', loadKeywords),
+    safeLoad('sessionsList', loadSessions),
+    safeLoad('unansweredList', loadUnanswered),
+    safeLoad('ratingDetailList', loadRatingDetails),
+    safeLoad('kbSidebar', loadKnowledge),
+  ]);
   showDashboardLayer(currentLayer);
 }
 
@@ -89,6 +154,7 @@ async function loadOperationsReport(period = 'week') {
   document.getElementById('reportWeekBtn').classList.toggle('active', reportPeriod === 'week');
   document.getElementById('reportMonthBtn').classList.toggle('active', reportPeriod === 'month');
   const data = await adminFetch(`/api/reports/operations?period=${reportPeriod}`);
+  if (!data || typeof data !== 'object') throw new Error('營運報表資料格式異常');
   currentReport = data;
   renderOperationsReport(data);
 }
@@ -217,6 +283,7 @@ let kbCurrentId = null;  // 正在編輯的 id（null = 新增中尚未存）
 async function loadKnowledge() {
   const showArchived = document.getElementById('kbShowArchived')?.checked;
   const data = await adminFetch('/api/knowledge/sections' + (showArchived ? '?include_archived=true' : ''));
+  if (!Array.isArray(data)) throw new Error('知識庫資料格式異常');
   kbSections = data;
   const activeCount = data.filter(s => !isArchivedSection(s)).length;
   const archivedCount = data.length - activeCount;
@@ -528,7 +595,7 @@ function handleSearch(val) {
   const hint = document.getElementById('searchHint');
   if (val.trim().length === 0) {
     hint.textContent = '';
-    loadSessions();
+    safeLoad('sessionsList', loadSessions);
     return;
   }
   if (val.trim().length < 2) {
@@ -542,13 +609,12 @@ function handleSearch(val) {
 async function runSearch(q) {
   const hint = document.getElementById('searchHint');
   try {
-    const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`, { headers: { 'x-admin-key': getAdminKey() } });
-    if (res.status === 401) { showLogin(); return; }
-    const data = await res.json();
+    const data = await adminFetch(`/api/search?q=${encodeURIComponent(q)}`);
+    if (!Array.isArray(data)) throw new Error('對話資料格式異常');
     hint.textContent = `找到 ${data.length} 筆對話`;
     renderSessions(data);
-  } catch {
-    hint.textContent = '搜尋失敗';
+  } catch (err) {
+    hint.textContent = `搜尋失敗：${err.message}`;
   }
 }
 
@@ -577,6 +643,7 @@ function renderSupportWorkbench(data, satisfactionRate) {
 // 統計卡片 + 滿意度圖表
 async function loadStats() {
   const data = await adminFetch('/api/stats');
+  if (!data || typeof data !== 'object') throw new Error('統計資料格式異常');
   const total = data.positiveRatings + data.negativeRatings;
   const satisfactionRate = total > 0 ? Math.round(data.positiveRatings / total * 100) : 0;
   renderSupportWorkbench(data, satisfactionRate);
@@ -640,6 +707,7 @@ async function loadStats() {
 
 async function loadKnowledgeOverview() {
   const data = await adminFetch('/api/knowledge/overview');
+  if (!data || typeof data !== 'object') throw new Error('知識庫總覽資料格式異常');
   const counts = data.counts || {};
   const sourceItems = (data.sourceDocuments || []).slice(0, 6).map(source => `
     <div class="source-item">
@@ -707,15 +775,16 @@ async function loadKnowledgeOverview() {
 // 關鍵字排行
 async function loadKeywords() {
   const data = await adminFetch('/api/top-questions');
+  if (!Array.isArray(data)) throw new Error('熱門關鍵字資料格式異常');
   if (data.length === 0) {
     document.getElementById('keywordList').innerHTML = '<div class="empty-state">尚無資料，開始對話後會顯示統計</div>';
     return;
   }
   const max = data[0]?.count || 1;
   document.getElementById('keywordList').innerHTML = data.slice(0, 8).map((item, i) => `
-    <div class="keyword-item">
-      <div class="keyword-rank ${i < 3 ? 'top3' : ''}">${i + 1}</div>
-      <div class="keyword-name">${item.keyword}</div>
+      <div class="keyword-item">
+        <div class="keyword-rank ${i < 3 ? 'top3' : ''}">${i + 1}</div>
+      <div class="keyword-name">${escapeHtml(item.keyword)}</div>
       <div class="keyword-bar-wrap">
         <div class="keyword-bar ${widthClass(item.count / max * 100)}"></div>
       </div>
@@ -727,6 +796,7 @@ async function loadKeywords() {
 // 評分明細
 async function loadRatingDetails() {
   const data = await adminFetch('/api/ratings');
+  if (!Array.isArray(data)) throw new Error('評分明細資料格式異常');
   if (data.length === 0) {
     document.getElementById('ratingDetailList').innerHTML =
       '<div class="empty-state">尚無評分紀錄。請到客服介面對話並按評分按鈕，內容就會出現在這裡 👆</div>';
@@ -763,6 +833,7 @@ const GAP_STATUS_LABELS = {
 
 async function loadUnanswered() {
   unansweredItems = await adminFetch('/api/unanswered');
+  if (!Array.isArray(unansweredItems)) throw new Error('知識缺口資料格式異常');
   renderUnansweredList();
 }
 
@@ -906,6 +977,7 @@ function renderSessions(data) {
 
 async function loadSessions() {
   const data = await adminFetch('/api/sessions');
+  if (!Array.isArray(data)) throw new Error('對話資料格式異常');
   if (data.length === 0) {
     document.getElementById('sessionsList').innerHTML = '<div class="empty-state">尚無對話紀錄，對話後會自動出現在這裡</div>';
     return;
@@ -931,15 +1003,15 @@ function bindDashboardEvents() {
   document.getElementById('layerKnowledgeBtn')?.addEventListener('click', () => showDashboardLayer('knowledge'));
   document.getElementById('layerReportBtn')?.addEventListener('click', () => showDashboardLayer('report'));
 
-  document.getElementById('reportWeekBtn')?.addEventListener('click', () => loadOperationsReport('week'));
-  document.getElementById('reportMonthBtn')?.addEventListener('click', () => loadOperationsReport('month'));
+  document.getElementById('reportWeekBtn')?.addEventListener('click', () => safeLoad('operationsReport', () => loadOperationsReport('week')));
+  document.getElementById('reportMonthBtn')?.addEventListener('click', () => safeLoad('operationsReport', () => loadOperationsReport('month')));
   document.getElementById('copyReportBtn')?.addEventListener('click', copyReportMarkdown);
   document.getElementById('downloadReportBtn')?.addEventListener('click', downloadReportMarkdown);
 
   document.getElementById('kbExportBtn')?.addEventListener('click', exportKnowledgeJson);
   document.getElementById('kbNewBtn')?.addEventListener('click', newSection);
   document.getElementById('kbSearch')?.addEventListener('input', renderKbSidebar);
-  document.getElementById('kbShowArchived')?.addEventListener('change', loadKnowledge);
+  document.getElementById('kbShowArchived')?.addEventListener('change', () => safeLoad('kbSidebar', loadKnowledge));
   document.getElementById('kbName')?.addEventListener('input', renderCategorySuggestions);
   document.getElementById('kbName')?.addEventListener('focus', renderCategorySuggestions);
   document.getElementById('kbTemplateBtn')?.addEventListener('click', applyKnowledgeTemplate);
@@ -952,6 +1024,12 @@ function bindDashboardEvents() {
   document.getElementById('searchInput')?.addEventListener('input', event => handleSearch(event.currentTarget.value));
 
   document.addEventListener('click', event => {
+    const retryButton = event.target.closest('[data-retry-target]');
+    if (retryButton) {
+      SECTION_LOADERS[retryButton.dataset.retryTarget]?.();
+      return;
+    }
+
     const sectionButton = event.target.closest('[data-section-id]');
     if (sectionButton) {
       selectSection(Number(sectionButton.dataset.sectionId));

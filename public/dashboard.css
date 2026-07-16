@@ -562,6 +562,17 @@
     .unanswered-icon { font-size:16px; flex-shrink:0; margin-top:1px; }
 
     [hidden] { display:none !important; }
+    .load-error {
+      display:flex; align-items:center; gap:12px; padding:16px;
+      background:#fff7f5; border:1px solid #f0c4b8; border-radius:8px;
+      color:#a94434; font-size:14px; line-height:1.5; flex-wrap:wrap;
+    }
+    .retry-btn {
+      padding:6px 14px; border:1px solid #a94434; background:#fff;
+      color:#a94434; border-radius:6px; cursor:pointer; font-size:13px;
+      font-family:'Noto Sans TC',sans-serif;
+    }
+    .retry-btn:hover { background:#a94434; color:#fff; }
     .modal-icon { font-size:32px; margin-bottom:12px; }
     .section-title.tight { margin-bottom:6px; }
     .section-title.compact { font-size:13px; margin-bottom:10px; }
