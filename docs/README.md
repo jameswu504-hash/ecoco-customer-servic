@@ -20,7 +20,7 @@
 | [CUSTOMER_ROLLOUT_GUIDE.md](CUSTOMER_ROLLOUT_GUIDE.md) | 客服、主管與營運討論落地時使用的正式指南 |
 | [CUSTOMER_SUPPORT_GUIDE.md](CUSTOMER_SUPPORT_GUIDE.md) | 客服與營運人員的後台操作 SOP |
 | [PRD_ECOCO_AI_CUSTOMER_SERVICE.md](PRD_ECOCO_AI_CUSTOMER_SERVICE.md) | 產品需求文件，包含目標、範圍、功能、指標與風險 |
-| [CUSTOMER_SERVICE_FLOW.md](CUSTOMER_SERVICE_FLOW.md) | 客服流程圖規格，可用於 Whimsical、簡報與交接 |
+| [CUSTOMER_SERVICE_FLOW.md](CUSTOMER_SERVICE_FLOW.md) | 客服流程與風險控管摘要，作為落地討論的輔助文件 |
 | [OPERATIONS_HANDOFF_GUIDE.md](OPERATIONS_HANDOFF_GUIDE.md) | 維運、權限、資料庫、部署與交接標準 |
 | [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md) | Render、PostgreSQL、Claude、OpenAI embedding 與健康檢查 |
 | [LINE_ROLLOUT_CHECKLIST.md](LINE_ROLLOUT_CHECKLIST.md) | LINE@ 正式串接前的權限、資源、測試與決策清單 |
@@ -43,7 +43,6 @@
 | [security-keys.md](security-keys.md) | API key、token、`.env` 與 Render 環境變數的安全原則 |
 | [PII_HISTORY_CLEANUP_PLAN.md](archive/PII_HISTORY_CLEANUP_PLAN.md) | 個資外洩止血與 Git 歷史清除方案 |
 | [REPO_FILE_AUDIT.md](REPO_FILE_AUDIT.md) | Git repository 檔案用途與不必要檔案稽核 |
-| [commandcenter-migration.md](archive/commandcenter-migration.md) | 舊 CommandCenter 專案可沿用與不建議沿用內容 |
 
 ## 未啟用的未來模組
 
@@ -53,11 +52,20 @@
 | [future/internal-wiki/INTERNAL_WIKI_GUIDE.md](future/internal-wiki/INTERNAL_WIKI_GUIDE.md) | 內部 Wiki 的部署、API 與資料表設計 |
 | [future/internal-wiki/LLM_WIKI_RULE_MODEL_STRATEGY.md](future/internal-wiki/LLM_WIKI_RULE_MODEL_STRATEGY.md) | LLM Wiki、Rule 與本地模型策略討論 |
 
+## 可選整合與歷史參考
+
+| 文件 | 說明 |
+| --- | --- |
+| [N8N_INTEGRATION_GUIDE.md](N8N_INTEGRATION_GUIDE.md) | n8n workflow 範本與未來整合構想；目前正式維運以 GitHub Actions 為準 |
+| [archive/commandcenter-migration.md](archive/commandcenter-migration.md) | 舊 CommandCenter 可參考內容與不建議沿用內容；不放入客服落地主線 |
+
 ## 重要維護原則
 
 - PostgreSQL 是線上執行資料庫，AI 目前實際讀取 `knowledge_sections` 與 `knowledge_chunks`。
 - Git 裡的 `data/ecoco-knowledge-import.json` 是正式版本備份，不會因為後台修改而自動更新。
 - 大量更新、交接或正式版本備份前，請從後台下載 JSON，人工確認後放回 Git。
+- 正式維運自動化以 GitHub Actions 為準；n8n workflow 僅作未來可選整合，不是目前正式交接必要項目。
+- 內部 Wiki / 員工訓練知識系統尚未啟用；客服正式文件不得寫成現行功能。
 - API key、token、資料庫連線字串與 `.env` 不得提交。
 - 真實手機、Email、會員資料或可識別個資不得提交。
 - 高風險客服問題不得由 AI 承諾補點、退款、賠償或已完成處理。
@@ -82,7 +90,7 @@
 - 公司 API key、Render、PostgreSQL、LINE 權限替換
 - UptimeRobot `/healthz` 監控
 - PostgreSQL / GitHub Actions 備份確認
-- n8n 每週 AI 健檢與寄信確認
+- GitHub Actions 健檢與備份流程確認
 - 客服、主管、技術窗口、專案維護者的角色分工
 
 Render 環境變數可參考 [config/render-production.env.example](../config/render-production.env.example)。

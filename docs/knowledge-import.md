@@ -4,7 +4,9 @@
 
 ## 最新資料來源
 
-目前採用 2026-06-12 整合版資料，只保留可用且標記為 active 的資料。舊 CommandCenter 只抽品牌脈絡與流程概念，不匯入舊憑證、舊信箱設定或舊 AI 草稿中的錯誤事實。
+目前採用 2026-06-12 整合版資料，只保留可用且標記為 active 的資料。正式客服知識需以公司指定固定來源與負責窗口確認後才可對外使用；若沒有固定來源，應標記為待確認，不得寫成 AI 的正式回答。
+
+舊 CommandCenter 僅作歷史背景與流程理解參考，不是正式客服知識來源；不得匯入舊憑證、舊信箱設定、舊 AI 草稿或未經公司確認的歷史內容。
 
 | 檔案 | 用途 |
 | --- | --- |
@@ -20,7 +22,7 @@
 | 匯入 section 數 | 42 個 section | 47 個 section，依主分類整理，已排除 archived 重複資料與待確認衝突 |
 | 社群回覆資料 | 只放 Meta 指令與部分回覆問答 | 新增線上 reply helper 的 81 筆社群範本 |
 | FAQ 資料 | 主要來自 Excel | 同時整合 Excel 最新官網 FAQ 與線上 FAQ API |
-| 舊系統資料 | 容易混入舊草稿與舊設定 | 只保留品牌脈絡，不保留舊憑證與錯誤草稿 |
+| 舊系統資料 | 容易混入舊草稿與舊設定 | 僅作歷史背景參考，不作為正式客服知識來源 |
 | 衝突管理 | 沒有獨立欄位 | 新增 `conflicts_pending_review`，例如點數效期、App 版本、客服時間 |
 | AI 使用控制 | 較難分辨可否自動回覆 | 每筆資料都有 `automation_level` 與 `risk` |
 
@@ -94,7 +96,7 @@ KNOWLEDGE_AUTO_SYNC=replace
 1. 低風險 FAQ 可讓 AI 直接回答。
 2. 只有標記為 `風險：High` 的知識片段，或使用者明確要求補點、退款、賠償、帳號停權、臨時密碼等高風險動作時，才啟動更嚴格的保守回答限制。
 3. 一般 FAQ，例如點數效期、燈號說明、站點查詢、操作 SOP，仍應直接回答，不應過度保守。
-4. `conflicts_pending_review` 內的資料不可直接變成正式答案，必須由主管或官方來源確認；目前不匯入 AI 可檢索知識庫。
+4. `conflicts_pending_review` 內的資料不可直接變成正式答案，必須由公司指定固定來源與負責窗口確認；目前不匯入 AI 可檢索知識庫。
 
 ## PostgreSQL 匯出回 JSON
 
@@ -131,4 +133,4 @@ GET /api/knowledge/export
 2. `automation_level: internal_only` 的內部資料。
 3. `conflicts_pending_review` 的待確認衝突。
 4. `internal_ops_signals` 只供客服後台提示，不建議對客戶逐字揭露。
-5. 舊 CommandCenter ticket 只做流程理解，不匯入 AI 對客知識庫。
+5. 舊 CommandCenter ticket 只做歷史背景與流程理解，不匯入 AI 對客知識庫，也不列入客服落地主線文件。
