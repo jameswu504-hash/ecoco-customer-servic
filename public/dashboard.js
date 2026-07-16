@@ -282,6 +282,8 @@ let kbCurrentId = null;  // 正在編輯的 id（null = 新增中尚未存）
 let kbRawRenderTimer = null;
 let kbCurrentItemIndex = 0;
 let kbSyncLock = false;
+let kbExpandedSectionIds = new Set();
+let kbLastSidebarQuery = '';
 
 async function loadKnowledge() {
   const showArchived = document.getElementById('kbShowArchived')?.checked;
@@ -290,6 +292,8 @@ async function loadKnowledge() {
   kbSections = data;
   const activeCount = data.filter(s => !isArchivedSection(s)).length;
   const archivedCount = data.length - activeCount;
+  const knownIds = new Set(data.map(section => Number(section.id)));
+  kbExpandedSectionIds = new Set([...kbExpandedSectionIds].filter(id => knownIds.has(id)));
   document.getElementById('kbCount').textContent = showArchived
     ? `（${activeCount} 個使用中，${archivedCount} 個封存）`
     : `（共 ${activeCount} 個分類）`;
@@ -376,10 +380,25 @@ function getKbSidebarMatch(section, normalizedQuery) {
   };
 }
 
+function isKbSectionExpanded(sectionId) {
+  return kbExpandedSectionIds.has(Number(sectionId));
+}
+
+function toggleKbSidebarSection(sectionId) {
+  const id = Number(sectionId);
+  if (!Number.isInteger(id)) return;
+  if (kbExpandedSectionIds.has(id)) {
+    kbExpandedSectionIds.delete(id);
+  } else {
+    kbExpandedSectionIds.add(id);
+  }
+  renderKbSidebar();
+}
+
 function renderKbSidebarItems(section, match) {
-  const query = getKbSearchQuery();
-  const showItems = section.id === kbCurrentId || query;
+  const showItems = isKbSectionExpanded(section.id);
   if (!showItems) return '';
+  const query = getKbSearchQuery();
   const items = match?.items || getKbSidebarItems(section, getKbSectionContentForSidebar(section));
   const displayItems = query && !match?.categoryMatch ? (match?.matchingItems || []) : items.map((item, idx) => ({ item, idx }));
 
@@ -415,6 +434,13 @@ function renderKbSidebar() {
     .map(section => ({ section, match: getKbSidebarMatch(section, normalizedQuery) }))
     .filter(({ match }) => match.matches);
   const matchedQuestionCount = sectionMatches.reduce((sum, { match }) => sum + match.matchingItems.length, 0);
+  const scrollBox = el.closest('.kb-sidebar');
+  const previousScrollTop = scrollBox ? scrollBox.scrollTop : 0;
+
+  if (normalizedQuery && normalizedQuery !== kbLastSidebarQuery) {
+    sectionMatches.forEach(({ section }) => kbExpandedSectionIds.add(Number(section.id)));
+  }
+  kbLastSidebarQuery = normalizedQuery;
 
   if (hint) {
     hint.textContent = query
@@ -430,17 +456,21 @@ function renderKbSidebar() {
     el.innerHTML = '<div class="empty-state">找不到相近分類，可以按「＋ 新增分類」建立</div>';
     return;
   }
-  el.innerHTML = sectionMatches.map(({ section, match }) => `
-    <div class="kb-cat-group ${section.id === kbCurrentId || query ? 'open' : ''}">
+  el.innerHTML = sectionMatches.map(({ section, match }) => {
+    const expanded = isKbSectionExpanded(section.id);
+    return `
+    <div class="kb-cat-group ${expanded ? 'open' : ''}">
       <button class="kb-cat-btn ${section.id === kbCurrentId ? 'active' : ''} ${isArchivedSection(section) ? 'archived' : ''}" data-section-id="${section.id}">
-        <span class="kb-cat-arrow">${section.id === kbCurrentId || query ? '⌄' : '›'}</span>
+        <span class="kb-cat-arrow" data-kb-section-toggle="${section.id}" title="${expanded ? '收合問題列表' : '展開問題列表'}">${expanded ? '⌄' : '›'}</span>
         <span class="kb-cat-name">${escapeHtml(displayCategoryName(section.category))}</span>
         ${isArchivedSection(section) ? '<span class="kb-archive-badge">封存</span>' : ''}
         <span class="kb-cat-size">${section.content.length}字</span>
       </button>
       ${renderKbSidebarItems(section, match)}
     </div>
-  `).join('');
+  `;
+  }).join('');
+  if (scrollBox) scrollBox.scrollTop = previousScrollTop;
 }
 
 function focusKbSidebarItem(index = kbCurrentItemIndex, sectionId = kbCurrentId) {
@@ -696,12 +726,13 @@ function handleRawKbInput() {
   kbRawRenderTimer = setTimeout(() => renderKbItems(true), 400);
 }
 
-function selectSection(id) {
+function selectSection(id, options = {}) {
   const s = kbSections.find(x => x.id === id);
   if (!s) return;
   const archived = isArchivedSection(s);
   kbCurrentId = id;
-  kbCurrentItemIndex = 0;
+  kbCurrentItemIndex = Number.isInteger(options.itemIndex) ? options.itemIndex : 0;
+  kbExpandedSectionIds.add(Number(id));
   document.getElementById('kbName').value = displayCategoryName(s.category);
   document.getElementById('kbContent').value = s.content;
   setHidden('kbDelBtn', archived);
@@ -714,7 +745,6 @@ function selectSection(id) {
   }
   kbCharCount();
   renderKbItems();
-  renderKbSidebar();
   clearCategorySuggestions();
 }
 
@@ -1466,10 +1496,12 @@ function bindDashboardEvents() {
     const kbNavItem = event.target.closest('[data-kb-nav-item-index]');
     if (kbNavItem) {
       const sectionId = Number(kbNavItem.dataset.kbNavSectionId);
+      const itemIndex = Number(kbNavItem.dataset.kbNavItemIndex) || 0;
       if (Number.isInteger(sectionId) && sectionId !== kbCurrentId) {
-        selectSection(sectionId);
+        selectSection(sectionId, { itemIndex });
+        return;
       }
-      kbCurrentItemIndex = Number(kbNavItem.dataset.kbNavItemIndex) || 0;
+      kbCurrentItemIndex = itemIndex;
       renderKbItems();
       return;
     }
@@ -1477,6 +1509,14 @@ function bindDashboardEvents() {
     const deleteKbItem = event.target.closest('[data-kb-delete-current]');
     if (deleteKbItem) {
       deleteCurrentKbItem();
+      return;
+    }
+
+    const kbSectionToggle = event.target.closest('[data-kb-section-toggle]');
+    if (kbSectionToggle) {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleKbSidebarSection(kbSectionToggle.dataset.kbSectionToggle);
       return;
     }
 

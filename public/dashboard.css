@@ -421,10 +421,13 @@
     .kb-cat-btn.archived { opacity:0.72; border-style:dashed; }
     .kb-cat-group { margin-bottom:4px; }
     .kb-cat-arrow {
-      width:14px; flex-shrink:0; color:var(--green-main);
-      font-size:14px; line-height:1;
+      width:20px; height:20px; flex-shrink:0; color:var(--green-main);
+      font-size:14px; line-height:1; display:inline-flex;
+      align-items:center; justify-content:center; border-radius:6px;
     }
+    .kb-cat-arrow:hover { background:rgba(6,14,159,0.08); }
     .kb-cat-btn.active .kb-cat-arrow { color:white; }
+    .kb-cat-btn.active .kb-cat-arrow:hover { background:rgba(255,255,255,0.18); }
     .kb-cat-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .kb-cat-size { font-size:10px; font-family:'Space Mono',monospace; color:var(--gray-mid); flex-shrink:0; }
     .kb-sidebar-items {
