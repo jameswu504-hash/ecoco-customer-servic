@@ -83,6 +83,11 @@ KNOWLEDGE_AUTO_SYNC=disable       # 日常維護只用後台 PostgreSQL；大改
 
 `requireAdminKey` 用 `crypto.timingSafeEqual` 比較，防計時攻擊。後台所有 `/api/knowledge/*`、`/api/stats`、`/api/sessions`、`/api/unanswered` 等均需帶 `x-admin-key` header。
 
+### Dashboard API 與知識編輯
+
+- `/api/sessions` 已分頁，回傳 `{ total, limit, offset, sessions }`，其中 `sessions` 只含對話摘要與訊息數；單場訊息由 `/api/session-messages?session_id=` 懶載入。`/api/search` 維持舊行為，仍回傳含 `messages` 的完整搜尋結果。
+- `public/kb-parser.js` 是後台知識庫分題解析器，以 `### ` 行切割題目，並保證 `assembleKbContent(parseKbContent(x)) === x`。儲存流程仍以完整 `knowledge_sections.content` 字串為準，不改資料庫 schema。
+
 ## 重要規則
 
 **修改前先說明：** 任何影響 AI 回覆行為、資料同步邏輯、部署設定或 Git 歷史的變更，必須先向使用者解釋，再執行。
