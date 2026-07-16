@@ -237,6 +237,37 @@ function createKnowledgeRouter({
   router.delete('/sections/:id', async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id.' });
+    const permanent = String(req.query.permanent || '').toLowerCase() === 'true';
+
+    if (permanent) {
+      const db = await pool.connect();
+      try {
+        await db.query('BEGIN');
+        const section = await db.query('SELECT category FROM knowledge_sections WHERE id = $1', [id]);
+        if (section.rowCount === 0) {
+          await db.query('ROLLBACK');
+          return res.status(404).json({ error: 'Knowledge section not found.' });
+        }
+        await db.query('DELETE FROM knowledge_chunks WHERE section_id = $1', [id]);
+        await db.query('DELETE FROM knowledge_sections WHERE id = $1', [id]);
+        await db.query('COMMIT');
+        await saveAdminAudit(pool, {
+          actor: getAuditActor(req),
+          action: 'knowledge.delete',
+          targetType: 'knowledge_section',
+          targetId: String(id),
+          details: { category: section.rows[0].category },
+        });
+        await refreshKnowledgeCache();
+        return res.json({ success: true, deleted: true });
+      } catch (dbErr) {
+        await rollbackQuietly(db);
+        console.error('DB knowledge delete error:', dbErr.message);
+        return res.status(500).json({ error: 'Failed to delete knowledge section.' });
+      } finally {
+        db.release();
+      }
+    }
 
     try {
       const result = await pool.query(

@@ -748,18 +748,18 @@ async function saveSection() {
   }
 }
 
-async function archiveSection() {
+async function deleteSection() {
   if (kbCurrentId == null) return;
   const s = kbSections.find(x => x.id === kbCurrentId);
-  if (!confirm(`確定要封存分類「${s ? displayCategoryName(s.category) : ''}」嗎？\n封存後 AI 不會再使用，但之後可以從「顯示封存分類」恢復。`)) return;
+  if (!confirm(`確定要永久刪除分類「${s ? displayCategoryName(s.category) : ''}」嗎？\n這會刪掉整個分類與左側所有題目，刪除後不能從後台恢復。`)) return;
   const msg = document.getElementById('kbMsg');
   try {
-    const res = await fetch('/api/knowledge/sections/' + kbCurrentId, {
+    const res = await fetch('/api/knowledge/sections/' + kbCurrentId + '?permanent=true', {
       method: 'DELETE',
       headers: { 'x-admin-key': getAdminKey() },
     });
     const body = await res.json();
-    if (!res.ok) throw new Error(body.error || '封存失敗');
+    if (!res.ok) throw new Error(body.error || '刪除失敗');
     kbCurrentId = null;
     setHidden('kbForm', true);
     setHidden('kbEmpty', false);
@@ -1321,7 +1321,7 @@ function bindDashboardEvents() {
     if (field) updateKbItemFromField(field);
   });
   document.getElementById('kbRestoreBtn')?.addEventListener('click', restoreSection);
-  document.getElementById('kbDelBtn')?.addEventListener('click', archiveSection);
+  document.getElementById('kbDelBtn')?.addEventListener('click', deleteSection);
   document.getElementById('kbSaveBtn')?.addEventListener('click', saveSection);
 
   document.getElementById('ratingPageSizeSelect')?.addEventListener('change', event => {
