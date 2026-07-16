@@ -135,24 +135,10 @@
           <input class="kb-name-input" id="kbName" placeholder="例如：點數計算規則" />
           <div class="kb-suggestion-box" id="kbCategorySuggestions"></div>
           <div class="kb-current-item-panel" id="kbCurrentItemPanel"></div>
-          <details class="kb-builder" id="kbBuilder">
-            <summary id="kbBuilderSummary">＋ 新增一題</summary>
-            <div class="kb-builder-head">
-              <div>
-                <div class="kb-builder-title" id="kbBuilderTitle">新增一題客服會遇到的問題</div>
-                <div class="kb-builder-note" id="kbBuilderNote">用來在目前分類底下新增一個可回答的問題。</div>
-              </div>
-              <button class="kb-builder-btn" id="kbTemplateBtn" type="button">加入左側問題列表</button>
-            </div>
-            <div class="kb-builder-grid">
-              <input class="kb-builder-field" id="kbTplTitle" placeholder="問題標題，例如：點數未入帳" />
-              <input class="kb-builder-field" id="kbTplContext" placeholder="適用情境，例如：會員回收後點數未出現" />
-              <textarea class="kb-builder-field kb-builder-wide" id="kbTplReply" placeholder="標準回覆：給使用者看的正式回答"></textarea>
-              <textarea class="kb-builder-field" id="kbTplCollect" placeholder="需要收集資訊：註冊手機、時間、站點、截圖"></textarea>
-              <textarea class="kb-builder-field" id="kbTplAvoid" placeholder="不能承諾事項：例如不要承諾補點、退款、已處理"></textarea>
-              <textarea class="kb-builder-field kb-builder-wide" id="kbTplInternal" placeholder="內部備註：給客服或維護者看的提醒"></textarea>
-            </div>
-          </details>
+          <div class="kb-item-toolbar">
+            <button class="kb-add-question-btn" id="kbAddItemBtn" type="button">＋ 新增題目</button>
+            <span class="kb-inline-note">新增後會直接出現在左側問題列表，按「儲存」才會生效。</span>
+          </div>
           <details class="kb-raw-details" id="kbRawDetails">
             <summary>技術維護：原始 Markdown（一般客服不用開）</summary>
             <label class="kb-label">整個分類的原始內容</label>

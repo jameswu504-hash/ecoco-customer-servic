@@ -468,7 +468,6 @@ function showKbForm() {
   setHidden('kbEmpty', true);
   setHidden('kbForm', false);
   document.getElementById('kbMsg').textContent = '';
-  updateKbBuilderCopy();
 }
 
 function updateKbDetail() {
@@ -545,7 +544,7 @@ function renderKbItems(preserveRawOpen = false) {
   const items = getRenderableKbItems(parsed, textarea.value);
   if (items.length === 0) {
     kbCurrentItemIndex = 0;
-    panel.innerHTML = '<div class="empty-state kb-items-empty">此分類目前沒有問題，可用「＋ 新增客服問題」加入第一題。</div>';
+    panel.innerHTML = '<div class="empty-state kb-items-empty">此分類目前沒有題目，按下方「＋ 新增題目」開始。</div>';
     if (rawDetails) rawDetails.open = true;
     updateKbDetail();
     renderKbSidebar();
@@ -566,37 +565,18 @@ function renderKbItems(preserveRawOpen = false) {
       </div>
       ${item.fallback ? '<div class="kb-item-note">此分類尚未用 ### 分題，先以完整分類內容呈現。</div>' : `
         <label class="kb-label">客服問題標題</label>
-        <input class="kb-item-title" data-kb-item-index="${kbCurrentItemIndex}" data-kb-item-field="heading" value="${escapeHtml(item.heading)}" />
+        <input class="kb-item-title" data-kb-item-index="${kbCurrentItemIndex}" data-kb-item-field="heading" value="${escapeHtml(item.heading)}" placeholder="例如：點數沒有入帳怎麼辦？" />
       `}
       <label class="kb-label">AI 可參考的回答內容</label>
-      <textarea class="kb-item-editor" data-kb-item-index="${kbCurrentItemIndex}" data-kb-item-field="body" ${item.fallback ? 'data-kb-fallback="1"' : ''} spellcheck="false">${escapeHtml(item.body)}</textarea>
+      <textarea class="kb-item-editor" data-kb-item-index="${kbCurrentItemIndex}" data-kb-item-field="body" ${item.fallback ? 'data-kb-fallback="1"' : ''} spellcheck="false" placeholder="輸入客服希望 AI 參考的回答內容。">${escapeHtml(item.body)}</textarea>
+      <div class="kb-item-edit-actions">
+        <button class="kb-delete-question-btn" type="button" data-kb-delete-current="1">刪除此題</button>
+      </div>
     </div>
   `;
   if (rawDetails && !preserveRawOpen) rawDetails.open = false;
   updateKbDetail();
   renderKbSidebar();
-  updateKbBuilderCopy();
-}
-
-function updateKbBuilderCopy() {
-  const textarea = document.getElementById('kbContent');
-  const isNewCategory = kbCurrentId == null && !String(textarea?.value || '').trim();
-  const summary = document.getElementById('kbBuilderSummary');
-  const title = document.getElementById('kbBuilderTitle');
-  const note = document.getElementById('kbBuilderNote');
-  const button = document.getElementById('kbTemplateBtn');
-  if (!summary || !title || !note || !button) return;
-  if (isNewCategory) {
-    summary.textContent = '＋ 建立第一題';
-    title.textContent = '建立這個分類的第一個客服問題';
-    note.textContent = '新增分類時，先填分類名稱，再在這裡填第一題，最後按儲存。';
-    button.textContent = '建立第一題';
-  } else {
-    summary.textContent = '＋ 新增一題';
-    title.textContent = '新增一題客服會遇到的問題';
-    note.textContent = '填完後會加到左側問題列表並自動選取，最後按儲存才會生效。';
-    button.textContent = '加入左側問題列表';
-  }
 }
 
 function updateKbItemFromField(field) {
@@ -656,8 +636,6 @@ function selectSection(id) {
   kbCharCount();
   renderKbItems();
   renderKbSidebar();
-  const builder = document.getElementById('kbBuilder');
-  if (builder) builder.open = false;
   clearCategorySuggestions();
 }
 
@@ -665,7 +643,7 @@ function newSection() {
   kbCurrentId = null;
   kbCurrentItemIndex = 0;
   document.getElementById('kbName').value = '';
-  document.getElementById('kbContent').value = '';
+  document.getElementById('kbContent').value = '### \n\n';
   setHidden('kbDelBtn', true); // 還沒存，不給刪
   setHidden('kbRestoreBtn', true);
   document.getElementById('kbSaveBtn').disabled = false;
@@ -674,9 +652,6 @@ function newSection() {
   renderKbItems();
   renderKbSidebar();
   clearCategorySuggestions();
-  const builder = document.getElementById('kbBuilder');
-  if (builder) builder.open = true;
-  updateKbBuilderCopy();
   document.getElementById('kbName').focus();
 }
 
@@ -686,61 +661,46 @@ function kbCharCount() {
   updateKbDetail();
 }
 
-function getTemplateValue(id) {
-  return document.getElementById(id)?.value.trim() || '';
-}
-
-function clearKnowledgeTemplateFields() {
-  ['kbTplTitle', 'kbTplContext', 'kbTplReply', 'kbTplCollect', 'kbTplAvoid', 'kbTplInternal'].forEach(id => {
-    const field = document.getElementById(id);
-    if (field) field.value = '';
-  });
-}
-
-function applyKnowledgeTemplate() {
-  const title = getTemplateValue('kbTplTitle') || document.getElementById('kbName').value.trim() || '未命名問題';
-  const context = getTemplateValue('kbTplContext');
-  const reply = getTemplateValue('kbTplReply');
-  const collect = getTemplateValue('kbTplCollect');
-  const avoid = getTemplateValue('kbTplAvoid');
-  const internal = getTemplateValue('kbTplInternal');
-  const content = [
-    `### ${title}`,
-    '',
-    context ? `適用情境：\n${formatTemplateLines(context)}` : '',
-    reply ? `建議回覆：\n${reply}` : '',
-    collect ? `需要收集資訊：\n${formatTemplateLines(collect)}` : '',
-    avoid ? `不能承諾事項：\n${formatTemplateLines(avoid)}` : '',
-    internal ? `內部備註：\n${internal}` : '',
-  ].filter(Boolean).join('\n\n');
-
+function addKbItem() {
   const textarea = document.getElementById('kbContent');
-  if (!textarea.value.trim()) {
-    textarea.value = content;
-  } else {
-    textarea.value = `${textarea.value.trim()}\n\n${content}`;
-  }
+  if (!textarea) return;
+  const content = '### \n\n';
+  textarea.value = textarea.value.trim()
+    ? `${textarea.value.trim()}\n\n${content}`
+    : content;
   const parsed = parseCurrentKbContent();
   const items = getRenderableKbItems(parsed, textarea.value);
   kbCurrentItemIndex = Math.max(0, items.length - 1);
   kbCharCount();
   renderKbItems();
   focusKbSidebarItem(kbCurrentItemIndex);
-  clearKnowledgeTemplateFields();
-  const builder = document.getElementById('kbBuilder');
-  if (builder) builder.open = false;
-  updateKbBuilderCopy();
-  document.getElementById('kbMsg').textContent = `已加入左側問題列表第 ${kbCurrentItemIndex + 1} 題，請按「儲存」才會生效`;
+  const title = document.querySelector(`[data-kb-item-index="${kbCurrentItemIndex}"][data-kb-item-field="heading"]`);
+  if (title) title.focus();
+  document.getElementById('kbMsg').textContent = `已新增第 ${kbCurrentItemIndex + 1} 題，請填寫後按「儲存」`;
   document.getElementById('kbMsg').className = 'save-msg ok';
 }
 
-function formatTemplateLines(value) {
-  return value
-    .split(/\n|、|，|,/)
-    .map(item => item.trim())
-    .filter(Boolean)
-    .map(item => `- ${item.replace(/^-+\s*/, '')}`)
-    .join('\n');
+function deleteCurrentKbItem() {
+  const textarea = document.getElementById('kbContent');
+  if (!textarea) return;
+  const parsed = parseCurrentKbContent();
+  if (parsed.items.length === 0) {
+    if (!confirm('確定要清空目前這個分類的內容嗎？')) return;
+    textarea.value = '';
+  } else {
+    const item = parsed.items[kbCurrentItemIndex];
+    const label = item?.heading || `第 ${kbCurrentItemIndex + 1} 題`;
+    if (!confirm(`確定要刪除「${label}」嗎？\n刪除後請按「儲存」才會生效。`)) return;
+    parsed.items.splice(kbCurrentItemIndex, 1);
+    textarea.value = getKbParserApi().assembleKbContent(parsed);
+  }
+  const items = getRenderableKbItems(parseCurrentKbContent(), textarea.value);
+  kbCurrentItemIndex = Math.min(kbCurrentItemIndex, Math.max(0, items.length - 1));
+  kbCharCount();
+  renderKbItems();
+  focusKbSidebarItem(kbCurrentItemIndex);
+  document.getElementById('kbMsg').textContent = '已刪除此題，請按「儲存」才會生效';
+  document.getElementById('kbMsg').className = 'save-msg ok';
 }
 
 async function saveSection() {
@@ -1354,7 +1314,7 @@ function bindDashboardEvents() {
   document.getElementById('kbShowArchived')?.addEventListener('change', () => safeLoad('kbSidebar', loadKnowledge));
   document.getElementById('kbName')?.addEventListener('input', renderCategorySuggestions);
   document.getElementById('kbName')?.addEventListener('focus', renderCategorySuggestions);
-  document.getElementById('kbTemplateBtn')?.addEventListener('click', applyKnowledgeTemplate);
+  document.getElementById('kbAddItemBtn')?.addEventListener('click', addKbItem);
   document.getElementById('kbContent')?.addEventListener('input', handleRawKbInput);
   document.getElementById('kbCurrentItemPanel')?.addEventListener('input', event => {
     const field = event.target.closest('[data-kb-item-index][data-kb-item-field]');
@@ -1428,6 +1388,12 @@ function bindDashboardEvents() {
     if (kbNavItem) {
       kbCurrentItemIndex = Number(kbNavItem.dataset.kbNavItemIndex) || 0;
       renderKbItems();
+      return;
+    }
+
+    const deleteKbItem = event.target.closest('[data-kb-delete-current]');
+    if (deleteKbItem) {
+      deleteCurrentKbItem();
       return;
     }
 
