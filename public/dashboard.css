@@ -573,6 +573,13 @@
       font-family:'Noto Sans TC',sans-serif;
     }
     .retry-btn:hover { background:#a94434; color:#fff; }
+    .back-to-top {
+      position:fixed; right:28px; bottom:28px; width:44px; height:44px;
+      border-radius:50%; border:none; background:var(--green-dark); color:#fff;
+      font-size:20px; cursor:pointer; box-shadow:0 4px 12px rgba(26,43,109,.35);
+      z-index:900; transition:opacity .2s; font-family:'Noto Sans TC',sans-serif;
+    }
+    .back-to-top:hover { background:#2a3f8f; }
     .modal-icon { font-size:32px; margin-bottom:12px; }
     .section-title.tight { margin-bottom:6px; }
     .section-title.compact { font-size:13px; margin-bottom:10px; }

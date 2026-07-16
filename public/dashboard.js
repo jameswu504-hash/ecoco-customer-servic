@@ -993,6 +993,20 @@ function toggleSession(id, idx) {
 }
 
 function bindDashboardEvents() {
+  const backToTop = document.getElementById('backToTopBtn');
+  if (backToTop) {
+    let ticking = false;
+    window.addEventListener('scroll', () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        backToTop.hidden = window.scrollY < 400;
+        ticking = false;
+      });
+    }, { passive: true });
+    backToTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+  }
+
   document.getElementById('adminKeyInput')?.addEventListener('keydown', event => {
     if (event.key === 'Enter') submitLogin();
   });
