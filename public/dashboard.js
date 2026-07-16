@@ -291,6 +291,7 @@ async function loadKnowledge() {
     ? `（${activeCount} 個使用中，${archivedCount} 個封存）`
     : `（共 ${activeCount} 個分類）`;
   renderKbSidebar();
+  updateKbDetail();
 }
 
 async function exportKnowledgeJson() {
@@ -422,6 +423,20 @@ function showKbForm() {
   document.getElementById('kbMsg').textContent = '';
 }
 
+function updateKbDetail() {
+  const detail = document.getElementById('kbDetail');
+  if (!detail) return;
+  const section = kbSections.find(s => s.id === kbCurrentId);
+  detail.hidden = !section;
+  if (!section) return;
+  const content = document.getElementById('kbContent').value;
+  document.getElementById('kbDetailChars').textContent = `${content.length.toLocaleString()} 字`;
+  document.getElementById('kbDetailUpdated').textContent = section.updated_at || '–';
+  document.getElementById('kbDetailArchived').hidden = !isArchivedSection(section);
+  const items = (content.match(/^###\s/gm) || []).length;
+  document.getElementById('kbDetailItems').textContent = items > 0 ? `${items} 筆` : '未分題';
+}
+
 function selectSection(id) {
   const s = kbSections.find(x => x.id === id);
   if (!s) return;
@@ -459,6 +474,7 @@ function newSection() {
 function kbCharCount() {
   document.getElementById('kbChar').textContent =
     document.getElementById('kbContent').value.length.toLocaleString() + ' 字';
+  updateKbDetail();
 }
 
 function getTemplateValue(id) {
@@ -538,6 +554,7 @@ async function saveSection() {
     setHidden('kbDelBtn', false);
     setHidden('kbRestoreBtn', true);
     renderKbSidebar();
+    updateKbDetail();
   } catch (e) {
     msg.textContent = '❌ ' + e.message; msg.className = 'save-msg err';
   } finally {
@@ -561,6 +578,7 @@ async function archiveSection() {
     kbCurrentId = null;
     setHidden('kbForm', true);
     setHidden('kbEmpty', false);
+    setHidden('kbDetail', true);
     await loadKnowledge();
   } catch (e) {
     msg.textContent = '❌ ' + e.message; msg.className = 'save-msg err';
