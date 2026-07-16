@@ -279,6 +279,8 @@ function downloadReportMarkdown() {
 // ── 知識庫分類管理 ────────────────────────────────────────
 let kbSections = [];     // 目前所有分類
 let kbCurrentId = null;  // 正在編輯的 id（null = 新增中尚未存）
+let kbRawRenderTimer = null;
+let kbSyncLock = false;
 
 async function loadKnowledge() {
   const showArchived = document.getElementById('kbShowArchived')?.checked;
@@ -433,8 +435,91 @@ function updateKbDetail() {
   document.getElementById('kbDetailChars').textContent = `${content.length.toLocaleString()} 字`;
   document.getElementById('kbDetailUpdated').textContent = section.updated_at || '–';
   document.getElementById('kbDetailArchived').hidden = !isArchivedSection(section);
-  const items = (content.match(/^###\s/gm) || []).length;
+  const items = countKbItems(content);
   document.getElementById('kbDetailItems').textContent = items > 0 ? `${items} 筆` : '未分題';
+}
+
+function getKbParserApi() {
+  return window.KbParser;
+}
+
+function parseCurrentKbContent() {
+  return getKbParserApi().parseKbContent(document.getElementById('kbContent').value);
+}
+
+function countKbItems(content) {
+  return getKbParserApi().parseKbContent(content).items.length;
+}
+
+function getKbItemBody(raw) {
+  const match = String(raw || '').match(/^###\s.*?(\r\n|\n|$)/);
+  return match ? String(raw || '').slice(match[0].length) : '';
+}
+
+function detectKbLineEnding(text) {
+  const match = String(text || '').match(/\r\n|\n/);
+  return match ? match[0] : '\n';
+}
+
+function getKbHeadingLineEnding(raw, fallbackText) {
+  const match = String(raw || '').match(/^###\s.*?(\r\n|\n)/);
+  return match ? match[1] : detectKbLineEnding(fallbackText);
+}
+
+function renderKbItems(preserveRawOpen = false) {
+  const list = document.getElementById('kbItemsList');
+  const count = document.getElementById('kbItemsCount');
+  const rawDetails = document.getElementById('kbRawDetails');
+  const textarea = document.getElementById('kbContent');
+  if (!list || !textarea) return;
+  const parsed = parseCurrentKbContent();
+  if (count) count.textContent = parsed.items.length ? `（${parsed.items.length} 題）` : '';
+  if (parsed.items.length === 0) {
+    list.innerHTML = '<div class="empty-state kb-items-empty">此分類尚未使用 ### 分題，可直接在下方原始內容編輯。</div>';
+    if (rawDetails) rawDetails.open = true;
+    updateKbDetail();
+    return;
+  }
+  list.innerHTML = parsed.items.map((item, idx) => `
+    <details class="kb-item">
+      <summary>${escapeHtml(item.heading || `未命名問題 ${idx + 1}`)}</summary>
+      <label class="kb-label">題目標題</label>
+      <input class="kb-item-title" data-kb-item-index="${idx}" data-kb-item-field="heading" value="${escapeHtml(item.heading)}" />
+      <label class="kb-label">題目內容</label>
+      <textarea class="kb-item-editor" data-kb-item-index="${idx}" data-kb-item-field="body" spellcheck="false">${escapeHtml(getKbItemBody(item.raw))}</textarea>
+    </details>
+  `).join('');
+  if (rawDetails && !preserveRawOpen) rawDetails.open = false;
+  updateKbDetail();
+}
+
+function updateKbItemFromField(field) {
+  if (kbSyncLock) return;
+  const index = Number(field.dataset.kbItemIndex);
+  const fieldName = field.dataset.kbItemField;
+  if (!Number.isInteger(index)) return;
+  const textarea = document.getElementById('kbContent');
+  const parsed = parseCurrentKbContent();
+  const item = parsed.items[index];
+  if (!item || !textarea) return;
+  const previousRaw = item.raw;
+  const heading = fieldName === 'heading' ? field.value : item.heading;
+  const body = fieldName === 'body' ? field.value : getKbItemBody(item.raw);
+  const eol = getKbHeadingLineEnding(previousRaw, textarea.value);
+  const hadHeadingEol = /^###\s.*?(\r\n|\n)/.test(previousRaw);
+  item.heading = heading;
+  item.raw = `### ${heading}` + (body.length > 0 || hadHeadingEol ? eol : '') + body;
+  kbSyncLock = true;
+  textarea.value = getKbParserApi().assembleKbContent(parsed);
+  kbSyncLock = false;
+  kbCharCount();
+}
+
+function handleRawKbInput() {
+  if (kbSyncLock) return;
+  kbCharCount();
+  clearTimeout(kbRawRenderTimer);
+  kbRawRenderTimer = setTimeout(() => renderKbItems(true), 400);
 }
 
 function selectSection(id) {
@@ -453,6 +538,7 @@ function selectSection(id) {
     document.getElementById('kbMsg').className = 'save-msg err';
   }
   kbCharCount();
+  renderKbItems();
   renderKbSidebar();
   clearCategorySuggestions();
 }
@@ -466,6 +552,7 @@ function newSection() {
   document.getElementById('kbSaveBtn').disabled = false;
   showKbForm();
   kbCharCount();
+  renderKbItems();
   renderKbSidebar();
   clearCategorySuggestions();
   document.getElementById('kbName').focus();
@@ -505,6 +592,7 @@ function applyKnowledgeTemplate() {
     textarea.value = `${textarea.value.trim()}\n\n${content}`;
   }
   kbCharCount();
+  renderKbItems();
   document.getElementById('kbMsg').textContent = '已產生標準格式，請確認後儲存';
   document.getElementById('kbMsg').className = 'save-msg ok';
 }
@@ -1098,7 +1186,11 @@ function bindDashboardEvents() {
   document.getElementById('kbName')?.addEventListener('input', renderCategorySuggestions);
   document.getElementById('kbName')?.addEventListener('focus', renderCategorySuggestions);
   document.getElementById('kbTemplateBtn')?.addEventListener('click', applyKnowledgeTemplate);
-  document.getElementById('kbContent')?.addEventListener('input', kbCharCount);
+  document.getElementById('kbContent')?.addEventListener('input', handleRawKbInput);
+  document.getElementById('kbItemsList')?.addEventListener('input', event => {
+    const field = event.target.closest('[data-kb-item-index][data-kb-item-field]');
+    if (field) updateKbItemFromField(field);
+  });
   document.getElementById('kbRestoreBtn')?.addEventListener('click', restoreSection);
   document.getElementById('kbDelBtn')?.addEventListener('click', archiveSection);
   document.getElementById('kbSaveBtn')?.addEventListener('click', saveSection);

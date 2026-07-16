@@ -461,6 +461,54 @@
       font-family:'Noto Sans TC',sans-serif;
     }
     .kb-builder-btn:hover { background:var(--green-main); color:white; }
+    .kb-items-head {
+      display:flex; justify-content:space-between; align-items:center;
+      margin:2px 0 8px;
+    }
+    .kb-items-empty { padding:18px; margin-bottom:10px; }
+    .kb-item {
+      border:1px solid #e0ede8; border-radius:8px; background:white;
+      margin-bottom:8px; overflow:hidden;
+    }
+    .kb-item summary {
+      list-style:none; cursor:pointer; padding:10px 12px;
+      background:var(--green-ghost); color:var(--green-dark);
+      font-size:13px; font-weight:700; overflow-wrap:anywhere;
+    }
+    .kb-item summary::-webkit-details-marker { display:none; }
+    .kb-item summary::after {
+      content:'▼'; float:right; color:var(--green-main); font-size:11px; margin-left:8px;
+    }
+    .kb-item[open] summary { border-bottom:1px solid #e0ede8; }
+    .kb-item[open] summary::after { content:'▲'; }
+    .kb-item-title,
+    .kb-item-editor {
+      width:calc(100% - 24px); margin:10px 12px 0;
+      border:1px solid #cce0d8; border-radius:8px;
+      padding:8px 10px; font-size:13px; font-family:'Noto Sans TC',sans-serif;
+      background:white; outline:none;
+    }
+    .kb-item-title:focus,
+    .kb-item-editor:focus { border-color:var(--green-mid); }
+    .kb-item-editor {
+      min-height:120px; resize:vertical; line-height:1.7;
+      margin-bottom:12px; white-space:pre-wrap;
+    }
+    .kb-raw-details {
+      border:1px solid #e0ede8; border-radius:8px; background:var(--green-ghost);
+      padding:0; margin-top:12px; overflow:hidden;
+    }
+    .kb-raw-details summary {
+      cursor:pointer; padding:10px 12px; font-size:13px;
+      color:var(--green-dark); font-weight:700;
+    }
+    .kb-raw-details .kb-label { margin:0 12px 4px; }
+    .kb-raw-details .kb-content-input {
+      width:calc(100% - 24px); margin:0 12px 8px;
+    }
+    .kb-raw-meta {
+      display:flex; justify-content:flex-end; padding:0 12px 12px;
+    }
     .kb-actions { display:flex; justify-content:space-between; align-items:center; margin-top:10px; }
     .kb-del-btn {
       padding:8px 16px; background:white; color:#e07070; border:1.5px solid #e07070;

@@ -151,10 +151,20 @@
               <textarea class="kb-builder-field kb-builder-wide" id="kbTplInternal" placeholder="內部備註：給客服或維護者看的提醒"></textarea>
             </div>
           </div>
-          <label class="kb-label">內容</label>
-          <textarea class="kb-content-input" id="kbContent" spellcheck="false"></textarea>
+          <div class="kb-items-head">
+            <label class="kb-label">本分類問題列表 <span id="kbItemsCount"></span></label>
+          </div>
+          <div id="kbItemsList"></div>
+          <details class="kb-raw-details" id="kbRawDetails">
+            <summary>進階：檢視／編輯原始內容</summary>
+            <label class="kb-label">內容</label>
+            <textarea class="kb-content-input" id="kbContent" spellcheck="false"></textarea>
+            <div class="kb-raw-meta">
+              <span class="knowledge-char" id="kbChar">0 字</span>
+            </div>
+          </details>
           <div class="kb-actions">
-            <span class="knowledge-char" id="kbChar">0 字</span>
+            <span></span>
             <div class="form-actions">
               <span class="save-msg" id="kbMsg"></span>
               <button class="kb-restore-btn" id="kbRestoreBtn" hidden>恢復使用</button>
@@ -227,6 +237,7 @@
 
 <button id="backToTopBtn" class="back-to-top" hidden aria-label="回到頂端">↑</button>
 
+<script src="kb-parser.js"></script>
 <script src="dashboard.js"></script>
 
 </body>
