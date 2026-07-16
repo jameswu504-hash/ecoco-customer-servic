@@ -732,9 +732,15 @@
       position:fixed; right:28px; bottom:72px; width:44px; height:44px;
       border-radius:50%; border:none; background:var(--green-dark); color:#fff;
       font-size:20px; cursor:pointer; box-shadow:0 4px 12px rgba(26,43,109,.35);
-      z-index:900; transition:opacity .2s; font-family:'Noto Sans TC',sans-serif;
+      z-index:1200; transition:opacity .2s, transform .2s, box-shadow .2s;
+      font-family:'Noto Sans TC',sans-serif; opacity:.72; transform:scale(.92);
+      display:flex; align-items:center; justify-content:center;
     }
-    .back-to-top:hover { background:#2a3f8f; }
+    .back-to-top.visible,
+    .back-to-top:hover {
+      opacity:1; transform:scale(1); background:#2a3f8f;
+      box-shadow:0 6px 18px rgba(26,43,109,.42);
+    }
     .modal-icon { font-size:32px; margin-bottom:12px; }
     .section-title.tight { margin-bottom:6px; }
     .section-title.compact { font-size:13px; margin-bottom:10px; }

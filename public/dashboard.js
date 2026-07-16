@@ -1250,11 +1250,15 @@ function bindDashboardEvents() {
   const backToTop = document.getElementById('backToTopBtn');
   if (backToTop) {
     let ticking = false;
+    const updateBackToTop = () => {
+      backToTop.classList.toggle('visible', window.scrollY >= 240);
+    };
+    updateBackToTop();
     window.addEventListener('scroll', () => {
       if (ticking) return;
       ticking = true;
       requestAnimationFrame(() => {
-        backToTop.hidden = window.scrollY < 400;
+        updateBackToTop();
         ticking = false;
       });
     }, { passive: true });
