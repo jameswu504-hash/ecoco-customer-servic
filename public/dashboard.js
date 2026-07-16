@@ -458,6 +458,7 @@ function showKbForm() {
   setHidden('kbEmpty', true);
   setHidden('kbForm', false);
   document.getElementById('kbMsg').textContent = '';
+  updateKbBuilderCopy();
 }
 
 function updateKbDetail() {
@@ -549,21 +550,43 @@ function renderKbItems(preserveRawOpen = false) {
       <div class="kb-current-item-head">
         <div>
           <div class="kb-current-item-title">${escapeHtml(item.heading || `未命名問題 ${kbCurrentItemIndex + 1}`)}</div>
-          <div class="kb-current-item-note">從左側問題列表切換目前編輯項目。</div>
+          <div class="kb-current-item-note">這裡是 AI 會參考的客服回答內容，從左側問題列表切換題目。</div>
         </div>
         <span class="kb-current-item-count">${kbCurrentItemIndex + 1} / ${items.length}</span>
       </div>
       ${item.fallback ? '<div class="kb-item-note">此分類尚未用 ### 分題，先以完整分類內容呈現。</div>' : `
-        <label class="kb-label">題目標題</label>
+        <label class="kb-label">客服問題標題</label>
         <input class="kb-item-title" data-kb-item-index="${kbCurrentItemIndex}" data-kb-item-field="heading" value="${escapeHtml(item.heading)}" />
       `}
-      <label class="kb-label">題目內容</label>
+      <label class="kb-label">AI 可參考的回答內容</label>
       <textarea class="kb-item-editor" data-kb-item-index="${kbCurrentItemIndex}" data-kb-item-field="body" ${item.fallback ? 'data-kb-fallback="1"' : ''} spellcheck="false">${escapeHtml(item.body)}</textarea>
     </div>
   `;
   if (rawDetails && !preserveRawOpen) rawDetails.open = false;
   updateKbDetail();
   renderKbSidebar();
+  updateKbBuilderCopy();
+}
+
+function updateKbBuilderCopy() {
+  const textarea = document.getElementById('kbContent');
+  const isNewCategory = kbCurrentId == null && !String(textarea?.value || '').trim();
+  const summary = document.getElementById('kbBuilderSummary');
+  const title = document.getElementById('kbBuilderTitle');
+  const note = document.getElementById('kbBuilderNote');
+  const button = document.getElementById('kbTemplateBtn');
+  if (!summary || !title || !note || !button) return;
+  if (isNewCategory) {
+    summary.textContent = '＋ 建立第一題';
+    title.textContent = '建立這個分類的第一個客服問題';
+    note.textContent = '新增分類時，先填分類名稱，再在這裡填第一題，最後按儲存。';
+    button.textContent = '建立第一題';
+  } else {
+    summary.textContent = '＋ 新增一題';
+    title.textContent = '新增一題客服會遇到的問題';
+    note.textContent = '用來在目前分類底下補一個新問題，填完後按儲存才會生效。';
+    button.textContent = '加入這個分類';
+  }
 }
 
 function updateKbItemFromField(field) {
@@ -623,6 +646,8 @@ function selectSection(id) {
   kbCharCount();
   renderKbItems();
   renderKbSidebar();
+  const builder = document.getElementById('kbBuilder');
+  if (builder) builder.open = false;
   clearCategorySuggestions();
 }
 
@@ -639,6 +664,9 @@ function newSection() {
   renderKbItems();
   renderKbSidebar();
   clearCategorySuggestions();
+  const builder = document.getElementById('kbBuilder');
+  if (builder) builder.open = true;
+  updateKbBuilderCopy();
   document.getElementById('kbName').focus();
 }
 
@@ -690,6 +718,7 @@ function applyKnowledgeTemplate() {
   clearKnowledgeTemplateFields();
   const builder = document.getElementById('kbBuilder');
   if (builder) builder.open = false;
+  updateKbBuilderCopy();
   document.getElementById('kbMsg').textContent = '已加入問題列表，請確認後儲存';
   document.getElementById('kbMsg').className = 'save-msg ok';
 }
@@ -916,7 +945,7 @@ async function loadKnowledgeOverview() {
   const data = await adminFetch('/api/knowledge/overview');
   if (!data || typeof data !== 'object') throw new Error('知識庫總覽資料格式異常');
   const counts = data.counts || {};
-  const sourceItems = (data.sourceDocuments || []).slice(0, 6).map(source => `
+  const sourceItems = (data.sourceDocuments || []).slice(0, 5).map(source => `
     <div class="source-item">
       <div class="source-title">${escapeHtml(source.source_name || '未命名來源')}</div>
       <div class="source-meta">${escapeHtml(source.role || '未提供用途')}</div>
@@ -925,7 +954,7 @@ async function loadKnowledgeOverview() {
     </div>
   `).join('');
 
-  const categoryItems = (data.topCategories || []).slice(0, 8).map(([name, count]) => `
+  const categoryItems = (data.topCategories || []).slice(0, 6).map(([name, count]) => `
     <div class="category-item">
       <div class="category-title">${escapeHtml(displayCategoryName(name))}</div>
       <div class="category-meta">${count} 筆資料</div>
@@ -951,31 +980,26 @@ async function loadKnowledgeOverview() {
         <div class="overview-label">整理後知識筆數</div>
       </div>
       <div class="overview-metric">
-        <div class="overview-value">${counts.templates ?? 0}</div>
-        <div class="overview-label">社群回覆範本</div>
-      </div>
-      <div class="overview-metric">
         <div class="overview-value">${counts.conflicts ?? 0}</div>
         <div class="overview-label">待確認衝突</div>
       </div>
-      <div class="overview-metric">
-        <div class="overview-value">${escapeHtml(data.effectiveAutoSyncMode || data.autoSyncMode || 'disable')}</div>
-        <div class="overview-label">知識同步模式</div>
-      </div>
     </div>
-    <div class="overview-note">
-      產生時間：${escapeHtml(data.generatedAt || '未提供')}｜模型：${escapeHtml(data.model || '未設定')}｜資料庫最後更新：${escapeHtml(data.latestDbUpdate || '尚無紀錄')}
-    </div>
-    <div class="overview-columns">
-      <div>
-        <div class="section-title compact">資料來源</div>
-        <div class="source-list">${sourceItems || '<div class="empty-state">尚無資料來源摘要</div>'}</div>
+    <details class="overview-details">
+      <summary>查看資料來源與主要分類</summary>
+      <div class="overview-note">
+        產生時間：${escapeHtml(data.generatedAt || '未提供')}｜模型：${escapeHtml(data.model || '未設定')}｜資料庫最後更新：${escapeHtml(data.latestDbUpdate || '尚無紀錄')}｜同步模式：${escapeHtml(data.effectiveAutoSyncMode || data.autoSyncMode || 'disable')}
       </div>
-      <div>
-        <div class="section-title compact">主要分類</div>
-        <div class="category-list">${categoryItems || '<div class="empty-state">尚無分類摘要</div>'}</div>
+      <div class="overview-columns">
+        <div>
+          <div class="section-title compact">資料來源</div>
+          <div class="source-list">${sourceItems || '<div class="empty-state compact-empty">尚無資料來源摘要</div>'}</div>
+        </div>
+        <div>
+          <div class="section-title compact">主要分類</div>
+          <div class="category-list">${categoryItems || '<div class="empty-state compact-empty">尚無分類摘要</div>'}</div>
+        </div>
       </div>
-    </div>
+    </details>
   `;
 }
 
@@ -1001,15 +1025,33 @@ async function loadKeywords() {
 }
 
 // 評分明細
+let ratingItems = [];
+let ratingPage = 0;
+let ratingPageSize = 10;
+
 async function loadRatingDetails() {
   const data = await adminFetch('/api/ratings');
   if (!Array.isArray(data)) throw new Error('評分明細資料格式異常');
-  if (data.length === 0) {
+  ratingItems = data;
+  ratingPage = 0;
+  renderRatingDetails();
+}
+
+function renderRatingDetails() {
+  const toolbar = document.getElementById('ratingToolbar');
+  if (toolbar) toolbar.hidden = ratingItems.length === 0;
+  if (ratingItems.length === 0) {
     document.getElementById('ratingDetailList').innerHTML =
       '<div class="empty-state">尚無評分紀錄。請到客服介面對話並按評分按鈕，內容就會出現在這裡 👆</div>';
     return;
   }
-  document.getElementById('ratingDetailList').innerHTML = data.map(item => {
+  const totalPages = Math.max(1, Math.ceil(ratingItems.length / ratingPageSize));
+  ratingPage = Math.min(ratingPage, totalPages - 1);
+  const pageItems = ratingItems.slice(ratingPage * ratingPageSize, ratingPage * ratingPageSize + ratingPageSize);
+  document.getElementById('ratingPageInfo').textContent = `${ratingPage + 1} / ${totalPages}`;
+  document.getElementById('ratingPrevBtn').disabled = ratingPage <= 0;
+  document.getElementById('ratingNextBtn').disabled = ratingPage >= totalPages - 1;
+  document.getElementById('ratingDetailList').innerHTML = pageItems.map(item => {
     const date = new Date(item.timestamp).toLocaleString('zh-TW', {
       month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
     });
@@ -1031,6 +1073,8 @@ async function loadRatingDetails() {
 
 // 知識缺口列表
 let unansweredItems = [];
+let gapPage = 0;
+let gapPageSize = 5;
 const GAP_STATUS_LABELS = {
   pending: '待處理',
   resolved: '已補知識',
@@ -1053,14 +1097,27 @@ function renderUnansweredList() {
   if (unansweredItems.length === 0) {
     document.getElementById('unansweredList').innerHTML =
       '<div class="empty-state">目前沒有客服待辦。若 AI 遇到不確定問題，會自動出現在這裡。</div>';
+    document.getElementById('gapPageInfo').textContent = '0 / 0';
+    document.getElementById('gapPrevBtn').disabled = true;
+    document.getElementById('gapNextBtn').disabled = true;
     return;
   }
   if (data.length === 0) {
     document.getElementById('unansweredList').innerHTML =
       '<div class="empty-state">這個狀態目前沒有資料。</div>';
+    document.getElementById('gapPageInfo').textContent = '0 / 0';
+    document.getElementById('gapPrevBtn').disabled = true;
+    document.getElementById('gapNextBtn').disabled = true;
     return;
   }
-  document.getElementById('unansweredList').innerHTML = data.map((item, idx) => {
+  const totalPages = Math.max(1, Math.ceil(data.length / gapPageSize));
+  gapPage = Math.min(gapPage, totalPages - 1);
+  const pageItems = data.slice(gapPage * gapPageSize, gapPage * gapPageSize + gapPageSize);
+  document.getElementById('gapPageInfo').textContent = `${gapPage + 1} / ${totalPages}`;
+  document.getElementById('gapPrevBtn').disabled = gapPage <= 0;
+  document.getElementById('gapNextBtn').disabled = gapPage >= totalPages - 1;
+  document.getElementById('unansweredList').innerHTML = pageItems.map((item, idx) => {
+    const absoluteIdx = gapPage * gapPageSize + idx;
     const date = new Date(item.timestamp).toLocaleString('zh-TW', {
       month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
     });
@@ -1069,7 +1126,7 @@ function renderUnansweredList() {
     const status = item.status || 'pending';
     const note = item.note || '';
     return `
-      <div class="unanswered-item" id="gap-${idx}">
+      <div class="unanswered-item" id="gap-${absoluteIdx}">
         <div class="unanswered-icon">❓</div>
         <div class="unanswered-body">
           <div class="unanswered-q">${escapeHtml(item.question)}</div>
@@ -1077,7 +1134,7 @@ function renderUnansweredList() {
           <div class="unanswered-reason">${reason}</div>
           ${reply ? `
             <div class="unanswered-actions">
-              <button class="unanswered-toggle" id="gap-toggle-${idx}" type="button" data-gap-index="${idx}">查看 AI 回覆</button>
+              <button class="unanswered-toggle" id="gap-toggle-${absoluteIdx}" type="button" data-gap-index="${absoluteIdx}">查看 AI 回覆</button>
             </div>
             <div class="unanswered-reply">AI 回覆：${reply}</div>
           ` : ''}
@@ -1296,7 +1353,42 @@ function bindDashboardEvents() {
   document.getElementById('kbDelBtn')?.addEventListener('click', archiveSection);
   document.getElementById('kbSaveBtn')?.addEventListener('click', saveSection);
 
-  document.getElementById('gapFilter')?.addEventListener('change', renderUnansweredList);
+  document.getElementById('ratingPageSizeSelect')?.addEventListener('change', event => {
+    ratingPageSize = Number(event.target.value) || 10;
+    ratingPage = 0;
+    renderRatingDetails();
+  });
+  document.getElementById('ratingPrevBtn')?.addEventListener('click', () => {
+    if (ratingPage > 0) {
+      ratingPage -= 1;
+      renderRatingDetails();
+    }
+  });
+  document.getElementById('ratingNextBtn')?.addEventListener('click', () => {
+    ratingPage += 1;
+    renderRatingDetails();
+  });
+
+  document.getElementById('gapFilter')?.addEventListener('change', () => {
+    gapPage = 0;
+    renderUnansweredList();
+  });
+  document.getElementById('gapPageSizeSelect')?.addEventListener('change', event => {
+    gapPageSize = Number(event.target.value) || 5;
+    gapPage = 0;
+    renderUnansweredList();
+  });
+  document.getElementById('gapPrevBtn')?.addEventListener('click', () => {
+    if (gapPage > 0) {
+      gapPage -= 1;
+      renderUnansweredList();
+    }
+  });
+  document.getElementById('gapNextBtn')?.addEventListener('click', () => {
+    gapPage += 1;
+    renderUnansweredList();
+  });
+
   document.getElementById('searchInput')?.addEventListener('input', event => handleSearch(event.currentTarget.value));
   document.getElementById('pageSizeSelect')?.addEventListener('change', event => {
     sessionPageSize = Number(event.target.value) || 10;
