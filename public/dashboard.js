@@ -108,6 +108,7 @@ async function submitLogin() {
 
 async function loadAll() {
   await Promise.allSettled([
+    loadSystemStatus(),
     safeLoad(['supportWorkbench', 'statsGrid', 'ratingChart'], loadStats),
     safeLoad('operationsReport', () => loadOperationsReport(reportPeriod)),
     safeLoad('knowledgeOverview', loadKnowledgeOverview),
@@ -123,6 +124,22 @@ async function loadAll() {
 let reportPeriod = 'week';
 let currentReport = null;
 let currentLayer = 'daily';
+
+async function loadSystemStatus() {
+  const el = document.getElementById('systemStatus');
+  if (!el) return;
+  el.classList.remove('error');
+  el.textContent = 'AI 模型：讀取中...';
+  try {
+    const data = await adminFetch('/api/system/status');
+    const model = data.anthropicModel || data.defaultAnthropicModel || '未設定';
+    el.textContent = `AI 模型：${model}`;
+  } catch (err) {
+    el.classList.add('error');
+    el.textContent = 'AI 模型：讀取失敗';
+    console.error('[dashboard] system status load failed:', err);
+  }
+}
 
 function showDashboardLayer(layer) {
   currentLayer = ['daily', 'knowledge', 'report'].includes(layer) ? layer : 'daily';

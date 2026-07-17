@@ -103,6 +103,19 @@
     }
     .layer-tab.active, .layer-tab:hover { background:var(--green-main); color:white; }
     .layer-note { font-size:12px; color:var(--gray-mid); line-height:1.6; margin-left:4px; }
+    .system-status-chip {
+      margin-left:auto;
+      border:1px solid #dfe6ee;
+      background:#f8fafc;
+      color:var(--green-dark);
+      border-radius:8px;
+      padding:7px 10px;
+      font-size:12px;
+      font-weight:700;
+      line-height:1.4;
+      white-space:nowrap;
+    }
+    .system-status-chip.error { color:#b42318; background:#fff7f6; border-color:#fecaca; }
     .dashboard-layer.hidden { display:none !important; }
 
     /* 統計卡片 */
