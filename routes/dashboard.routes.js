@@ -6,6 +6,10 @@ function getLimit(value, fallback, max) {
   return Math.min(limit, max);
 }
 
+function escapeIlikePattern(value) {
+  return String(value || '').replace(/[\\%_]/g, match => `\\${match}`);
+}
+
 function createDashboardRouter({ pool, requireAdminKey }) {
   const router = express.Router();
 
@@ -137,16 +141,17 @@ function createDashboardRouter({ pool, requireAdminKey }) {
     const q = (req.query.q || '').trim();
     if (q.length < 2) return res.status(400).json({ error: '請輸入至少 2 個字' });
     const limit = getLimit(req.query.limit, 30, 100);
+    const pattern = `%${escapeIlikePattern(q)}%`;
 
     try {
       const { rows: sessions } = await pool.query(`
         SELECT session_id, MIN(timestamp) AS started_at, COUNT(*) AS message_count
         FROM conversations
-        WHERE content ILIKE $1
+        WHERE content ILIKE $1 ESCAPE '\\'
         GROUP BY session_id
         ORDER BY started_at DESC
         LIMIT $2
-      `, [`%${q}%`, limit]);
+      `, [pattern, limit]);
       res.json(await attachMessagesToSessions(sessions));
     } catch (dbErr) {
       console.error('DB search error:', dbErr.message);
@@ -157,4 +162,4 @@ function createDashboardRouter({ pool, requireAdminKey }) {
   return router;
 }
 
-module.exports = { createDashboardRouter, getLimit };
+module.exports = { createDashboardRouter, escapeIlikePattern, getLimit };

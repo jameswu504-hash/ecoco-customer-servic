@@ -17,12 +17,15 @@ const LINE_MAX_INPUT_CHARS = 2000;
 const LINE_FALLBACK_REPLY = '抱歉，AI 回覆暫時失敗，請稍後再試，或改由人工客服協助。';
 const LINE_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const LINE_RATE_LIMIT_DEFAULT_MAX = 8;
-const LINE_RATE_LIMIT_MAX_BUCKETS = 5000;
+const LINE_RATE_LIMIT_MAX_BUCKETS = 1000;
+const LINE_RATE_LIMIT_CLEANUP_INTERVAL_MS = 60 * 1000;
 const LINE_RATE_LIMIT_REPLY = '訊息有點密集，請稍後再試一次。';
 const LINE_REPLY_TIMEOUT_DEFAULT_MS = 45_000;
 const LINE_REPLY_TIMEOUT_MAX_MS = 55_000;
 const LINE_TIMEOUT_REPLY = '目前正在查詢資料，若問題需要人工確認，客服會再協助處理。';
+// Single Render instance is fine with an in-memory bucket; move this to Redis/PostgreSQL before horizontal scaling.
 const lineRateBuckets = new Map();
+let lastLineRateCleanupAt = 0;
 
 function getLineConfig(env = process.env) {
   return {
@@ -101,6 +104,27 @@ function getLineTimeoutReply(env = process.env) {
   return String(env.LINE_TIMEOUT_REPLY || '').trim() || LINE_TIMEOUT_REPLY;
 }
 
+function cleanupLineRateBuckets(now = Date.now(), force = false) {
+  if (!force && now - lastLineRateCleanupAt < LINE_RATE_LIMIT_CLEANUP_INTERVAL_MS && lineRateBuckets.size <= LINE_RATE_LIMIT_MAX_BUCKETS) {
+    return lineRateBuckets.size;
+  }
+
+  lastLineRateCleanupAt = now;
+  for (const [bucketKey, bucket] of lineRateBuckets.entries()) {
+    if (now - bucket.windowStart >= LINE_RATE_LIMIT_WINDOW_MS) {
+      lineRateBuckets.delete(bucketKey);
+    }
+  }
+
+  while (lineRateBuckets.size > LINE_RATE_LIMIT_MAX_BUCKETS) {
+    const oldestKey = lineRateBuckets.keys().next().value;
+    if (!oldestKey) break;
+    lineRateBuckets.delete(oldestKey);
+  }
+
+  return lineRateBuckets.size;
+}
+
 function resolveWithTimeout(promise, timeoutMs, timeoutValue, onTimeout = null) {
   let timer;
   return Promise.race([
@@ -124,13 +148,7 @@ function isLineRateLimited(sessionId, now = Date.now(), env = process.env) {
   const maxEvents = getLineRateLimitMax(env);
   if (!maxEvents || maxEvents < 1) return false;
 
-  if (lineRateBuckets.size > LINE_RATE_LIMIT_MAX_BUCKETS) {
-    for (const [bucketKey, bucket] of lineRateBuckets.entries()) {
-      if (now - bucket.windowStart >= LINE_RATE_LIMIT_WINDOW_MS) {
-        lineRateBuckets.delete(bucketKey);
-      }
-    }
-  }
+  cleanupLineRateBuckets(now);
 
   const key = String(sessionId || 'unknown');
   const current = lineRateBuckets.get(key);
@@ -329,7 +347,9 @@ function createLineRouter({
 module.exports = {
   LINE_FALLBACK_REPLY,
   LINE_MAX_INPUT_CHARS,
+  LINE_RATE_LIMIT_CLEANUP_INTERVAL_MS,
   LINE_RATE_LIMIT_DEFAULT_MAX,
+  LINE_RATE_LIMIT_MAX_BUCKETS,
   LINE_RATE_LIMIT_REPLY,
   LINE_RATE_LIMIT_WINDOW_MS,
   LINE_REPLY_TIMEOUT_DEFAULT_MS,
@@ -339,6 +359,7 @@ module.exports = {
   buildAiReply,
   buildLineModelMessages,
   buildLineSessionId,
+  cleanupLineRateBuckets,
   createLineRouter,
   getLineConfig,
   getLineRateLimitMax,

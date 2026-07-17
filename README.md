@@ -1,8 +1,39 @@
 # ECOCO AI 客服系統
 
+[![CI](https://github.com/jameswu504-hash/ecoco-customer-servic/actions/workflows/ci.yml/badge.svg)](https://github.com/jameswu504-hash/ecoco-customer-servic/actions/workflows/ci.yml)
+
 ECOCO AI 客服系統是一套以官方知識庫為核心的客服輔助與自動回覆服務。系統支援網站客服、客服後台、PostgreSQL 知識庫、RAG 檢索、知識缺口紀錄、使用者回饋、主管報表與 LINE Official Account Webhook 串接準備。正式維運主線以 GitHub Actions 為準，n8n workflow 僅保留為未來可選整合範本。
 
 本專案目標不是另外建立一套分散的 FAQ，而是讓網站、後台與未來 LINE@ 回覆共用同一份知識庫與同一套風險控管規則。
+
+## 快速展示
+
+- Live demo：[ECOCO 智慧客服前台](https://ecoco-customer-servic.onrender.com/)
+- 管理後台：[ECOCO 客服後台](https://ecoco-customer-servic.onrender.com/dashboard.html)（需 `ADMIN_KEY`）
+- 健康檢查：[healthz](https://ecoco-customer-servic.onrender.com/healthz)
+
+### 前台客服畫面
+
+![ECOCO 智慧客服前台](docs/assets/screenshots/customer-chat.png)
+
+### 管理後台畫面
+
+![ECOCO 客服後台](docs/assets/screenshots/admin-dashboard.png)
+
+### 架構圖
+
+```mermaid
+flowchart LR
+  User["網站使用者 / LINE 使用者"] --> API["Express API"]
+  API --> Rag["RAG 檢索服務"]
+  Rag --> DB[("PostgreSQL<br/>knowledge_sections<br/>knowledge_chunks")]
+  API --> Claude["Claude 回覆生成"]
+  Claude --> API
+  API --> Logs[("conversations<br/>ratings<br/>unanswered_questions<br/>chat_traces")]
+  Admin["客服 / 主管後台"] --> API
+  GitHub["GitHub Actions<br/>備份 / 健檢 / 評測"] --> API
+  Line["LINE Official Account<br/>Webhook"] --> API
+```
 
 ## 目前狀態
 
@@ -125,6 +156,7 @@ https://ecoco-customer-servic.onrender.com/api/line/webhook
 | 文件 | 用途 |
 | --- | --- |
 | [`docs/README.md`](docs/README.md) | 內部文件索引 |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 系統架構與主要選型說明 |
 | [`docs/CUSTOMER_ROLLOUT_GUIDE.md`](docs/CUSTOMER_ROLLOUT_GUIDE.md) | 客服落地討論指南，供客服、主管與營運確認實際使用流程 |
 | [`docs/CUSTOMER_SUPPORT_GUIDE.md`](docs/CUSTOMER_SUPPORT_GUIDE.md) | 客服人員後台操作指南 |
 | [`docs/OPERATIONS_HANDOFF_GUIDE.md`](docs/OPERATIONS_HANDOFF_GUIDE.md) | 維護與交接總整理 |

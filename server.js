@@ -95,7 +95,12 @@ const ratingLimiter = rateLimit({
 function readJsonFile(relativePath) {
   const filePath = path.join(__dirname, relativePath);
   if (!fs.existsSync(filePath)) return null;
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (err) {
+    console.warn(`Failed to read JSON file ${relativePath}: ${err.message}`);
+    return null;
+  }
 }
 
 function getKnowledgeAutoSyncMode() {

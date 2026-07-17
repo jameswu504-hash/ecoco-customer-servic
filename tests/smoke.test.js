@@ -1,10 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const express = require('express');
 const fs = require('node:fs');
 const path = require('node:path');
 
 const { requireAdminKey } = require('../middleware/admin-auth');
 const {
+  createChatRouter,
   detectKnowledgeGap,
   FRIENDLY_AI_ERROR_REPLY,
   getClientSessionId,
@@ -22,11 +24,16 @@ const { maskSensitiveText } = require('../services/privacy.service');
 const { compareSecret } = require('../services/secret.service');
 const { summarizeRagChunks } = require('../services/trace.service');
 const {
+  escapeIlikePattern,
+} = require('../routes/dashboard.routes');
+const {
   buildAiReply,
+  cleanupLineRateBuckets,
   getLineConfig,
   getLineReplyTimeoutMs,
   getLineTimeoutReply,
   isLineRateLimited,
+  LINE_RATE_LIMIT_MAX_BUCKETS,
   resolveWithTimeout,
   safeCompare,
   toLineText,
@@ -177,6 +184,75 @@ test('chat input prefers message field over client supplied history', () => {
   });
 
   assert.deepEqual(parsed.message, { role: 'user', content: 'real question' });
+});
+
+test('/api/chat integration returns an AI reply and stores masked conversation rows', async () => {
+  const queries = [];
+  const fakePool = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (/SELECT role, content/i.test(sql)) return { rows: [] };
+      return { rows: [] };
+    },
+  };
+  const fakeClient = {
+    messages: {
+      create: async params => {
+        assert.equal(params.model, 'test-chat-model');
+        assert.equal(params.messages.at(-1).content, '我的電話是 0912-345-678，點數怎麼查？');
+        assert.match(JSON.stringify(params.system), /RAG context/);
+        return {
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 12, output_tokens: 8 },
+          content: [{ type: 'text', text: '請到 App 的點數歷程查看。<meta>{"gap":false,"confidence":"high"}</meta>' }],
+        };
+      },
+    },
+  };
+  const app = express();
+  app.use(express.json());
+  app.use('/api', createChatRouter({
+    pool: fakePool,
+    client: fakeClient,
+    chatLimiter: (req, res, next) => next(),
+    ratingLimiter: (req, res, next) => next(),
+    requireAdminKey: (req, res, next) => next(),
+    retrieveKnowledgeForQuestion: async () => ({
+      context: 'RAG context',
+      chunks: [{ id: 1, category: '點數', title: '點數查詢', risk_level: 'Low', score: 10 }],
+      retrievalMode: 'keyword',
+    }),
+    buildRuntimeGuardrails: () => 'guardrail',
+    buildSystemPrompt: (context, guardrail) => `${context}\n${guardrail}`,
+    buildSystemPromptBlocks: null,
+    defaultAnthropicModel: 'test-chat-model',
+  }));
+
+  const server = app.listen(0);
+  await new Promise(resolve => server.once('listening', resolve));
+  try {
+    const { port } = server.address();
+    const response = await fetch(`http://127.0.0.1:${port}/api/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-session-id': 'session_integration123',
+      },
+      body: JSON.stringify({ message: '我的電話是 0912-345-678，點數怎麼查？' }),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(body, { reply: '請到 App 的點數歷程查看。' });
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+
+  const conversationInsert = queries.find(item => /INSERT INTO conversations/i.test(item.sql));
+  assert.ok(conversationInsert);
+  assert.equal(conversationInsert.params[0], 'session_integration123');
+  assert.equal(conversationInsert.params[2].includes('0912-345-678'), false);
+  assert.match(conversationInsert.params[2], /\[phone\]/);
 });
 
 test('server-side model history is normalized before sending to Claude', () => {
@@ -548,6 +624,19 @@ test('runtime config fails fast when required production secrets are missing', (
   assert.match(result.errors.join('\n'), /ADMIN_KEY/);
 });
 
+test('readJsonFile returns null instead of throwing on malformed JSON', () => {
+  const { readJsonFile } = require('../server');
+  const tempRelativePath = path.join('tests', `.tmp-bad-json-${Date.now()}.json`);
+  const tempPath = path.join(__dirname, '..', tempRelativePath);
+
+  fs.writeFileSync(tempPath, '{bad json', 'utf8');
+  try {
+    assert.equal(readJsonFile(tempRelativePath), null);
+  } finally {
+    fs.unlinkSync(tempPath);
+  }
+});
+
 test('internal mode requires a staff key and customer mode does not', () => {
   const { validateRuntimeConfig } = require('../server');
   const baseEnv = {
@@ -678,6 +767,15 @@ test('LINE webhook rate limits a single sender before API calls', () => {
   assert.equal(isLineRateLimited(sessionId, now + 100, env), false);
   assert.equal(isLineRateLimited(sessionId, now + 200, env), true);
   assert.equal(isLineRateLimited(sessionId, now + 61_000, env), false);
+});
+
+test('LINE rate limit buckets are pruned before unbounded growth', () => {
+  const now = 10_000;
+  for (let index = 0; index < LINE_RATE_LIMIT_MAX_BUCKETS + 25; index += 1) {
+    isLineRateLimited(`line_bulk_${Date.now()}_${index}`, now, { LINE_RATE_LIMIT_MAX_EVENTS: '10' });
+  }
+
+  assert.ok(cleanupLineRateBuckets(now + 1, true) <= LINE_RATE_LIMIT_MAX_BUCKETS);
 });
 
 test('LINE reply timeout is configurable and capped below token expiry', async () => {
@@ -872,4 +970,12 @@ test('knowledge cache is not kept as a server-wide prompt fallback', () => {
   assert.equal(server.includes('refreshKnowledgeCache'), false);
   assert.match(knowledgeRoute, /SELECT category, content FROM knowledge_sections/);
   assert.match(knowledgeRoute, /Failed to load merged knowledge/);
+});
+
+test('dashboard search escapes ILIKE wildcard characters', () => {
+  const route = fs.readFileSync(path.join(__dirname, '..', 'routes', 'dashboard.routes.js'), 'utf8');
+
+  assert.equal(escapeIlikePattern('APP_100%\\test'), 'APP\\_100\\%\\\\test');
+  assert.match(route, /ESCAPE '\\\\'/);
+  assert.match(route, /escapeIlikePattern/);
 });

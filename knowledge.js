@@ -1,6 +1,7 @@
 // ECOCO 官方知識庫（分類版）
 // 這是「初始資料」：第一次部署時會匯入資料庫。
 // 之後請直接在後台「知識庫管理」新增/修改分類，會永久存進 Postgres。
+// 正式執行時 AI 回覆會讀 PostgreSQL 的 knowledge_sections / knowledge_chunks，不會直接讀這份檔案。
 // 只有當資料庫是空的（全新資料庫）時，才會重新從這個檔案匯入。
 
 module.exports = [
