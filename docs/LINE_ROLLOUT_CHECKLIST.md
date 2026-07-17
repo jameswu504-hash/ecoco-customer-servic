@@ -48,6 +48,7 @@
 ```text
 LINE_CHANNEL_SECRET=<LINE Developers Channel Secret>
 LINE_CHANNEL_ACCESS_TOKEN=<LINE Developers Channel Access Token>
+LINE_REPLY_TIMEOUT_MS=45000
 ```
 
 其他正式上線資源仍需確認：
@@ -97,6 +98,7 @@ https://ecoco-customer-servic.onrender.com/api/line/webhook
 | LINE Developers 權限已取得 | 待確認 |
 | Channel Secret 已設定到 Render | 待確認 |
 | Channel Access Token 已設定到 Render | 待確認 |
+| LINE reply timeout 已設定或使用預設 45 秒 | 待確認 |
 | Webhook URL Verify 成功 | 待確認 |
 | LINE OA 內建自動回覆已檢查 | 待確認 |
 | 客服表單連結已確認 | 待確認 |
@@ -125,4 +127,3 @@ https://ecoco-customer-servic.onrender.com/api/line/webhook
 3. 哪些問題必須轉人工。
 4. 誰負責每週查看知識缺口與負評。
 5. 誰負責管理 Channel Secret、Access Token 與 Render 權限。
-

@@ -17,6 +17,9 @@ const LINE_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const LINE_RATE_LIMIT_DEFAULT_MAX = 8;
 const LINE_RATE_LIMIT_MAX_BUCKETS = 5000;
 const LINE_RATE_LIMIT_REPLY = '訊息有點密集，請稍後再試一次。';
+const LINE_REPLY_TIMEOUT_DEFAULT_MS = 45_000;
+const LINE_REPLY_TIMEOUT_MAX_MS = 55_000;
+const LINE_TIMEOUT_REPLY = '目前正在查詢資料，若問題需要人工確認，客服會再協助處理。';
 const lineRateBuckets = new Map();
 
 function getLineConfig(env = process.env) {
@@ -88,6 +91,26 @@ function getLineRateLimitMax(env = process.env) {
   const maxEvents = Number(env.LINE_RATE_LIMIT_MAX_EVENTS || LINE_RATE_LIMIT_DEFAULT_MAX);
   if (!Number.isFinite(maxEvents)) return LINE_RATE_LIMIT_DEFAULT_MAX;
   return Math.floor(maxEvents);
+}
+
+function getLineReplyTimeoutMs(env = process.env) {
+  const timeoutMs = Number(env.LINE_REPLY_TIMEOUT_MS || LINE_REPLY_TIMEOUT_DEFAULT_MS);
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 1) return LINE_REPLY_TIMEOUT_DEFAULT_MS;
+  return Math.min(Math.floor(timeoutMs), LINE_REPLY_TIMEOUT_MAX_MS);
+}
+
+function getLineTimeoutReply(env = process.env) {
+  return String(env.LINE_TIMEOUT_REPLY || '').trim() || LINE_TIMEOUT_REPLY;
+}
+
+function resolveWithTimeout(promise, timeoutMs, timeoutValue) {
+  let timer;
+  return Promise.race([
+    promise.then(value => ({ timedOut: false, value })),
+    new Promise(resolve => {
+      timer = setTimeout(() => resolve({ timedOut: true, value: timeoutValue }), timeoutMs);
+    }),
+  ]).finally(() => clearTimeout(timer));
 }
 
 function isLineRateLimited(sessionId, now = Date.now(), env = process.env) {
@@ -230,18 +253,26 @@ function createLineRouter({
       if (isLineRateLimited(sessionId)) {
         reply = LINE_RATE_LIMIT_REPLY;
       } else {
+        const timeoutMs = getLineReplyTimeoutMs();
+        const timeoutReply = getLineTimeoutReply();
+        const aiReplyPromise = buildAiReply({
+          pool,
+          sessionId,
+          client,
+          text: userText,
+          retrieveKnowledgeForQuestion,
+          buildRuntimeGuardrails,
+          buildSystemPrompt,
+          buildSystemPromptBlocks,
+          defaultAnthropicModel,
+        });
+
         try {
-          reply = await buildAiReply({
-            pool,
-            sessionId,
-            client,
-            text: userText,
-            retrieveKnowledgeForQuestion,
-            buildRuntimeGuardrails,
-            buildSystemPrompt,
-            buildSystemPromptBlocks,
-            defaultAnthropicModel,
-          });
+          const result = await resolveWithTimeout(aiReplyPromise, timeoutMs, timeoutReply);
+          reply = result.value;
+          if (result.timedOut) {
+            console.warn(`LINE AI reply timed out after ${timeoutMs}ms: session=${sessionId}`);
+          }
         } catch (err) {
           console.error('LINE AI reply error:', err.message);
           await saveChatTrace(pool, {
@@ -281,15 +312,21 @@ module.exports = {
   LINE_RATE_LIMIT_DEFAULT_MAX,
   LINE_RATE_LIMIT_REPLY,
   LINE_RATE_LIMIT_WINDOW_MS,
+  LINE_REPLY_TIMEOUT_DEFAULT_MS,
+  LINE_REPLY_TIMEOUT_MAX_MS,
   LINE_TEXT_LIMIT,
+  LINE_TIMEOUT_REPLY,
   buildAiReply,
   buildLineModelMessages,
   buildLineSessionId,
   createLineRouter,
   getLineConfig,
   getLineRateLimitMax,
+  getLineReplyTimeoutMs,
+  getLineTimeoutReply,
   isLineRateLimited,
   replyToLine,
+  resolveWithTimeout,
   safeCompare,
   storeLineConversation,
   toLineText,

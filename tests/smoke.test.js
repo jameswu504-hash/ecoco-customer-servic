@@ -20,7 +20,10 @@ const { maskSensitiveText } = require('../services/privacy.service');
 const { summarizeRagChunks } = require('../services/trace.service');
 const {
   getLineConfig,
+  getLineReplyTimeoutMs,
+  getLineTimeoutReply,
   isLineRateLimited,
+  resolveWithTimeout,
   safeCompare,
   toLineText,
   verifyLineSignature,
@@ -605,6 +608,20 @@ test('LINE webhook rate limits a single sender before API calls', () => {
   assert.equal(isLineRateLimited(sessionId, now + 100, env), false);
   assert.equal(isLineRateLimited(sessionId, now + 200, env), true);
   assert.equal(isLineRateLimited(sessionId, now + 61_000, env), false);
+});
+
+test('LINE reply timeout is configurable and capped below token expiry', async () => {
+  assert.equal(getLineReplyTimeoutMs({}), 45_000);
+  assert.equal(getLineReplyTimeoutMs({ LINE_REPLY_TIMEOUT_MS: '60000' }), 55_000);
+  assert.equal(getLineReplyTimeoutMs({ LINE_REPLY_TIMEOUT_MS: '12000' }), 12_000);
+  assert.equal(getLineReplyTimeoutMs({ LINE_REPLY_TIMEOUT_MS: 'bad' }), 45_000);
+  assert.equal(getLineTimeoutReply({ LINE_TIMEOUT_REPLY: '稍後回覆' }), '稍後回覆');
+
+  const result = await resolveWithTimeout(new Promise(resolve => setTimeout(() => resolve('late'), 20)), 1, 'timeout');
+  assert.deepEqual(result, { timedOut: true, value: 'timeout' });
+
+  const fast = await resolveWithTimeout(Promise.resolve('ok'), 20, 'timeout');
+  assert.deepEqual(fast, { timedOut: false, value: 'ok' });
 });
 
 test('weekly AI analysis script reads current API field names', () => {
