@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/jameswu504-hash/ecoco-customer-servic/actions/workflows/ci.yml/badge.svg)](https://github.com/jameswu504-hash/ecoco-customer-servic/actions/workflows/ci.yml)
 
-ECOCO AI 客服系統是一套以官方知識庫為核心的客服輔助與自動回覆服務。系統支援網站客服、客服後台、PostgreSQL 知識庫、RAG 檢索、知識缺口紀錄、使用者回饋、主管報表與 LINE Official Account Webhook 串接準備。正式維運主線以 GitHub Actions 為準，n8n workflow 僅保留為未來可選整合範本。
+ECOCO AI 客服系統是一套以官方知識庫為核心的客服輔助與自動回覆服務。系統支援網站客服、客服後台、PostgreSQL 知識庫、RAG 檢索、知識缺口紀錄、使用者回饋、主管報表與 LINE Official Account Webhook 串接準備。正式維運自動化以 GitHub Actions 為準。
 
 本專案目標不是另外建立一套分散的 FAQ，而是讓網站、後台與未來 LINE@ 回覆共用同一份知識庫與同一套風險控管規則。
 
@@ -42,7 +42,7 @@ flowchart LR
 - 支援 pgvector / embedding 語意檢索；若 OpenAI embedding 失敗，會降級為關鍵字檢索。
 - 對話、評分與知識缺口會寫入 PostgreSQL。
 - LINE Messaging API Webhook 路由已預留，正式串接需公司提供 LINE Developers 權限。
-- GitHub Actions 為目前正式維運自動化方式；n8n workflow 不在正式客服維運主線，僅作未來可選整合。
+- GitHub Actions 為目前正式維運自動化方式，負責 CI、知識庫備份與每週 AI 維運分析。
 
 ## 系統架構
 
@@ -67,11 +67,10 @@ flowchart LR
 | `data/ecoco-knowledge-import.json` | 正式匯入 PostgreSQL 的知識庫 JSON |
 | `data/ecoco-ai-customer-service-database.json` | 整合來源資料與稽核用資料庫 |
 | `.github/workflows/` | GitHub Actions 自動備份與健檢，為正式維運主線 |
-| `n8n/workflows/` | n8n workflow 範本，僅供未來可選整合評估 |
 
 ## 必要環境變數
 
-正式部署時，密鑰只放在 Render Environment Variables 或 GitHub Secrets，不得寫入 Git。若未來公司決定啟用 n8n，n8n Credentials 應另由公司維運窗口管理。
+正式部署時，密鑰只放在 Render Environment Variables 或 GitHub Secrets，不得寫入 Git。
 
 | 變數 | 必填 | 用途 |
 | --- | --- | --- |
@@ -164,7 +163,6 @@ https://ecoco-customer-servic.onrender.com/api/line/webhook
 | [`docs/archive/GO_LIVE_CHECKLIST.md`](docs/archive/GO_LIVE_CHECKLIST.md) | 上線前檢查表 |
 | [`docs/LINE_ROLLOUT_CHECKLIST.md`](docs/LINE_ROLLOUT_CHECKLIST.md) | LINE@ 串接落地清單，列出權限、資源與測試項目 |
 | [`docs/LINE_INTEGRATION_GUIDE.md`](docs/LINE_INTEGRATION_GUIDE.md) | LINE@ 技術串接說明 |
-| [`docs/N8N_INTEGRATION_GUIDE.md`](docs/N8N_INTEGRATION_GUIDE.md) | n8n 未來可選整合方式，不屬於目前正式維運主線 |
 | [`docs/EVAL_OBSERVABILITY_GUIDE.md`](docs/EVAL_OBSERVABILITY_GUIDE.md) | 回覆品質評測、chat traces 與知識漂移檢查 |
 | [`docs/DATA_DICTIONARY.md`](docs/DATA_DICTIONARY.md) | PostgreSQL 與 JSON 欄位說明 |
 | [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) | 知識來源與資料治理說明 |

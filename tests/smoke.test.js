@@ -454,34 +454,6 @@ test('workflow scripts referenced by GitHub Actions exist', () => {
   assert.equal(fs.existsSync(path.join(__dirname, '..', 'evals', 'golden-set.json')), true);
 });
 
-test('n8n integration guide documents credentials and health monitoring', () => {
-  const guidePath = path.join(__dirname, '..', 'docs', 'N8N_INTEGRATION_GUIDE.md');
-  const guide = fs.readFileSync(guidePath, 'utf8');
-
-  assert.match(guide, /Credentials/);
-  assert.match(guide, /x-admin-key/);
-  assert.match(guide, /\/healthz/);
-  assert.match(guide, /\/api\/knowledge\/export/);
-  assert.match(guide, /conversations/);
-  assert.match(guide, /ratings/);
-  assert.match(guide, /unanswered_questions/);
-});
-
-test('n8n workflow templates are sanitized importable JSON files', () => {
-  const workflowDir = path.join(__dirname, '..', 'n8n', 'workflows');
-  const files = fs.readdirSync(workflowDir).filter(file => file.endsWith('.json'));
-
-  assert.ok(files.length >= 3);
-  for (const file of files) {
-    const content = fs.readFileSync(path.join(workflowDir, file), 'utf8');
-    const workflow = JSON.parse(content);
-
-    assert.ok(workflow.name);
-    assert.ok(Array.isArray(workflow.nodes));
-    assert.equal(/sk-ant-|sk-proj-|ghp_|AIza/.test(content), false);
-  }
-});
-
 test('go-live status report covers handoff and launch decisions', () => {
   const report = fs.readFileSync(
     path.join(__dirname, '..', 'docs', 'archive', 'GO_LIVE_STATUS_REPORT_2026-07-03.md'),
@@ -489,7 +461,6 @@ test('go-live status report covers handoff and launch decisions', () => {
   );
 
   assert.match(report, /LINE Developers/);
-  assert.match(report, /n8n/);
   assert.match(report, /GitHub Actions/);
   assert.match(report, /驗收題/);
   assert.match(report, /公司帳號/);

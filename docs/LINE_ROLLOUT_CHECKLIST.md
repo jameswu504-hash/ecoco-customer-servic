@@ -114,7 +114,7 @@ https://ecoco-customer-servic.onrender.com/api/line/webhook
 - OpenAI embedding 成本。
 - Render 主機。
 - PostgreSQL 資料庫。
-- n8n 或 GitHub Actions 維運流程。
+- GitHub Actions 維運流程。
 
 若未來要主動推播、群發活動或分眾行銷，需另外確認 LINE Official Account 的訊息方案與計費方式。
 

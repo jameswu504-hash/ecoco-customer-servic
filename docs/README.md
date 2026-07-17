@@ -52,11 +52,10 @@
 | [future/internal-wiki/INTERNAL_WIKI_GUIDE.md](future/internal-wiki/INTERNAL_WIKI_GUIDE.md) | 內部 Wiki 的部署、API 與資料表設計 |
 | [future/internal-wiki/LLM_WIKI_RULE_MODEL_STRATEGY.md](future/internal-wiki/LLM_WIKI_RULE_MODEL_STRATEGY.md) | LLM Wiki、Rule 與本地模型策略討論 |
 
-## 可選整合與歷史參考
+## 歷史參考
 
 | 文件 | 說明 |
 | --- | --- |
-| [N8N_INTEGRATION_GUIDE.md](N8N_INTEGRATION_GUIDE.md) | n8n workflow 範本與未來整合構想；目前正式維運以 GitHub Actions 為準 |
 | [archive/commandcenter-migration.md](archive/commandcenter-migration.md) | 舊 CommandCenter 可參考內容與不建議沿用內容；不放入客服落地主線 |
 
 ## 重要維護原則
@@ -64,7 +63,7 @@
 - PostgreSQL 是線上執行資料庫，AI 目前實際讀取 `knowledge_sections` 與 `knowledge_chunks`。
 - Git 裡的 `data/ecoco-knowledge-import.json` 是正式版本備份，不會因為後台修改而自動更新。
 - 大量更新、交接或正式版本備份前，請從後台下載 JSON，人工確認後放回 Git。
-- 正式維運自動化以 GitHub Actions 為準；n8n workflow 僅作未來可選整合，不是目前正式交接必要項目。
+- 正式維運自動化以 GitHub Actions 為準，包含 CI、知識庫備份與每週 AI 維運分析。
 - 內部 Wiki / 員工訓練知識系統尚未啟用；客服正式文件不得寫成現行功能。
 - API key、token、資料庫連線字串與 `.env` 不得提交。
 - 真實手機、Email、會員資料或可識別個資不得提交。
