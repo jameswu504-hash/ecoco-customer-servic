@@ -73,7 +73,7 @@ const SESSION_ID = "session_" + (
       if (role === "bot") {
         wrapper.appendChild(bubble);
         wrapper.appendChild(time);
-        wrapper.appendChild(renderRatingBar(text));
+        wrapper.appendChild(renderRatingBar());
 
         if (shouldShowContact(text)) {
           const contactWrapper = document.createElement("div");
@@ -99,12 +99,11 @@ const SESSION_ID = "session_" + (
       return bubble;
     }
 
-    function renderRatingBar(reply) {
+    function renderRatingBar() {
       const ratingBar = document.createElement("div");
       ratingBar.className = "rating-bar";
 
       const msgId = Date.now();
-      const question = chatHistory.length >= 2 ? chatHistory[chatHistory.length - 2].content : "";
 
       const thumbUp = document.createElement("button");
       thumbUp.className = "rating-btn";
@@ -119,8 +118,8 @@ const SESSION_ID = "session_" + (
       const ratingText = document.createElement("span");
       ratingText.className = "rating-text";
 
-      thumbUp.addEventListener("click", () => submitRating(msgId, "positive", thumbUp, thumbDown, ratingText, question, reply));
-      thumbDown.addEventListener("click", () => submitRating(msgId, "negative", thumbDown, thumbUp, ratingText, question, reply));
+      thumbUp.addEventListener("click", () => submitRating(msgId, "positive", thumbUp, thumbDown, ratingText));
+      thumbDown.addEventListener("click", () => submitRating(msgId, "negative", thumbDown, thumbUp, ratingText));
 
       ratingBar.appendChild(thumbUp);
       ratingBar.appendChild(thumbDown);
@@ -163,21 +162,22 @@ const SESSION_ID = "session_" + (
       if (row) row.remove();
     }
 
-    async function submitRating(msgId, type, clickedBtn, otherBtn, textEl, question, reply) {
+    async function submitRating(msgId, type, clickedBtn, otherBtn, textEl) {
       clickedBtn.classList.add("selected");
       clickedBtn.disabled = true;
       otherBtn.disabled = true;
       textEl.textContent = type === "positive" ? "謝謝你的回饋" : "已收到，我們會用來改善回答";
 
       try {
-        await fetch("/api/rating", {
+        const response = await fetch("/api/rating", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             "x-session-id": SESSION_ID
           },
-          body: JSON.stringify({ msgId, type, question, reply })
+          body: JSON.stringify({ msgId, type })
         });
+        if (!response.ok) throw new Error("rating failed");
       } catch (e) {
         textEl.textContent = "評分暫時無法送出";
       }

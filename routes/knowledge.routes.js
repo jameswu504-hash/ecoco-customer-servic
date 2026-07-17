@@ -36,9 +36,7 @@ function createKnowledgeRouter({
   requireAdminKey,
   readJsonFile,
   getKnowledgeAutoSyncMode,
-  refreshKnowledgeCache,
   rebuildKnowledgeChunksForSection,
-  getKnowledgeCache,
   defaultAnthropicModel,
 }) {
   const router = express.Router();
@@ -175,7 +173,6 @@ function createKnowledgeRouter({
         targetId: String(inserted[0].id),
         details: { category, contentLength: content.length },
       });
-      await refreshKnowledgeCache();
       await rebuildKnowledgeChunksForSection(inserted[0].id);
       res.json({ success: true, id: inserted[0].id });
     } catch (dbErr) {
@@ -222,7 +219,6 @@ function createKnowledgeRouter({
         targetId: String(id),
         details: { category, contentLength: content.length },
       });
-      await refreshKnowledgeCache();
       await rebuildKnowledgeChunksForSection(id);
       res.json({ success: true });
     } catch (dbErr) {
@@ -258,7 +254,6 @@ function createKnowledgeRouter({
           targetId: String(id),
           details: { category: section.rows[0].category },
         });
-        await refreshKnowledgeCache();
         return res.json({ success: true, deleted: true });
       } catch (dbErr) {
         await rollbackQuietly(db);
@@ -281,7 +276,6 @@ function createKnowledgeRouter({
         targetType: 'knowledge_section',
         targetId: String(id),
       });
-      await refreshKnowledgeCache();
       await rebuildKnowledgeChunksForSection(id);
       res.json({ success: true });
     } catch (dbErr) {
@@ -328,7 +322,6 @@ function createKnowledgeRouter({
         targetId: String(id),
         details: { category },
       });
-      await refreshKnowledgeCache();
       await rebuildKnowledgeChunksForSection(id);
       res.json({ success: true });
     } catch (dbErr) {
@@ -340,8 +333,18 @@ function createKnowledgeRouter({
     }
   });
 
-  router.get('/', (req, res) => {
-    res.json({ content: getKnowledgeCache() });
+  router.get('/', async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        "SELECT category, content FROM knowledge_sections WHERE COALESCE(archived_at, '') = '' ORDER BY sort_order ASC, id ASC"
+      );
+      res.json({
+        content: rows.map(row => `## ${row.category}\n${row.content}`).join('\n\n'),
+      });
+    } catch (dbErr) {
+      console.error('DB knowledge merge query error:', dbErr.message);
+      res.status(500).json({ error: 'Failed to load merged knowledge.' });
+    }
   });
 
   return router;

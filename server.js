@@ -92,22 +92,6 @@ const ratingLimiter = rateLimit({
   message: { error: 'Too many ratings. Please try again later.' },
 });
 
-let knowledgeCache = '';
-const DEFAULT_KNOWLEDGE_CACHE_MAX_CHARS = 250000;
-
-function getKnowledgeCacheMaxChars(env = process.env) {
-  const raw = Number(env.KNOWLEDGE_CACHE_MAX_CHARS || DEFAULT_KNOWLEDGE_CACHE_MAX_CHARS);
-  if (!Number.isFinite(raw) || raw < 1000) return DEFAULT_KNOWLEDGE_CACHE_MAX_CHARS;
-  return Math.floor(raw);
-}
-
-function limitKnowledgeCache(content, env = process.env) {
-  const text = String(content || '');
-  const maxChars = getKnowledgeCacheMaxChars(env);
-  if (text.length <= maxChars) return text;
-  return `${text.slice(0, maxChars)}\n\n[Knowledge cache truncated at ${maxChars} characters; RAG chunks remain the primary answer source.]`;
-}
-
 function readJsonFile(relativePath) {
   const filePath = path.join(__dirname, relativePath);
   if (!fs.existsSync(filePath)) return null;
@@ -170,14 +154,6 @@ function normalizeImportSections(rawSections) {
     }
   }
   return [...byCategory.values()];
-}
-
-async function refreshKnowledgeCache() {
-  const { rows } = await pool.query(
-    "SELECT category, content FROM knowledge_sections WHERE COALESCE(archived_at, '') = '' ORDER BY sort_order ASC, id ASC"
-  );
-  knowledgeCache = limitKnowledgeCache(rows.map(r => `## ${r.category}\n${r.content}`).join('\n\n'));
-  console.log('Knowledge cache refreshed:', knowledgeCache.length);
 }
 
 async function syncKnowledgeFromImportFile() {
@@ -328,7 +304,6 @@ const responsePolicies = Array.isArray(responsePolicyPayload.policies)
 const ragService = createRagService({ pool, env: process.env });
 const promptService = createPromptService({
   responsePolicies,
-  getKnowledgeCache: () => knowledgeCache,
 });
 
 async function buildHealthStatus({ includeDetails = false } = {}) {
@@ -341,7 +316,6 @@ async function buildHealthStatus({ includeDetails = false } = {}) {
 
   if (includeDetails) {
     health.startedAt = startedAt;
-    health.knowledgeCacheChars = knowledgeCache.length;
     health.knowledgeAutoSyncMode = getKnowledgeAutoSyncMode();
     health.semanticRagEnabled = ragService.shouldUseSemanticSearch();
     health.embeddingModel = process.env.EMBEDDING_MODEL || 'text-embedding-3-small';
@@ -353,6 +327,13 @@ async function buildHealthStatus({ includeDetails = false } = {}) {
   try {
     await pool.query('SELECT 1');
     health.database = 'ok';
+    if (includeDetails) {
+      const { rows } = await pool.query(
+        "SELECT COUNT(*) AS section_count, COALESCE(SUM(LENGTH(content)), 0) AS content_chars FROM knowledge_sections WHERE COALESCE(archived_at, '') = ''"
+      );
+      health.knowledgeSectionCount = Number(rows[0].section_count);
+      health.knowledgeContentChars = Number(rows[0].content_chars);
+    }
   } catch (err) {
     health.status = 'degraded';
     health.database = 'error';
@@ -401,9 +382,7 @@ app.use('/api/knowledge', createKnowledgeRouter({
   requireAdminKey,
   readJsonFile,
   getKnowledgeAutoSyncMode,
-  refreshKnowledgeCache,
   rebuildKnowledgeChunksForSection: ragService.rebuildKnowledgeChunksForSection,
-  getKnowledgeCache: () => knowledgeCache,
   defaultAnthropicModel: DEFAULT_ANTHROPIC_MODEL,
 }));
 if (isInternalMode()) {
@@ -421,7 +400,6 @@ async function start() {
 
     await initDb(ragService);
     const syncChanged = await syncKnowledgeFromImportFile();
-    await refreshKnowledgeCache();
     await ensureKnowledgeChunksReady(syncChanged);
     await purgeExpiredConversationData(pool, process.env);
     httpServer = app.listen(PORT, () => {
@@ -471,8 +449,6 @@ module.exports = {
   start,
   syncKnowledgeFromImportFile,
   buildHealthStatus,
-  getKnowledgeCacheMaxChars,
-  limitKnowledgeCache,
   shutdown,
   validateRuntimeConfig,
   isInternalMode,

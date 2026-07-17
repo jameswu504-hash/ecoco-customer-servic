@@ -88,7 +88,8 @@ x-admin-key: <ADMIN_KEY>
 | `status` | `ok` 代表服務與 DB 基本正常；`degraded` 代表至少 DB 檢查失敗 |
 | `database` | PostgreSQL 連線是否正常 |
 | `semanticRagEnabled` | 僅管理 API 顯示，代表是否同時具備 pgvector 與 `OPENAI_API_KEY` |
-| `knowledgeCacheChars` | 僅管理 API 顯示，目前載入到 prompt cache 的知識庫字數 |
+| `knowledgeSectionCount` | 僅管理 API 顯示，目前啟用中的知識庫分類數 |
+| `knowledgeContentChars` | 僅管理 API 顯示，目前啟用中的知識庫內容字數 |
 | `knowledgeAutoSyncMode` | 僅管理 API 顯示，啟動時知識庫同步模式 |
 
 ## 5. 知識庫同步原則

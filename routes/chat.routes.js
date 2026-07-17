@@ -5,6 +5,8 @@ const { saveChatTrace } = require('../services/trace.service');
 
 const KNOWLEDGE_GAP_MACHINE_MARKER = '[KNOWLEDGE_GAP]';
 const KNOWLEDGE_GAP_META_PATTERN = /<meta>\s*({[\s\S]*?})\s*<\/meta>/i;
+const KNOWLEDGE_GAP_META_STRIP_PATTERN = /<meta>\s*{[\s\S]*?}\s*<\/meta>/gi;
+const KNOWLEDGE_GAP_META_INCOMPLETE_PATTERN = /<meta>(?![\s\S]*<\/meta>)[\s\S]*$/i;
 const FRIENDLY_AI_ERROR_REPLY = '抱歉，AI 客服暫時連線不穩。請稍後再試，或透過客服表單補充問題：https://ecoco.tw/kWqgW';
 const KNOWLEDGE_GAP_MARKERS = [
   '沒有確切資料',
@@ -36,9 +38,16 @@ function parseKnowledgeGapMeta(reply) {
   }
 }
 
-function detectKnowledgeGap(reply) {
+function detectKnowledgeGap(reply, stopReason = '') {
   if (typeof reply !== 'string') {
     return { isGap: false, reason: '' };
+  }
+
+  if (String(stopReason || '') === 'max_tokens') {
+    return {
+      isGap: true,
+      reason: 'AI reply truncated at max_tokens; gap meta may be missing, flagged for manual review.',
+    };
   }
 
   const meta = parseKnowledgeGapMeta(reply);
@@ -71,7 +80,8 @@ function detectKnowledgeGap(reply) {
 function stripKnowledgeGapMarker(reply) {
   return String(reply || '')
     .replaceAll(KNOWLEDGE_GAP_MACHINE_MARKER, '')
-    .replace(KNOWLEDGE_GAP_META_PATTERN, '')
+    .replace(KNOWLEDGE_GAP_META_STRIP_PATTERN, '')
+    .replace(KNOWLEDGE_GAP_META_INCOMPLETE_PATTERN, '')
     .trim();
 }
 
@@ -169,6 +179,38 @@ function getSafeSessionId(headers = {}) {
   return `server_${crypto.randomUUID()}`;
 }
 
+function getClientSessionId(headers = {}) {
+  const raw = String(headers['x-session-id'] || '').trim();
+  if (/^session_[A-Za-z0-9_-]{8,80}$/.test(raw)) return raw;
+  return null;
+}
+
+async function loadLatestExchangeForSession(pool, sessionId) {
+  if (!pool || !sessionId) return { question: '', reply: '' };
+
+  const { rows } = await pool.query(
+    `SELECT role, content
+     FROM conversations
+     WHERE session_id = $1
+     ORDER BY timestamp DESC, id DESC
+     LIMIT $2`,
+    [sessionId, 6]
+  );
+
+  let question = '';
+  let reply = '';
+  for (const row of rows) {
+    if (!reply && row.role === 'assistant') {
+      reply = String(row.content || '');
+    } else if (reply && !question && row.role === 'user') {
+      question = String(row.content || '');
+      break;
+    }
+  }
+
+  return { question, reply };
+}
+
 function createChatRouter({
   pool,
   client,
@@ -212,7 +254,7 @@ function createChatRouter({
 
       const rawReply = response.content.find(b => b.type === 'text')?.text
         ?? '目前無法產生回覆，請稍後再試或聯絡客服。';
-      const gap = detectKnowledgeGap(rawReply);
+      const gap = detectKnowledgeGap(rawReply, response.stop_reason);
       const reply = stripKnowledgeGapMarker(rawReply);
 
       if (response.stop_reason === 'max_tokens') {
@@ -264,14 +306,20 @@ function createChatRouter({
   });
 
   router.post('/rating', ratingLimiter, async (req, res) => {
-    const { msgId, type, question, reply } = req.body || {};
+    const { msgId, type } = req.body || {};
     if (!msgId || !type) return res.status(400).json({ error: 'Missing rating fields.' });
     if (!['positive', 'negative'].includes(type)) return res.status(400).json({ error: 'Invalid rating type.' });
 
     try {
       const ts = new Date().toISOString();
-      const storedQuestion = maskSensitiveText(question).substring(0, 300);
-      const storedReply = maskSensitiveText(reply).substring(0, 300);
+      const sessionId = getClientSessionId(req.headers);
+      const latestExchange = await loadLatestExchangeForSession(pool, sessionId);
+      const storedQuestion = maskSensitiveText(latestExchange.question).substring(0, 300);
+      const storedReply = maskSensitiveText(latestExchange.reply).substring(0, 300);
+
+      if (!sessionId || !storedQuestion || !storedReply) {
+        return res.status(404).json({ error: 'No matching conversation found for rating.' });
+      }
 
       await pool.query(
         'INSERT INTO ratings (msg_id, type, timestamp, question, reply) VALUES ($1, $2, $3, $4, $5)',
@@ -288,7 +336,7 @@ function createChatRouter({
         await pool.query(
           'INSERT INTO unanswered_questions (session_id, question, reply, reason, timestamp) VALUES ($1, $2, $3, $4, $5)',
           [
-            getSafeSessionId(req.headers),
+            sessionId,
             storedQuestion,
             storedReply,
             '使用者點選「需改善」，請客服確認是否需要補充或修正知識庫。',
@@ -347,8 +395,10 @@ module.exports = {
   createChatRouter,
   detectKnowledgeGap,
   FRIENDLY_AI_ERROR_REPLY,
+  getClientSessionId,
   getLatestUserMessage,
   getSafeSessionId,
+  loadLatestExchangeForSession,
   loadServerConversationHistory,
   normalizeModelMessages,
   parseKnowledgeGapMeta,

@@ -7,8 +7,10 @@ const { requireAdminKey } = require('../middleware/admin-auth');
 const {
   detectKnowledgeGap,
   FRIENDLY_AI_ERROR_REPLY,
+  getClientSessionId,
   getLatestUserMessage,
   getSafeSessionId,
+  loadLatestExchangeForSession,
   normalizeModelMessages,
   parseKnowledgeGapMeta,
   stripKnowledgeGapMarker,
@@ -17,8 +19,10 @@ const {
 const { cleanKnowledgeInput } = require('../routes/knowledge.routes');
 const { requireStaffKey } = require('../middleware/staff-auth');
 const { maskSensitiveText } = require('../services/privacy.service');
+const { compareSecret } = require('../services/secret.service');
 const { summarizeRagChunks } = require('../services/trace.service');
 const {
+  buildAiReply,
   getLineConfig,
   getLineReplyTimeoutMs,
   getLineTimeoutReply,
@@ -105,6 +109,23 @@ test('structured knowledge gap metadata is parsed and stripped from user replies
   assert.equal(gap.isGap, true);
   assert.match(gap.reason, /structured knowledge gap meta/);
   assert.equal(stripKnowledgeGapMarker(reply), '目前無法確認，請補充站點與時間。');
+});
+
+test('multiple and incomplete meta blocks are stripped from user replies', () => {
+  const repeated = '<meta>{"gap":false,"confidence":"high"}</meta>好的，這樣處理。<meta>{"gap":false,"confidence":"high"}</meta>';
+  const truncated = '目前無法確認，請補充站點與時間。\n<meta>{"gap":tru';
+
+  assert.equal(stripKnowledgeGapMarker(repeated), '好的，這樣處理。');
+  assert.equal(stripKnowledgeGapMarker(truncated), '目前無法確認，請補充站點與時間。');
+});
+
+test('max_tokens truncation is conservatively treated as a knowledge gap', () => {
+  const gap = detectKnowledgeGap('這是被截斷的回覆，結尾沒有 meta 標記', 'max_tokens');
+  const normal = detectKnowledgeGap('完整回覆。<meta>{"gap":false,"confidence":"high"}</meta>', 'end_turn');
+
+  assert.equal(gap.isGap, true);
+  assert.match(gap.reason, /max_tokens/);
+  assert.equal(normal.isGap, false);
 });
 
 test('conversation history must end with user message', () => {
@@ -415,6 +436,51 @@ test('negative feedback is routed to unanswered questions for maintenance', () =
   assert.match(indexJs, /"x-session-id": SESSION_ID/);
 });
 
+test('rating session id is strict and invalid headers do not create orphan sessions', () => {
+  assert.equal(getClientSessionId({}), null);
+  assert.equal(getClientSessionId({ 'x-session-id': 'bad!!' }), null);
+  assert.equal(getClientSessionId({ 'x-session-id': 'session_abcdefgh' }), 'session_abcdefgh');
+});
+
+test('rating question and reply are looked up from DB instead of trusting client input', async () => {
+  const fakePool = {
+    query: async (sql, params) => {
+      assert.match(sql, /FROM conversations/);
+      assert.deepEqual(params, ['session_abcdefgh', 6]);
+      return {
+        rows: [
+          { role: 'assistant', content: '這是 AI 的回覆' },
+          { role: 'user', content: '這是使用者的問題' },
+          { role: 'assistant', content: '更早的回覆' },
+        ],
+      };
+    },
+  };
+
+  const exchange = await loadLatestExchangeForSession(fakePool, 'session_abcdefgh');
+  assert.deepEqual(exchange, { question: '這是使用者的問題', reply: '這是 AI 的回覆' });
+
+  const empty = await loadLatestExchangeForSession(fakePool, null);
+  assert.deepEqual(empty, { question: '', reply: '' });
+});
+
+test('rating endpoint rejects unmatched sessions and ignores client-provided question text', () => {
+  const chatRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'chat.routes.js'), 'utf8');
+  const ratingBlock = chatRoute.slice(chatRoute.indexOf("router.post('/rating'"), chatRoute.indexOf("router.get('/ratings'"));
+
+  assert.match(ratingBlock, /loadLatestExchangeForSession/);
+  assert.match(ratingBlock, /getClientSessionId/);
+  assert.match(ratingBlock, /No matching conversation found for rating/);
+  assert.equal(/req\.body[^\n]*question/.test(ratingBlock), false);
+});
+
+test('customer frontend rating payload only carries msgId and type', () => {
+  const indexJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.js'), 'utf8');
+
+  assert.match(indexJs, /JSON\.stringify\(\{ msgId, type \}\)/);
+  assert.equal(/JSON\.stringify\(\{ msgId, type, question, reply \}\)/.test(indexJs), false);
+});
+
 test('golden eval set has enough reviewed cases and high-risk coverage', () => {
   const golden = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'evals', 'golden-set.json'), 'utf8'));
   const cases = golden.cases || [];
@@ -554,6 +620,10 @@ test('LINE signature comparison pads unequal lengths before timing-safe compare'
 
   assert.equal(safeCompare('abc', 'abc'), true);
   assert.equal(safeCompare('abc', 'abcd'), false);
+  assert.equal(safeCompare('abc\0', 'abc'), false);
+  assert.equal(compareSecret('key-value', 'key-value'), true);
+  assert.equal(compareSecret('key-value', 'key-value\0'), false);
+  assert.equal(compareSecret('', ''), false);
   assert.equal(lineRoute.includes('left.length !== right.length) return false'), false);
 });
 
@@ -622,6 +692,62 @@ test('LINE reply timeout is configurable and capped below token expiry', async (
 
   const fast = await resolveWithTimeout(Promise.resolve('ok'), 20, 'timeout');
   assert.deepEqual(fast, { timedOut: false, value: 'ok' });
+});
+
+test('LINE reply timeout aborts the underlying request via onTimeout hook', async () => {
+  const controller = new AbortController();
+  let aborted = false;
+  controller.signal.addEventListener('abort', () => { aborted = true; });
+
+  const slow = new Promise(resolve => setTimeout(() => resolve('late'), 30));
+  const result = await resolveWithTimeout(slow, 1, 'timeout', () => controller.abort());
+
+  assert.equal(result.timedOut, true);
+  assert.equal(aborted, true);
+
+  const fastController = new AbortController();
+  let fastAborted = false;
+  fastController.signal.addEventListener('abort', () => { fastAborted = true; });
+  const fast = await resolveWithTimeout(Promise.resolve('ok'), 30, 'timeout', () => fastController.abort());
+
+  assert.equal(fast.timedOut, false);
+  assert.equal(fastAborted, false);
+});
+
+test('LINE buildAiReply passes abort signal and flags max_tokens as gap', async () => {
+  const calls = [];
+  const fakeClient = {
+    messages: {
+      create: async (params, options) => {
+        calls.push({ params, options });
+        return {
+          stop_reason: 'max_tokens',
+          usage: { input_tokens: 1, output_tokens: 1 },
+          content: [{ type: 'text', text: '被截斷的回覆' }],
+        };
+      },
+    },
+  };
+  const fakePool = { query: async () => ({ rows: [] }) };
+  const controller = new AbortController();
+
+  const reply = await buildAiReply({
+    pool: fakePool,
+    sessionId: 'line_test',
+    client: fakeClient,
+    text: '測試問題',
+    retrieveKnowledgeForQuestion: async () => ({ retrievalMode: 'none', chunks: [], context: '' }),
+    buildRuntimeGuardrails: () => '',
+    buildSystemPrompt: () => 'system',
+    buildSystemPromptBlocks: null,
+    defaultAnthropicModel: 'claude-sonnet-4-6',
+    signal: controller.signal,
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].options.signal, controller.signal);
+  assert.equal(detectKnowledgeGap(reply).isGap, true);
+  assert.equal(stripKnowledgeGapMarker(reply), '被截斷的回覆');
 });
 
 test('weekly AI analysis script reads current API field names', () => {
@@ -738,12 +864,12 @@ test('admin notes are truncated before database writes', () => {
   assert.equal(normalized.length, MAX_ADMIN_NOTE_CHARS);
 });
 
-test('legacy knowledge cache is capped to avoid unbounded prompt fallback size', () => {
-  const { getKnowledgeCacheMaxChars, limitKnowledgeCache } = require('../server');
-  const env = { KNOWLEDGE_CACHE_MAX_CHARS: '1200' };
-  const capped = limitKnowledgeCache('x'.repeat(1500), env);
+test('knowledge cache is not kept as a server-wide prompt fallback', () => {
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  const knowledgeRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'knowledge.routes.js'), 'utf8');
 
-  assert.equal(getKnowledgeCacheMaxChars(env), 1200);
-  assert.ok(capped.length < 1400);
-  assert.match(capped, /Knowledge cache truncated/);
+  assert.equal(server.includes('let knowledgeCache'), false);
+  assert.equal(server.includes('refreshKnowledgeCache'), false);
+  assert.match(knowledgeRoute, /SELECT category, content FROM knowledge_sections/);
+  assert.match(knowledgeRoute, /Failed to load merged knowledge/);
 });

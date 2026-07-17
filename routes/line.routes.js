@@ -1,12 +1,14 @@
 const crypto = require('crypto');
 const express = require('express');
 const {
+  KNOWLEDGE_GAP_MACHINE_MARKER,
   detectKnowledgeGap,
   loadServerConversationHistory,
   normalizeModelMessages,
   stripKnowledgeGapMarker,
 } = require('./chat.routes');
 const { maskSensitiveText } = require('../services/privacy.service');
+const { compareSecret } = require('../services/secret.service');
 const { saveChatTrace } = require('../services/trace.service');
 
 const LINE_REPLY_ENDPOINT = 'https://api.line.me/v2/bot/message/reply';
@@ -30,11 +32,7 @@ function getLineConfig(env = process.env) {
 }
 
 function safeCompare(a, b) {
-  const leftRaw = Buffer.from(String(a || ''));
-  const right = Buffer.from(String(b || ''));
-  const left = Buffer.alloc(right.length);
-  leftRaw.copy(left, 0, 0, Math.min(leftRaw.length, right.length));
-  return crypto.timingSafeEqual(left, right) && leftRaw.length === right.length;
+  return compareSecret(a, b);
 }
 
 function verifyLineSignature({ body, signature, channelSecret }) {
@@ -103,12 +101,21 @@ function getLineTimeoutReply(env = process.env) {
   return String(env.LINE_TIMEOUT_REPLY || '').trim() || LINE_TIMEOUT_REPLY;
 }
 
-function resolveWithTimeout(promise, timeoutMs, timeoutValue) {
+function resolveWithTimeout(promise, timeoutMs, timeoutValue, onTimeout = null) {
   let timer;
   return Promise.race([
     promise.then(value => ({ timedOut: false, value })),
     new Promise(resolve => {
-      timer = setTimeout(() => resolve({ timedOut: true, value: timeoutValue }), timeoutMs);
+      timer = setTimeout(() => {
+        if (typeof onTimeout === 'function') {
+          try {
+            onTimeout();
+          } catch (err) {
+            console.warn('resolveWithTimeout onTimeout hook failed:', err.message);
+          }
+        }
+        resolve({ timedOut: true, value: timeoutValue });
+      }, timeoutMs);
     }),
   ]).finally(() => clearTimeout(timer));
 }
@@ -164,6 +171,7 @@ async function buildAiReply({
   buildSystemPrompt,
   buildSystemPromptBlocks,
   defaultAnthropicModel,
+  signal = undefined,
 }) {
   const question = String(text || '').trim().slice(0, LINE_MAX_INPUT_CHARS);
   const traceStart = Date.now();
@@ -177,7 +185,7 @@ async function buildAiReply({
       ? buildSystemPromptBlocks(rag.context, runtimeGuardrails)
       : [{ type: 'text', text: buildSystemPrompt(rag.context, runtimeGuardrails) }],
     messages: modelMessages,
-  });
+  }, signal ? { signal } : undefined);
 
   if (response.stop_reason === 'max_tokens') {
     console.warn(`LINE Claude reply reached max_tokens: session=${sessionId}`);
@@ -192,7 +200,11 @@ async function buildAiReply({
     response,
   });
 
-  return response.content.find(block => block.type === 'text')?.text || LINE_FALLBACK_REPLY;
+  const replyText = response.content.find(block => block.type === 'text')?.text || LINE_FALLBACK_REPLY;
+  if (response.stop_reason === 'max_tokens') {
+    return `${replyText}\n${KNOWLEDGE_GAP_MACHINE_MARKER}`;
+  }
+  return replyText;
 }
 
 async function storeLineConversation({ pool, sessionId, question, reply }) {
@@ -255,6 +267,7 @@ function createLineRouter({
       } else {
         const timeoutMs = getLineReplyTimeoutMs();
         const timeoutReply = getLineTimeoutReply();
+        const abortController = new AbortController();
         const aiReplyPromise = buildAiReply({
           pool,
           sessionId,
@@ -265,13 +278,20 @@ function createLineRouter({
           buildSystemPrompt,
           buildSystemPromptBlocks,
           defaultAnthropicModel,
+          signal: abortController.signal,
         });
 
         try {
-          const result = await resolveWithTimeout(aiReplyPromise, timeoutMs, timeoutReply);
+          const result = await resolveWithTimeout(
+            aiReplyPromise,
+            timeoutMs,
+            timeoutReply,
+            () => abortController.abort()
+          );
           reply = result.value;
           if (result.timedOut) {
             console.warn(`LINE AI reply timed out after ${timeoutMs}ms: session=${sessionId}`);
+            aiReplyPromise.catch(() => {});
           }
         } catch (err) {
           console.error('LINE AI reply error:', err.message);

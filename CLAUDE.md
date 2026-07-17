@@ -52,10 +52,9 @@ KNOWLEDGE_AUTO_SYNC=disable       # 日常維護只用後台 PostgreSQL；大改
 1. `validateRuntimeConfig()` — 檢查必要環境變數，缺 `DATABASE_URL`／`ANTHROPIC_API_KEY`／`ADMIN_KEY` 直接啟動失敗
 2. `initDb()` — 逐一執行 SCHEMA 建表（雲端 Postgres 不接受多語句，故分開執行），並跑 timestamp 欄位遷移與 pgvector 初始化
 3. `KNOWLEDGE_AUTO_SYNC` 決定是否從 Git JSON 同步進 PostgreSQL
-4. `refreshKnowledgeCache()` — 把 `knowledge_sections` 載入記憶體（僅供後台檢視，不進 prompt）
-5. `ensureKnowledgeChunksReady()` — chunks 為空或同步有變更時重建 `knowledge_chunks`
-6. `purgeExpiredConversationData()` — 依 `CONVERSATION_RETENTION_DAYS` 清除過期對話
-7. 開始接請求
+4. `ensureKnowledgeChunksReady()` — chunks 為空或同步有變更時重建 `knowledge_chunks`
+5. `purgeExpiredConversationData()` — 依 `CONVERSATION_RETENTION_DAYS` 清除過期對話
+6. 開始接請求
 
 ### RAG 流程
 
