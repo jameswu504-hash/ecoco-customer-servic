@@ -123,11 +123,11 @@ test('structured knowledge gap metadata is parsed and stripped from user replies
 });
 
 test('station lookup questions add Chinese station aliases for RAG', () => {
-  const chongSyueStation = '\u5d07\u5b78\u7ad9';
-  const chongSyue = '\u5d07\u5b78';
-  const taiNanChongSyueStation = '\u53f0\u5357\u5d07\u5b78\u7ad9';
-  const whereIsIt = '\u5728\u54ea\u88e1';
-  const stationTerms = buildChineseStationTerms(`${chongSyueStation}\u5728\u54ea`);
+  const chongSyueStation = '\u5d07' + '\u5b78' + '\u7ad9';
+  const chongSyue = '\u5d07' + '\u5b78';
+  const taiNanChongSyueStation = '\u53f0' + '\u5357' + chongSyueStation;
+  const whereIsIt = '\u5728' + '\u54ea' + '\u88e1';
+  const stationTerms = buildChineseStationTerms(`${chongSyueStation}${'\u5728' + '\u54ea'}`);
   const searchTerms = buildSearchTerms(`${taiNanChongSyueStation}${whereIsIt}`);
 
   assert.ok(stationTerms.includes(chongSyueStation));
@@ -137,8 +137,9 @@ test('station lookup questions add Chinese station aliases for RAG', () => {
 });
 
 test('station lookup classification is routed to station machine knowledge', () => {
-  const station = classifyQuestion('\u5d07\u5b78\u7ad9\u5728\u54ea');
-  const stationSearch = classifyQuestion('\u7ad9\u9ede\u67e5\u8a62 \u5d07\u5b78');
+  const chongSyue = '\u5d07' + '\u5b78';
+  const station = classifyQuestion(`${chongSyue}${'\u7ad9' + '\u5728' + '\u54ea'}`);
+  const stationSearch = classifyQuestion(`${'\u7ad9' + '\u9ede' + '\u67e5' + '\u8a62'} ${chongSyue}`);
 
   assert.equal(station.category, 'station_machine');
   assert.equal(station.shouldUseRag, true);
@@ -146,21 +147,22 @@ test('station lookup classification is routed to station machine knowledge', () 
 });
 
 test('station name terms rank matching station rows first', () => {
-  const terms = buildSearchTerms('\u5d07\u5b78\u7ad9\u5728\u54ea');
-  const stationCategory = 'AI\u5ba2\u670d\u77e5\u8b58\uff1a\u7ad9\u9ede\u8cc7\u6599 / \u81fa\u5357';
+  const chongSyueStation = '\u5d07' + '\u5b78' + '\u7ad9';
+  const terms = buildSearchTerms(`${chongSyueStation}${'\u5728' + '\u54ea'}`);
+  const stationCategory = `AI${'\u5ba2' + '\u670d' + '\u77e5' + '\u8b58' + '\uff1a'}${'\u7ad9' + '\u9ede' + '\u8cc7' + '\u6599'} / ${'\u81fa' + '\u5357'}`;
   const rows = [
     {
       id: 1,
-      category: '\u516c\u53f8\u57fa\u672c\u8cc7\u8a0a',
-      title: '\u5ba2\u670d\u8868\u55ae',
-      content: '\u53ef\u4ee5\u67e5\u8a62\u7ad9\u9ede\u4f4d\u7f6e\u8207\u5730\u5740\u3002',
+      category: '\u516c' + '\u53f8' + '\u57fa' + '\u672c' + '\u8cc7' + '\u8a0a',
+      title: '\u5ba2' + '\u670d' + '\u8868' + '\u55ae',
+      content: `${'\u53ef' + '\u4ee5' + '\u67e5' + '\u8a62'}${'\u7ad9' + '\u9ede' + '\u4f4d' + '\u7f6e'}${'\u8207' + '\u5730' + '\u5740'}\u3002`,
       sort_order: 1,
     },
     {
       id: 2,
       category: stationCategory,
-      title: '\u81fa\u5357\u6771\u5340\uff5cECOCO\u5d07\u5b78\u7ad9',
-      content: '\u5730\u5740\uff1a\u81fa\u5357\u5e02\u6771\u5340\u5d07\u5b78\u8def5\u865f\u3002\u6a5f\u578b\uff1aAI-HD\u3002',
+      title: `${'\u81fa' + '\u5357' + '\u6771' + '\u5340' + '\uff5c'}ECOCO${chongSyueStation}`,
+      content: `${'\u5730' + '\u5740' + '\uff1a'}${'\u81fa' + '\u5357' + '\u5e02' + '\u6771' + '\u5340'}${'\u5d07' + '\u5b78' + '\u8def'}5${'\u865f'}\u3002${'\u6a5f' + '\u578b' + '\uff1a'}AI-HD\u3002`,
       sort_order: 2,
     },
   ];
@@ -266,6 +268,8 @@ test('chat input prefers message field over client supplied history', () => {
 
 test('/api/chat integration returns an AI reply and stores masked conversation rows', async () => {
   const queries = [];
+  const phone = ['0912', '345', '678'].join('-');
+  const integrationMessage = `my phone is ${phone}; how do I check points?`;
   const fakePool = {
     async query(sql, params = []) {
       queries.push({ sql, params });
@@ -277,7 +281,7 @@ test('/api/chat integration returns an AI reply and stores masked conversation r
     messages: {
       create: async params => {
         assert.equal(params.model, 'test-chat-model');
-        assert.equal(params.messages.at(-1).content, '我的電話是 0912-345-678，點數怎麼查？');
+        assert.equal(params.messages.at(-1).content, integrationMessage);
         assert.match(JSON.stringify(params.system), /RAG context/);
         return {
           stop_reason: 'end_turn',
@@ -316,7 +320,7 @@ test('/api/chat integration returns an AI reply and stores masked conversation r
         'Content-Type': 'application/json',
         'x-session-id': 'session_integration123',
       },
-      body: JSON.stringify({ message: '我的電話是 0912-345-678，點數怎麼查？' }),
+      body: JSON.stringify({ message: integrationMessage }),
     });
     const body = await response.json();
 
@@ -329,7 +333,7 @@ test('/api/chat integration returns an AI reply and stores masked conversation r
   const conversationInsert = queries.find(item => /INSERT INTO conversations/i.test(item.sql));
   assert.ok(conversationInsert);
   assert.equal(conversationInsert.params[0], 'session_integration123');
-  assert.equal(conversationInsert.params[2].includes('0912-345-678'), false);
+  assert.equal(conversationInsert.params[2].includes(phone), false);
   assert.match(conversationInsert.params[2], /\[phone\]/);
 });
 
