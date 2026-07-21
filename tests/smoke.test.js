@@ -51,6 +51,7 @@ const {
 const { createPromptService } = require('../services/prompt.service');
 const {
   buildRuntimeGuardrails,
+  buildChineseStationTerms,
   buildSearchTerms,
   buildScopeFilter,
   createRagService,
@@ -119,6 +120,55 @@ test('structured knowledge gap metadata is parsed and stripped from user replies
   assert.equal(gap.isGap, true);
   assert.match(gap.reason, /structured knowledge gap meta/);
   assert.equal(stripKnowledgeGapMarker(reply), '目前無法確認，請補充站點與時間。');
+});
+
+test('station lookup questions add Chinese station aliases for RAG', () => {
+  const chongSyueStation = '\u5d07\u5b78\u7ad9';
+  const chongSyue = '\u5d07\u5b78';
+  const taiNanChongSyueStation = '\u53f0\u5357\u5d07\u5b78\u7ad9';
+  const whereIsIt = '\u5728\u54ea\u88e1';
+  const stationTerms = buildChineseStationTerms(`${chongSyueStation}\u5728\u54ea`);
+  const searchTerms = buildSearchTerms(`${taiNanChongSyueStation}${whereIsIt}`);
+
+  assert.ok(stationTerms.includes(chongSyueStation));
+  assert.ok(stationTerms.includes(chongSyue));
+  assert.ok(searchTerms.includes(taiNanChongSyueStation));
+  assert.ok(searchTerms.includes(chongSyueStation));
+});
+
+test('station lookup classification is routed to station machine knowledge', () => {
+  const station = classifyQuestion('\u5d07\u5b78\u7ad9\u5728\u54ea');
+  const stationSearch = classifyQuestion('\u7ad9\u9ede\u67e5\u8a62 \u5d07\u5b78');
+
+  assert.equal(station.category, 'station_machine');
+  assert.equal(station.shouldUseRag, true);
+  assert.equal(stationSearch.category, 'station_machine');
+});
+
+test('station name terms rank matching station rows first', () => {
+  const terms = buildSearchTerms('\u5d07\u5b78\u7ad9\u5728\u54ea');
+  const stationCategory = 'AI\u5ba2\u670d\u77e5\u8b58\uff1a\u7ad9\u9ede\u8cc7\u6599 / \u81fa\u5357';
+  const rows = [
+    {
+      id: 1,
+      category: '\u516c\u53f8\u57fa\u672c\u8cc7\u8a0a',
+      title: '\u5ba2\u670d\u8868\u55ae',
+      content: '\u53ef\u4ee5\u67e5\u8a62\u7ad9\u9ede\u4f4d\u7f6e\u8207\u5730\u5740\u3002',
+      sort_order: 1,
+    },
+    {
+      id: 2,
+      category: stationCategory,
+      title: '\u81fa\u5357\u6771\u5340\uff5cECOCO\u5d07\u5b78\u7ad9',
+      content: '\u5730\u5740\uff1a\u81fa\u5357\u5e02\u6771\u5340\u5d07\u5b78\u8def5\u865f\u3002\u6a5f\u578b\uff1aAI-HD\u3002',
+      sort_order: 2,
+    },
+  ];
+
+  const ranked = rankKnowledgeRows(rows, terms);
+
+  assert.equal(ranked[0].id, 2);
+  assert.ok(ranked[0].score > ranked[1].score);
 });
 
 test('question classifier maps common customer questions to stable routing categories', () => {

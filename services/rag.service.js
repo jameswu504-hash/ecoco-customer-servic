@@ -41,6 +41,60 @@ function normalizeKnowledgeContent(value) {
     .trim();
 }
 
+function buildChineseStationTerms(text) {
+  const normalized = normalizeText(text).replace(/\s+/g, '');
+  if (!/(站點|機台|機器|地圖|位置|地址|在哪|哪裡|哪裏|營業時間|站)/.test(normalized)) {
+    return [];
+  }
+
+  const suffixes = [
+    '在哪裡',
+    '在哪裏',
+    '在哪邊',
+    '在哪',
+    '地址是什麼',
+    '地址',
+    '位置',
+    '怎麼去',
+    '如何去',
+    '查詢',
+    '在哪兒',
+    '哪裡',
+    '哪裏',
+  ];
+  const cityPrefixes = [
+    '臺北', '台北', '新北', '桃園', '臺中', '台中', '臺南', '台南', '高雄',
+    '基隆', '新竹', '苗栗', '彰化', '南投', '雲林', '嘉義', '屏東', '宜蘭',
+    '花蓮', '臺東', '台東', '澎湖', '金門', '連江',
+  ];
+  const ignored = new Set(['站點', '站點查詢', '機台', '機器', '地址', '位置', '地圖', '營業時間']);
+  const terms = new Set();
+
+  for (const match of normalized.matchAll(/[\u4e00-\u9fff]{2,}/g)) {
+    let candidate = match[0];
+    for (const suffix of suffixes) {
+      if (candidate.endsWith(suffix)) {
+        candidate = candidate.slice(0, -suffix.length);
+      }
+    }
+    candidate = candidate.replace(/^(請問|想問|查詢|搜尋)/, '');
+    if ([...candidate].length >= 2 && [...candidate].length <= 24 && !ignored.has(candidate)) {
+      terms.add(candidate);
+    }
+
+    if (candidate.endsWith('站')) {
+      for (const city of cityPrefixes) {
+        if (candidate.startsWith(city) && candidate.length > city.length + 1) {
+          terms.add(candidate.slice(city.length));
+        }
+      }
+      if ([...candidate].length > 2) terms.add(candidate.slice(0, -1));
+    }
+  }
+
+  return [...terms].slice(0, 8);
+}
+
 function splitLongText(text, maxChars = MAX_CHUNK_CHARS) {
   const normalized = normalizeKnowledgeContent(text);
   if (normalized.length <= maxChars) return [normalized].filter(Boolean);
@@ -59,6 +113,8 @@ function splitLongText(text, maxChars = MAX_CHUNK_CHARS) {
 function buildSearchTerms(question) {
   const text = normalizeText(question);
   const terms = new Set();
+
+  buildChineseStationTerms(text).forEach(term => terms.add(term));
 
   for (const keyword of RAG_KEYWORDS) {
     const normalizedKeyword = normalizeText(keyword);
@@ -495,6 +551,7 @@ module.exports = {
   buildChunksFromSection,
   buildRuntimeGuardrails,
   buildSearchTerms,
+  buildChineseStationTerms,
   buildScopeFilter,
   createRagService,
   escapeIlikePattern,

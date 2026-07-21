@@ -91,6 +91,18 @@ function confidenceFor(text, category) {
   return hits === 1 ? 'medium' : 'low';
 }
 
+function getCategory(categoryName) {
+  return QUESTION_CATEGORIES.find(category => category.category === categoryName);
+}
+
+function isStationLookupIntent(text) {
+  return (
+    /(站點|機台|機器|地圖|營業時間)/.test(text)
+    || /站.*(在哪|哪裡|哪裏|位置|地址|怎麼去|如何去)/.test(text)
+    || /(在哪|哪裡|哪裏|位置|地址|怎麼去|如何去).*站/.test(text)
+  );
+}
+
 function classifyQuestion(question) {
   const text = normalizeQuestionText(question);
   if (!text) {
@@ -118,6 +130,20 @@ function classifyQuestion(question) {
         '這個問題需要客服人員協助確認，AI 無法直接查詢會員資料或承諾處理結果。',
         '請透過客服表單提供問題時間、會員帳號或註冊手機、相關截圖，我們會由客服人員協助確認'
       ),
+    };
+  }
+
+  if (isStationLookupIntent(text)) {
+    const station = getCategory('station_machine');
+    return {
+      category: station.category,
+      label: station.label,
+      confidence: 'medium',
+      ragScope: station.ragScope,
+      shouldUseRag: true,
+      shouldEscalate: false,
+      reason: 'matched station lookup intent',
+      directReply: '',
     };
   }
 
