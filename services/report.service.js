@@ -1,3 +1,5 @@
+const { classifyQuestion: classifyCustomerQuestion } = require('./question-classifier.service');
+
 const REPORT_CATEGORIES = [
   { name: '問候 / 無效訊息', keywords: ['hi', 'hello', '你好', '嗨', '測試', 'test'] },
   { name: '合作商家', keywords: ['合作商家', '商家', '兌換', '優惠券', '漢堡王', '全聯'] },
@@ -25,15 +27,7 @@ function getReportRange(period) {
 }
 
 function classifyQuestion(content) {
-  const text = String(content || '');
-  const compact = text.replace(/\s+/g, '').toLowerCase();
-  if (!compact || ['hi', 'hello', '你好', '嗨', '測試', 'test'].includes(compact) || compact.length <= 2) {
-    return '問候 / 無效訊息';
-  }
-  const matched = REPORT_CATEGORIES.find(category =>
-    category.keywords.some(keyword => text.toLowerCase().includes(String(keyword).toLowerCase()))
-  );
-  return matched ? matched.name : '其他';
+  return classifyCustomerQuestion(content).label;
 }
 
 function makePreview(text, maxLength = 80) {

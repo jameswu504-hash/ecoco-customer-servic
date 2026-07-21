@@ -211,6 +211,35 @@ async function loadLatestExchangeForSession(pool, sessionId) {
   return { question, reply };
 }
 
+async function storeChatExchange({
+  pool,
+  sessionId,
+  question,
+  reply,
+  gap = { isGap: false, reason: '' },
+  classification = null,
+}) {
+  const ts = new Date().toISOString();
+  const storedQuestion = maskSensitiveText(question);
+  const storedReply = maskSensitiveText(reply);
+
+  await pool.query(
+    `INSERT INTO conversations (session_id, role, content, timestamp)
+     VALUES ($1, $2, $3, $4), ($1, $5, $6, $4)`,
+    [sessionId, 'user', storedQuestion, ts, 'assistant', storedReply]
+  );
+
+  if (gap.isGap || classification?.shouldEscalate) {
+    const reason = gap.isGap
+      ? gap.reason
+      : `Question classified as ${classification.category}: ${classification.reason || 'requires manual handling'}`;
+    await pool.query(
+      'INSERT INTO unanswered_questions (session_id, question, reply, reason, timestamp) VALUES ($1, $2, $3, $4, $5)',
+      [sessionId, storedQuestion, storedReply, reason, ts]
+    );
+  }
+}
+
 function createChatRouter({
   pool,
   client,
@@ -222,6 +251,7 @@ function createChatRouter({
   buildSystemPrompt,
   buildSystemPromptBlocks,
   defaultAnthropicModel,
+  classifyQuestion,
 }) {
   const router = express.Router();
 
@@ -232,6 +262,9 @@ function createChatRouter({
 
     const traceStart = Date.now();
     let rag = { retrievalMode: 'none', chunks: [] };
+    const classification = typeof classifyQuestion === 'function'
+      ? classifyQuestion(userMsg.content)
+      : null;
     try {
       let modelMessages = [userMsg];
       try {
@@ -241,7 +274,36 @@ function createChatRouter({
         console.error('DB conversation history read error:', historyErr.message);
       }
 
-      rag = await retrieveKnowledgeForQuestion(userMsg.content);
+      if (classification?.directReply && classification.shouldUseRag === false) {
+        const reply = stripKnowledgeGapMarker(classification.directReply);
+        await saveChatTrace(pool, {
+          sessionId,
+          channel: 'web',
+          question: userMsg.content,
+          rag,
+          latencyMs: Date.now() - traceStart,
+          questionClassification: classification,
+        });
+
+        try {
+          await storeChatExchange({
+            pool,
+            sessionId,
+            question: userMsg.content,
+            reply,
+            classification,
+          });
+        } catch (dbErr) {
+          console.error('DB conversation write error:', dbErr.message);
+        }
+
+        return res.json({ reply });
+      }
+
+      rag = await retrieveKnowledgeForQuestion(userMsg.content, {
+        classification,
+        ragScope: classification?.ragScope || [],
+      });
       const runtimeGuardrails = buildRuntimeGuardrails(userMsg.content, rag);
       const response = await client.messages.create({
         model: process.env.ANTHROPIC_MODEL || defaultAnthropicModel,
@@ -268,24 +330,11 @@ function createChatRouter({
         rag,
         latencyMs: Date.now() - traceStart,
         response,
+        questionClassification: classification,
       });
 
       try {
-        const ts = new Date().toISOString();
-        const storedQuestion = maskSensitiveText(userMsg.content);
-        const storedReply = maskSensitiveText(reply);
-        await pool.query(
-          `INSERT INTO conversations (session_id, role, content, timestamp)
-           VALUES ($1, $2, $3, $4), ($1, $5, $6, $4)`,
-          [sessionId, 'user', storedQuestion, ts, 'assistant', storedReply]
-        );
-
-        if (gap.isGap) {
-          await pool.query(
-            'INSERT INTO unanswered_questions (session_id, question, reply, reason, timestamp) VALUES ($1, $2, $3, $4, $5)',
-            [sessionId, storedQuestion, storedReply, gap.reason, ts]
-          );
-        }
+        await storeChatExchange({ pool, sessionId, question: userMsg.content, reply, gap, classification });
       } catch (dbErr) {
         console.error('DB conversation write error:', dbErr.message);
       }
@@ -300,6 +349,7 @@ function createChatRouter({
         rag,
         latencyMs: Date.now() - traceStart,
         error: err.message,
+        questionClassification: classification,
       });
       res.status(503).json({ error: FRIENDLY_AI_ERROR_REPLY, reply: FRIENDLY_AI_ERROR_REPLY });
     }
@@ -402,6 +452,7 @@ module.exports = {
   loadServerConversationHistory,
   normalizeModelMessages,
   parseKnowledgeGapMeta,
+  storeChatExchange,
   stripKnowledgeGapMarker,
   validateHistory,
 };

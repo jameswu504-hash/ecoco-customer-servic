@@ -1323,6 +1323,8 @@ function renderSessions(data) {
     const sessionId = String(session.session_id || '');
     const startTime = new Date(session.started_at).toLocaleString('zh-TW');
     const msgCount = Math.floor(Number(session.message_count || 0) / 2);
+    const categoryLabel = String(session.question_category_label || '').trim();
+    const categoryConfidence = String(session.question_category_confidence || '').trim();
     const hasInline = Array.isArray(session.messages);
     const inner = hasInline ? renderMessages(session.messages) : '<div class="loading">載入中...</div>';
 
@@ -1332,6 +1334,7 @@ function renderSessions(data) {
              data-session-id="${escapeHtml(sessionId)}" data-session-loaded="${hasInline ? '1' : '0'}">
           <span class="session-id">${escapeHtml(sessionId.substring(0, 20))}…</span>
           <span class="session-meta">${startTime}</span>
+          ${categoryLabel ? `<span class="session-category">${escapeHtml(categoryLabel)}${categoryConfidence ? ` · ${escapeHtml(categoryConfidence)}` : ''}</span>` : ''}
           <span class="session-count">${msgCount} 問答</span>
           <span class="session-toggle" id="toggle-${idx}">▼</span>
         </div>

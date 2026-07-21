@@ -20,6 +20,7 @@ const { createReportsRouter } = require('./routes/reports.routes');
 const { createUnansweredRouter } = require('./routes/unanswered.routes');
 const { isInternalMode } = require('./services/internal-wiki.service');
 const { createPromptService } = require('./services/prompt.service');
+const { classifyQuestion } = require('./services/question-classifier.service');
 const { createRagService } = require('./services/rag.service');
 const { purgeExpiredConversationData } = require('./services/privacy.service');
 const { anonymizeText } = require('./scripts/anonymize-pii');
@@ -369,6 +370,7 @@ app.use('/api', createChatRouter({
   buildSystemPrompt: promptService.buildSystemPrompt,
   buildSystemPromptBlocks: promptService.buildSystemPromptBlocks,
   defaultAnthropicModel: DEFAULT_ANTHROPIC_MODEL,
+  classifyQuestion,
 }));
 app.use('/api', createLineRouter({
   pool,
@@ -378,6 +380,7 @@ app.use('/api', createLineRouter({
   buildSystemPrompt: promptService.buildSystemPrompt,
   buildSystemPromptBlocks: promptService.buildSystemPromptBlocks,
   defaultAnthropicModel: DEFAULT_ANTHROPIC_MODEL,
+  classifyQuestion,
 }));
 app.use('/api', createDashboardRouter({ pool, requireAdminKey }));
 app.use('/api/reports', createReportsRouter({ pool, requireAdminKey, readJsonFile }));

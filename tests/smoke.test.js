@@ -21,8 +21,9 @@ const {
 const { cleanKnowledgeInput } = require('../routes/knowledge.routes');
 const { requireStaffKey } = require('../middleware/staff-auth');
 const { maskSensitiveText } = require('../services/privacy.service');
+const { classifyQuestion } = require('../services/question-classifier.service');
 const { compareSecret } = require('../services/secret.service');
-const { summarizeRagChunks } = require('../services/trace.service');
+const { summarizeQuestionClassification, summarizeRagChunks } = require('../services/trace.service');
 const {
   escapeIlikePattern,
 } = require('../routes/dashboard.routes');
@@ -51,7 +52,9 @@ const { createPromptService } = require('../services/prompt.service');
 const {
   buildRuntimeGuardrails,
   buildSearchTerms,
+  buildScopeFilter,
   createRagService,
+  normalizeScopeTerms,
   rankKnowledgeRows,
 } = require('../services/rag.service');
 const { SCHEMA, migrateTimestampColumns } = require('../db/schema');
@@ -116,6 +119,31 @@ test('structured knowledge gap metadata is parsed and stripped from user replies
   assert.equal(gap.isGap, true);
   assert.match(gap.reason, /structured knowledge gap meta/);
   assert.equal(stripKnowledgeGapMarker(reply), '目前無法確認，請補充站點與時間。');
+});
+
+test('question classifier maps common customer questions to stable routing categories', () => {
+  const points = classifyQuestion('我的回收點數沒有入帳，可以補點嗎？');
+  const app = classifyQuestion('APP 無法登入，OTP 驗證碼一直收不到');
+  const manual = classifyQuestion('我要客服幫我查我的帳號退款');
+
+  assert.equal(points.category, 'points');
+  assert.equal(points.shouldUseRag, true);
+  assert.ok(points.ragScope.includes('點數'));
+  assert.equal(app.category, 'app_account');
+  assert.ok(app.ragScope.includes('APP'));
+  assert.equal(manual.shouldUseRag, false);
+  assert.equal(manual.shouldEscalate, true);
+  assert.match(manual.directReply, /客服人員/);
+});
+
+test('RAG scope filters only category and title instead of broad content matches', () => {
+  const filter = buildScopeFilter(['APP_100%', '點數'], 3);
+
+  assert.deepEqual(normalizeScopeTerms(['APP', 'APP', ' 點數 ']), ['APP', '點數']);
+  assert.match(filter.clause, /category ILIKE \$3/);
+  assert.match(filter.clause, /title ILIKE \$3/);
+  assert.equal(filter.clause.includes('search_text'), false);
+  assert.deepEqual(filter.values, ['%APP\\_100\\%%', '%點數%']);
 });
 
 test('multiple and incomplete meta blocks are stripped from user replies', () => {
@@ -255,6 +283,64 @@ test('/api/chat integration returns an AI reply and stores masked conversation r
   assert.match(conversationInsert.params[2], /\[phone\]/);
 });
 
+test('/api/chat direct manual routing bypasses Claude and records an unanswered item', async () => {
+  const queries = [];
+  const fakePool = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (/SELECT role, content/i.test(sql)) return { rows: [] };
+      return { rows: [] };
+    },
+  };
+  const fakeClient = {
+    messages: {
+      create: async () => {
+        throw new Error('Claude should not be called for direct manual routing');
+      },
+    },
+  };
+  const app = express();
+  app.use(express.json());
+  app.use('/api', createChatRouter({
+    pool: fakePool,
+    client: fakeClient,
+    chatLimiter: (req, res, next) => next(),
+    ratingLimiter: (req, res, next) => next(),
+    requireAdminKey: (req, res, next) => next(),
+    retrieveKnowledgeForQuestion: async () => {
+      throw new Error('RAG should not be called for direct manual routing');
+    },
+    buildRuntimeGuardrails: () => '',
+    buildSystemPrompt: () => 'system',
+    buildSystemPromptBlocks: null,
+    defaultAnthropicModel: 'test-chat-model',
+    classifyQuestion,
+  }));
+
+  const server = app.listen(0);
+  await new Promise(resolve => server.once('listening', resolve));
+  try {
+    const { port } = server.address();
+    const response = await fetch(`http://127.0.0.1:${port}/api/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-session-id': 'session_manualroute',
+      },
+      body: JSON.stringify({ message: '我要客服幫我查我的帳號退款' }),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.match(body.reply, /客服人員/);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+
+  assert.ok(queries.some(item => /INSERT INTO chat_traces/i.test(item.sql) && item.params.includes('high_risk')));
+  assert.ok(queries.some(item => /INSERT INTO unanswered_questions/i.test(item.sql)));
+});
+
 test('server-side model history is normalized before sending to Claude', () => {
   const messages = normalizeModelMessages([
     { role: 'assistant', content: 'old answer 1' },
@@ -392,6 +478,28 @@ test('RAG returns no context when keyword and semantic search both miss', async 
   assert.equal(result.retrievalMode, 'none');
 });
 
+test('RAG retrieval applies question classification scope to keyword search', async () => {
+  const queries = [];
+  const pool = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      return { rows: [] };
+    },
+  };
+  const rag = createRagService({ pool, env: {} });
+  const classification = classifyQuestion('APP 無法登入，驗證碼收不到');
+  const result = await rag.retrieveKnowledgeForQuestion('APP 無法登入，驗證碼收不到', { classification });
+  const keywordQuery = queries.find(item => /FROM knowledge_chunks/i.test(item.sql));
+
+  assert.equal(result.questionClassification.category, 'app_account');
+  assert.deepEqual(result.scopeTerms.slice(0, 2), ['APP', '帳號']);
+  assert.ok(keywordQuery);
+  assert.match(keywordQuery.sql, /category ILIKE/);
+  assert.match(keywordQuery.sql, /title ILIKE/);
+  assert.ok(keywordQuery.sql.includes('search_text ILIKE'));
+  assert.ok(keywordQuery.params.some(param => param === '%APP%'));
+});
+
 test('chat trace summaries include retrieved chunk ids and scores without full content', () => {
   const summary = summarizeRagChunks({
     chunks: [
@@ -410,6 +518,15 @@ test('chat trace summaries include retrieved chunk ids and scores without full c
   assert.equal(summary[0].id, 12);
   assert.equal(summary[0].score, 18);
   assert.equal(Object.hasOwn(summary[0], 'content'), false);
+});
+
+test('chat trace summaries include safe question classification fields', () => {
+  const summary = summarizeQuestionClassification(classifyQuestion('APP 帳號登入不了'));
+
+  assert.equal(summary.category, 'app_account');
+  assert.equal(summary.label, 'APP / 帳號');
+  assert.equal(summary.shouldUseRag, true);
+  assert.ok(summary.ragScope.includes('APP'));
 });
 
 test('dashboard keeps dynamic click handlers usable', () => {

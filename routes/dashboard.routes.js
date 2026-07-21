@@ -52,14 +52,31 @@ function createDashboardRouter({ pool, requireAdminKey }) {
       );
       const total = Number(countRows[0]?.total || 0);
       const { rows: sessions } = await pool.query(`
-        SELECT session_id,
-               COUNT(*)       AS message_count,
-               MIN(timestamp) AS started_at,
-               MAX(timestamp) AS last_at
-        FROM conversations
-        GROUP BY session_id
-        ORDER BY started_at DESC
-        LIMIT $1 OFFSET $2
+        WITH session_rows AS (
+          SELECT session_id,
+                 COUNT(*)       AS message_count,
+                 MIN(timestamp) AS started_at,
+                 MAX(timestamp) AS last_at
+          FROM conversations
+          GROUP BY session_id
+          ORDER BY started_at DESC
+          LIMIT $1 OFFSET $2
+        ),
+        latest_trace AS (
+          SELECT DISTINCT ON (session_id)
+                 session_id,
+                 question_category_label,
+                 question_category_confidence
+          FROM chat_traces
+          WHERE session_id IN (SELECT session_id FROM session_rows)
+          ORDER BY session_id, timestamp DESC, id DESC
+        )
+        SELECT session_rows.*,
+               COALESCE(latest_trace.question_category_label, '') AS question_category_label,
+               COALESCE(latest_trace.question_category_confidence, '') AS question_category_confidence
+        FROM session_rows
+        LEFT JOIN latest_trace USING (session_id)
+        ORDER BY session_rows.started_at DESC
       `, [limit, offset]);
       res.json({
         total,

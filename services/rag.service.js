@@ -86,6 +86,34 @@ function buildSearchTerms(question) {
   return [...terms].slice(0, 12);
 }
 
+function escapeIlikePattern(value) {
+  return String(value || '').replace(/[\\%_]/g, match => `\\${match}`);
+}
+
+function normalizeScopeTerms(scopeTerms = []) {
+  return [...new Set(
+    (Array.isArray(scopeTerms) ? scopeTerms : [])
+      .map(normalizeText)
+      .filter(term => [...term].length >= 2)
+  )].slice(0, 12);
+}
+
+function buildScopeFilter(scopeTerms, startIndex) {
+  const terms = normalizeScopeTerms(scopeTerms);
+  if (terms.length === 0) return { clause: '', values: [], terms };
+
+  const parts = terms.map((_, idx) => {
+    const param = `$${startIndex + idx}`;
+    return `(category ILIKE ${param} ESCAPE '\\' OR title ILIKE ${param} ESCAPE '\\')`;
+  });
+
+  return {
+    clause: `(${parts.join(' OR ')})`,
+    values: terms.map(term => `%${escapeIlikePattern(term)}%`),
+    terms,
+  };
+}
+
 function scoreChunk(chunk, terms) {
   const category = String(chunk.category || '');
   const title = String(chunk.title || '');
@@ -378,21 +406,23 @@ function createRagService({ pool, env = process.env }) {
     }
   }
 
-  async function retrieveSemanticRows(question) {
+  async function retrieveSemanticRows(question, scopeTerms = []) {
     if (!shouldUseSemanticSearch()) return [];
     try {
       const [embedding] = await embedTexts([normalizeText(question).slice(0, 6000)]);
       if (!Array.isArray(embedding) || embedding.length === 0) return [];
 
       const vector = toVectorLiteral(embedding);
+      const scopeFilter = buildScopeFilter(scopeTerms, 2);
       const { rows } = await pool.query(
         `SELECT id, category, title, content, risk_level, sort_order,
                 1 - (embedding <=> $1::vector) AS semantic_score
          FROM knowledge_chunks
          WHERE embedding IS NOT NULL
+           ${scopeFilter.clause ? `AND ${scopeFilter.clause}` : ''}
          ORDER BY embedding <=> $1::vector
          LIMIT 60`,
-        [vector]
+        [vector, ...scopeFilter.values]
       );
       return rows;
     } catch (err) {
@@ -401,22 +431,26 @@ function createRagService({ pool, env = process.env }) {
     }
   }
 
-  async function retrieveKnowledgeForQuestion(question) {
+  async function retrieveKnowledgeForQuestion(question, options = {}) {
     const terms = buildSearchTerms(question);
-    let rows = await retrieveSemanticRows(question);
+    const classification = options.classification || null;
+    const scopeTerms = normalizeScopeTerms(options.ragScope || classification?.ragScope || []);
+    let rows = await retrieveSemanticRows(question, scopeTerms);
     const semanticHitCount = rows.length;
     let keywordHitCount = 0;
 
     if (terms.length > 0) {
       const clauses = terms.map((_, idx) => `search_text ILIKE $${idx + 1}`).join(' OR ');
       const values = terms.map(term => `%${term}%`);
+      const scopeFilter = buildScopeFilter(scopeTerms, values.length + 1);
       const result = await pool.query(
         `SELECT id, category, title, content, risk_level, sort_order
          FROM knowledge_chunks
-         WHERE ${clauses}
+         WHERE (${clauses})
+           ${scopeFilter.clause ? `AND ${scopeFilter.clause}` : ''}
          ORDER BY sort_order ASC
          LIMIT 120`,
-        values
+        [...values, ...scopeFilter.values]
       );
       keywordHitCount = result.rows.length;
       const byId = new Map(rows.map(row => [row.id, row]));
@@ -437,6 +471,8 @@ function createRagService({ pool, env = process.env }) {
 
     return {
       terms,
+      scopeTerms,
+      questionClassification: classification,
       chunks: ranked,
       retrievalMode,
       context: ranked.map((row, idx) => (
@@ -459,9 +495,12 @@ module.exports = {
   buildChunksFromSection,
   buildRuntimeGuardrails,
   buildSearchTerms,
+  buildScopeFilter,
   createRagService,
+  escapeIlikePattern,
   extractRiskLevel,
   hasHighRiskChunk,
+  normalizeScopeTerms,
   normalizeRiskLevel,
   normalizeText,
   rankKnowledgeRows,

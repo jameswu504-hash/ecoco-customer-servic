@@ -190,10 +190,14 @@ async function buildAiReply({
   buildSystemPromptBlocks,
   defaultAnthropicModel,
   signal = undefined,
+  classification = null,
 }) {
   const question = String(text || '').trim().slice(0, LINE_MAX_INPUT_CHARS);
   const traceStart = Date.now();
-  const rag = await retrieveKnowledgeForQuestion(question);
+  const rag = await retrieveKnowledgeForQuestion(question, {
+    classification,
+    ragScope: classification?.ragScope || [],
+  });
   const runtimeGuardrails = buildRuntimeGuardrails(question, rag);
   const modelMessages = await buildLineModelMessages({ pool, sessionId, text: question });
   const response = await client.messages.create({
@@ -216,6 +220,7 @@ async function buildAiReply({
     rag,
     latencyMs: Date.now() - traceStart,
     response,
+    questionClassification: classification,
   });
 
   const replyText = response.content.find(block => block.type === 'text')?.text || LINE_FALLBACK_REPLY;
@@ -225,7 +230,7 @@ async function buildAiReply({
   return replyText;
 }
 
-async function storeLineConversation({ pool, sessionId, question, reply }) {
+async function storeLineConversation({ pool, sessionId, question, reply, classification = null }) {
   const ts = new Date().toISOString();
   const gap = detectKnowledgeGap(reply);
   const storedQuestion = maskSensitiveText(question);
@@ -237,10 +242,13 @@ async function storeLineConversation({ pool, sessionId, question, reply }) {
     [sessionId, 'user', storedQuestion, ts, 'assistant', storedReply]
   );
 
-  if (gap.isGap) {
+  if (gap.isGap || classification?.shouldEscalate) {
+    const reason = gap.isGap
+      ? gap.reason
+      : `Question classified as ${classification.category}: ${classification.reason || 'requires manual handling'}`;
     await pool.query(
       'INSERT INTO unanswered_questions (session_id, question, reply, reason, timestamp) VALUES ($1, $2, $3, $4, $5)',
-      [sessionId, storedQuestion, storedReply, gap.reason, ts]
+      [sessionId, storedQuestion, storedReply, reason, ts]
     );
   }
 }
@@ -253,6 +261,7 @@ function createLineRouter({
   buildSystemPrompt,
   buildSystemPromptBlocks,
   defaultAnthropicModel,
+  classifyQuestion,
 }) {
   const router = express.Router();
 
@@ -280,8 +289,21 @@ function createLineRouter({
 
       const sessionId = buildLineSessionId(event);
       let reply = LINE_FALLBACK_REPLY;
+      const classification = typeof classifyQuestion === 'function'
+        ? classifyQuestion(userText)
+        : null;
       if (isLineRateLimited(sessionId)) {
         reply = LINE_RATE_LIMIT_REPLY;
+      } else if (classification?.directReply && classification.shouldUseRag === false) {
+        reply = classification.directReply;
+        await saveChatTrace(pool, {
+          sessionId,
+          channel: 'line',
+          question: userText,
+          rag: { retrievalMode: 'none', chunks: [] },
+          latencyMs: 0,
+          questionClassification: classification,
+        });
       } else {
         const timeoutMs = getLineReplyTimeoutMs();
         const timeoutReply = getLineTimeoutReply();
@@ -297,6 +319,7 @@ function createLineRouter({
           buildSystemPromptBlocks,
           defaultAnthropicModel,
           signal: abortController.signal,
+          classification,
         });
 
         try {
@@ -319,6 +342,7 @@ function createLineRouter({
             question: userText,
             rag: { retrievalMode: 'none', chunks: [] },
             error: err.message,
+            questionClassification: classification,
           });
         }
       }
@@ -334,7 +358,7 @@ function createLineRouter({
       }
 
       try {
-        await storeLineConversation({ pool, sessionId, question: userText, reply });
+        await storeLineConversation({ pool, sessionId, question: userText, reply, classification });
       } catch (err) {
         console.error('LINE conversation write error:', err.message);
       }

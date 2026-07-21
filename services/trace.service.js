@@ -22,6 +22,20 @@ function summarizeRagChunks(rag = {}) {
   }));
 }
 
+function summarizeQuestionClassification(classification = {}) {
+  if (!classification || typeof classification !== 'object') return null;
+  return {
+    category: truncateText(classification.category, 80),
+    label: truncateText(classification.label, 120),
+    confidence: truncateText(classification.confidence, 40),
+    shouldUseRag: classification.shouldUseRag !== false,
+    shouldEscalate: Boolean(classification.shouldEscalate),
+    ragScope: Array.isArray(classification.ragScope)
+      ? classification.ragScope.slice(0, 12).map(term => truncateText(term, 80))
+      : [],
+  };
+}
+
 function extractUsage(response = {}) {
   const usage = response.usage || {};
   return {
@@ -39,6 +53,7 @@ async function saveChatTrace(pool, {
   latencyMs = 0,
   response = null,
   error = '',
+  questionClassification = rag.questionClassification || null,
 } = {}) {
   if (!pool) return;
 
@@ -47,16 +62,21 @@ async function saveChatTrace(pool, {
   const safeError = truncateText(error, MAX_ERROR_TEXT);
   const chunks = summarizeRagChunks(rag);
   const retrievalMode = String(rag.retrievalMode || 'none');
+  const classification = summarizeQuestionClassification(questionClassification);
 
   try {
     await pool.query(
       `INSERT INTO chat_traces
-        (session_id, channel, question, retrieval_mode, retrieved_chunks, latency_ms, input_tokens, output_tokens, stop_reason, error, timestamp)
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11)`,
+        (session_id, channel, question, question_category, question_category_label, question_category_confidence, rag_scope, retrieval_mode, retrieved_chunks, latency_ms, input_tokens, output_tokens, stop_reason, error, timestamp)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9::jsonb, $10, $11, $12, $13, $14, $15)`,
       [
         String(sessionId || ''),
         String(channel || 'web'),
         safeQuestion,
+        classification?.category || '',
+        classification?.label || '',
+        classification?.confidence || '',
+        JSON.stringify(classification?.ragScope || []),
         retrievalMode,
         JSON.stringify(chunks),
         Math.max(0, Math.round(Number(latencyMs) || 0)),
@@ -103,6 +123,7 @@ module.exports = {
   extractUsage,
   saveAdminAudit,
   saveChatTrace,
+  summarizeQuestionClassification,
   summarizeRagChunks,
   truncateText,
 };
