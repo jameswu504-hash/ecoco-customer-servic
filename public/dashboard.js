@@ -8,6 +8,11 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+function escapeCss(value) {
+  if (window.CSS && typeof window.CSS.escape === 'function') return window.CSS.escape(value);
+  return String(value).replace(/["\\]/g, '\\$&');
+}
+
 // ── Admin Key 管理 ────────────────────────────────────────
 function getAdminKey() { return sessionStorage.getItem('adminKey') || ''; }
 
@@ -54,7 +59,7 @@ function renderLoadError(id, err) {
   if (!el) return;
   el.innerHTML = `
     <div class="load-error">
-      <span>⚠️ 載入失敗：${escapeHtml(err.message)}</span>
+      <span>載入失敗：${escapeHtml(err.message)}</span>
       <button class="retry-btn" type="button" data-retry-target="${escapeHtml(id)}">重試</button>
     </div>`;
 }
@@ -1338,7 +1343,7 @@ function renderSessions(data) {
           <span class="session-count">${msgCount} 問答</span>
           <span class="session-toggle" id="toggle-${idx}">▼</span>
         </div>
-        <div class="session-messages" id="sess-${idx}">
+        <div class="session-messages" id="sess-${idx}" data-session-id="${escapeHtml(sessionId)}">
           ${inner}
         </div>
       </div>
@@ -1368,6 +1373,7 @@ async function loadSessions() {
   if (sessionTotal === 0) {
     document.getElementById('sessionsList').innerHTML = '<div class="empty-state">尚無對話紀錄，對話後會自動出現在這裡</div>';
   } else {
+    sessionMessagesCache.clear();
     renderSessions(data.sessions);
   }
   renderSessionPager();
@@ -1388,6 +1394,7 @@ function renderSessionPager() {
 function toggleSession(id, idx) {
   const el     = document.getElementById(id);
   const toggle = document.getElementById('toggle-' + idx);
+  if (!el || !toggle) return;
   el.classList.toggle('open');
   toggle.textContent = el.classList.contains('open') ? '▲' : '▼';
 }
@@ -1400,7 +1407,11 @@ async function loadSessionMessages(sessionId, targetId) {
     sessionMessagesCache.set(sessionId, messages);
   }
   const box = document.getElementById(targetId);
-  if (box) box.innerHTML = renderMessages(messages);
+  if (box && box.dataset.sessionId === sessionId) {
+      box.innerHTML = messages.length > 0
+        ? renderMessages(messages)
+        : '<div class="empty-state">沒有可顯示的對話內容</div>';
+  }
 }
 
 function bindDashboardEvents() {
@@ -1585,10 +1596,35 @@ function bindDashboardEvents() {
         loadSessionMessages(sessionHeader.dataset.sessionId, sessionHeader.dataset.sessionTarget)
           .catch(err => {
             const box = document.getElementById(sessionHeader.dataset.sessionTarget);
-            if (box) box.innerHTML = `<div class="load-error"><span>⚠️ ${escapeHtml(err.message)}</span></div>`;
+            if (box && box.dataset.sessionId === sessionHeader.dataset.sessionId) {
+              box.innerHTML = `
+                <div class="load-error">
+                  <span>對話內容載入失敗：${escapeHtml(err.message)}</span>
+                  <button class="retry-btn" type="button" data-session-retry-id="${escapeHtml(sessionHeader.dataset.sessionId)}" data-session-retry-target="${escapeHtml(sessionHeader.dataset.sessionTarget)}">重試</button>
+                </div>`;
+            }
             sessionHeader.dataset.sessionLoaded = '0';
           });
+        return;
       }
+    }
+
+    const sessionRetry = event.target.closest('[data-session-retry-id][data-session-retry-target]');
+    if (sessionRetry) {
+      const sessionId = sessionRetry.dataset.sessionRetryId;
+      const targetId = sessionRetry.dataset.sessionRetryTarget;
+      const box = document.getElementById(targetId);
+      const header = document.querySelector(`[data-session-target="${escapeCss(targetId)}"][data-session-id="${escapeCss(sessionId)}"]`);
+      if (box && box.dataset.sessionId === sessionId) box.innerHTML = '<div class="loading">載入中...</div>';
+      if (header) header.dataset.sessionLoaded = '1';
+      loadSessionMessages(sessionId, targetId)
+        .catch(err => {
+          if (box && box.dataset.sessionId === sessionId) {
+            box.innerHTML = `<div class="load-error"><span>對話內容載入失敗：${escapeHtml(err.message)}</span></div>`;
+          }
+          if (header) header.dataset.sessionLoaded = '0';
+        });
+      return;
     }
   });
 }

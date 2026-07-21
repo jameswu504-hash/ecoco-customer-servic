@@ -60,6 +60,9 @@ app.use((req, res, next) => {
   }
   next();
 });
+app.get('/dashboard.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'dashboard-v2.html'));
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';

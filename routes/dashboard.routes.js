@@ -59,7 +59,7 @@ function createDashboardRouter({ pool, requireAdminKey }) {
                  MAX(timestamp) AS last_at
           FROM conversations
           GROUP BY session_id
-          ORDER BY started_at DESC
+          ORDER BY last_at DESC, started_at DESC, session_id ASC
           LIMIT $1 OFFSET $2
         ),
         latest_trace AS (
@@ -76,7 +76,7 @@ function createDashboardRouter({ pool, requireAdminKey }) {
                COALESCE(latest_trace.question_category_confidence, '') AS question_category_confidence
         FROM session_rows
         LEFT JOIN latest_trace USING (session_id)
-        ORDER BY session_rows.started_at DESC
+        ORDER BY session_rows.last_at DESC, session_rows.started_at DESC, session_rows.session_id ASC
       `, [limit, offset]);
       res.json({
         total,
@@ -166,7 +166,7 @@ function createDashboardRouter({ pool, requireAdminKey }) {
         FROM conversations
         WHERE content ILIKE $1 ESCAPE '\\'
         GROUP BY session_id
-        ORDER BY started_at DESC
+        ORDER BY MAX(timestamp) DESC, started_at DESC, session_id ASC
         LIMIT $2
       `, [pattern, limit]);
       res.json(await attachMessagesToSessions(sessions));
