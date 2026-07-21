@@ -55,7 +55,7 @@ app.use(express.json({
   },
 }));
 app.use((req, res, next) => {
-  if (['/dashboard.html', '/dashboard.css', '/dashboard.js'].includes(req.path)) {
+  if (['/dashboard.html', '/dashboard.css', '/dashboard.js', '/dashboard-v2.html', '/dashboard-v2.css'].includes(req.path)) {
     res.setHeader('Cache-Control', 'no-store');
   }
   next();

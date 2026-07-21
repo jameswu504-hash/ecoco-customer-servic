@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ECOCO 客服後台 V2</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;800&family=Space+Mono&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="dashboard.css?v=20260716-top-button" />
+  <link rel="stylesheet" href="dashboard-v2.css?v=20260721-shell" />
+</head>
+<body class="dashboard-v2">
+
+<div class="modal-overlay" id="loginModal">
+  <div class="modal-box">
+    <div class="modal-icon">🔐</div>
+    <h2>後台登入</h2>
+    <p>請輸入 Admin Key 才能查看管理資料</p>
+    <input class="modal-input" type="password" id="adminKeyInput" placeholder="輸入 Admin Key..." />
+    <button class="modal-btn" id="loginBtn">登入</button>
+    <div class="modal-error" id="loginError"></div>
+  </div>
+</div>
+
+<div class="v2-shell">
+  <aside class="v2-sidebar" aria-label="ECOCO 客服後台導覽">
+    <div class="v2-brand">
+      <img class="v2-brand-logo" src="ecoco-logo.png" alt="ECOCO" />
+      <div class="v2-brand-text">
+        <strong>客服後台</strong>
+        <span>AI Customer Ops</span>
+      </div>
+    </div>
+
+    <nav class="v2-nav">
+      <button class="v2-nav-item layer-tab active" id="layerDailyBtn" type="button">
+        <span class="v2-nav-icon">☑</span>
+        <span>客服日常</span>
+      </button>
+      <button class="v2-nav-item layer-tab" id="layerKnowledgeBtn" type="button">
+        <span class="v2-nav-icon">▦</span>
+        <span>知識維護</span>
+      </button>
+      <button class="v2-nav-item layer-tab" id="layerReportBtn" type="button">
+        <span class="v2-nav-icon">▥</span>
+        <span>主管報表</span>
+      </button>
+    </nav>
+
+    <div class="v2-nav-group">
+      <div class="v2-nav-label">快速入口</div>
+      <a class="v2-side-link" href="#unansweredSection" data-layer="daily" data-scroll-target="unansweredSection">AI 不確定問題</a>
+      <a class="v2-side-link" href="#sessionsSection" data-layer="daily" data-scroll-target="sessionsSection">對話紀錄</a>
+      <a class="v2-side-link" href="#knowledgeSection" data-layer="knowledge" data-scroll-target="knowledgeSection">知識庫管理</a>
+      <a class="v2-side-link" href="#reportSection" data-layer="report" data-scroll-target="reportSection">營運報表</a>
+    </div>
+
+    <div class="v2-sidebar-footer">
+      <a href="/" class="back-link">← 回到客服</a>
+      <span>V2 測試版</span>
+    </div>
+  </aside>
+
+  <div class="v2-main">
+    <header class="v2-topbar">
+      <div>
+        <div class="v2-eyebrow">ECOCO CUSTOMER SERVICE</div>
+        <h1>客服營運總覽</h1>
+        <p id="layerNote">日常層只放客服需要處理的待辦與對話。</p>
+      </div>
+      <div class="v2-topbar-actions">
+        <span class="system-status-chip" id="systemStatus">AI 模型：讀取中...</span>
+        <button class="refresh-btn" id="refreshBtn">重新整理</button>
+      </div>
+    </header>
+
+    <main class="container v2-container">
+      <section class="support-workbench">
+        <div class="support-head">
+          <div>
+            <div class="section-title tight">客服日常工作台</div>
+            <div class="support-note">一般客服每天先看這裡：確認今天有多少對話、哪些問題 AI 不會答、哪些知識需要補。技術設定、資料庫與部署交給維護者處理。</div>
+          </div>
+          <div class="support-doc">
+            內部教學文件：
+            <a href="https://github.com/jameswu504-hash/ecoco-customer-servic/blob/main/docs/CUSTOMER_SUPPORT_GUIDE.md" target="_blank" rel="noopener">客服操作指南</a><br>
+            維護者再看
+            <a href="https://github.com/jameswu504-hash/ecoco-customer-servic/blob/main/docs/OPERATIONS_HANDOFF_GUIDE.md" target="_blank" rel="noopener">交接文件</a>。
+          </div>
+        </div>
+        <div class="support-grid" id="supportWorkbench">
+          <div class="loading">載入中...</div>
+        </div>
+      </section>
+
+      <section class="stats-grid dashboard-layer layer-report" id="statsGrid">
+        <div class="loading">載入中...</div>
+      </section>
+
+      <section class="report-card dashboard-layer layer-report" id="reportSection">
+        <div class="report-head">
+          <div>
+            <div class="section-title tight">營運報表</div>
+            <div class="report-subtitle">給主管 / 總經理室看的客服量、分類、處理狀態與知識庫優化摘要。</div>
+          </div>
+          <div class="report-actions">
+            <button class="report-toggle active" id="reportWeekBtn">本週</button>
+            <button class="report-toggle" id="reportMonthBtn">本月</button>
+            <button class="kb-export-btn" id="copyReportBtn">複製週/月報</button>
+            <button class="kb-export-btn" id="downloadReportBtn">下載 MD</button>
+          </div>
+        </div>
+        <div id="operationsReport"><div class="loading">載入中...</div></div>
+      </section>
+
+      <section class="overview-card dashboard-layer layer-knowledge">
+        <div class="section-title">AI 資料庫總覽</div>
+        <div id="knowledgeOverview"><div class="loading">載入中...</div></div>
+      </section>
+
+      <section class="two-col dashboard-layer layer-report">
+        <div class="keyword-card">
+          <div class="section-title">用戶最常問的關鍵字</div>
+          <div id="keywordList"><div class="loading">載入中...</div></div>
+        </div>
+        <div class="rating-card">
+          <div class="section-title">回答滿意度</div>
+          <div id="ratingChart"><div class="loading">載入中...</div></div>
+        </div>
+      </section>
+
+      <section class="knowledge-card dashboard-layer layer-knowledge" id="knowledgeSection">
+        <div class="section-title space-between">
+          <span>知識庫管理 <span id="kbCount" class="knowledge-count"></span></span>
+          <div class="inline-actions">
+            <button class="kb-export-btn" id="kbExportBtn">下載 JSON</button>
+            <button class="kb-add-btn" id="kbNewBtn">＋ 新增分類</button>
+          </div>
+        </div>
+        <div class="kb-export-note">
+          <strong>提醒：</strong>下載 JSON 只會把目前 PostgreSQL 知識庫存成檔案，不會自動寫回 GitHub。大改版、交接或備份前，請下載 JSON，人工確認後放回 GitHub 並 commit / push。
+        </div>
+        <div class="kb-layout">
+          <div class="kb-sidebar">
+            <input class="kb-search-input" id="kbSearch" placeholder="搜尋分類或題目，例如：點數、優惠券、機台" />
+            <label class="kb-archive-filter">
+              <input type="checkbox" id="kbShowArchived" />
+              顯示封存分類
+            </label>
+            <div class="kb-hint" id="kbSearchHint"></div>
+            <div id="kbSidebar"><div class="loading">載入中...</div></div>
+          </div>
+          <div class="kb-editor">
+            <div class="kb-empty" id="kbEmpty">← 從左邊點一個分類來檢視或編輯<br>或按右上角「＋ 新增分類」<br><br>修改後按「儲存」，AI 立即生效、永久保存</div>
+            <div id="kbForm" hidden>
+              <label class="kb-label">分類名稱</label>
+              <input class="kb-name-input" id="kbName" placeholder="例如：點數計算規則" />
+              <div class="kb-suggestion-box" id="kbCategorySuggestions"></div>
+              <div class="kb-current-item-panel" id="kbCurrentItemPanel"></div>
+              <div class="kb-item-toolbar">
+                <button class="kb-add-question-btn" id="kbAddItemBtn" type="button">＋ 新增題目</button>
+                <span class="kb-inline-note">新增後會直接出現在左側問題列表，按「儲存」才會生效。</span>
+              </div>
+              <details class="kb-raw-details" id="kbRawDetails">
+                <summary>原始 Markdown</summary>
+                <div class="kb-raw-help">用於批次整理、檢查格式，或直接編輯整個分類的 Markdown 內容。</div>
+                <label class="kb-label">整個分類的原始內容</label>
+                <textarea class="kb-content-input" id="kbContent" spellcheck="false"></textarea>
+                <div class="kb-raw-meta">
+                  <span class="knowledge-char" id="kbChar">0 字</span>
+                </div>
+              </details>
+              <div class="kb-actions">
+                <span></span>
+                <div class="form-actions">
+                  <span class="save-msg" id="kbMsg"></span>
+                  <button class="kb-restore-btn" id="kbRestoreBtn" hidden>恢復使用</button>
+                  <button class="kb-del-btn" id="kbDelBtn">刪除分類</button>
+                  <button class="save-btn" id="kbSaveBtn">儲存</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <aside class="kb-detail" id="kbDetail" hidden>
+            <div class="kb-detail-card">
+              <div class="kb-detail-title">分類詳情</div>
+              <div class="kb-detail-row">問題筆數：<strong id="kbDetailItems">–</strong></div>
+              <div class="kb-detail-row">字數統計：<strong id="kbDetailChars">0 字</strong></div>
+              <div class="kb-detail-row">最後更新：<span id="kbDetailUpdated">–</span></div>
+              <div class="kb-detail-row" id="kbDetailArchived" hidden>此分類已封存，不會提供給 AI</div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="ratings-card dashboard-layer layer-daily">
+        <div class="section-title space-between">
+          <span>用戶對哪些回答評分</span>
+          <div class="compact-toolbar" id="ratingToolbar" hidden>
+            <label>每頁
+              <select id="ratingPageSizeSelect">
+                <option value="5">5</option>
+                <option value="10" selected>10</option>
+                <option value="20">20</option>
+              </select>
+            </label>
+            <button id="ratingPrevBtn">‹</button>
+            <span id="ratingPageInfo"></span>
+            <button id="ratingNextBtn">›</button>
+          </div>
+        </div>
+        <div id="ratingDetailList"><div class="loading">載入中...</div></div>
+      </section>
+
+      <section class="unanswered-card dashboard-layer layer-daily" id="unansweredSection">
+        <div class="section-title">客服待辦：AI 不確定的問題</div>
+        <div class="support-note gap-note-copy">這裡不是錯誤清單，而是「需要人補知識或判斷狀態」的待辦。補完知識後可標成已補知識；真的不需要保存時再刪除。</div>
+        <div class="gap-toolbar">
+          <span class="support-note">預設只看待處理，已處理紀錄可切換查看。</span>
+          <div class="compact-toolbar">
+            <select class="gap-select" id="gapFilter">
+              <option value="pending">待處理</option>
+              <option value="resolved">已補知識</option>
+              <option value="manual">人工處理</option>
+              <option value="ignored">不處理</option>
+              <option value="all">全部</option>
+            </select>
+            <label>每頁
+              <select class="gap-select" id="gapPageSizeSelect">
+                <option value="3">3</option>
+                <option value="5" selected>5</option>
+                <option value="10">10</option>
+              </select>
+            </label>
+            <button id="gapPrevBtn">‹</button>
+            <span id="gapPageInfo"></span>
+            <button id="gapNextBtn">›</button>
+          </div>
+        </div>
+        <div id="unansweredList"><div class="loading">載入中...</div></div>
+      </section>
+
+      <section class="sessions-card dashboard-layer layer-daily" id="sessionsSection">
+        <div class="section-title">每次對話詳細紀錄</div>
+        <div class="search-wrap">
+          <input class="search-input" id="searchInput" type="text" placeholder="搜尋對話內容（輸入關鍵字）" />
+          <div class="search-hint" id="searchHint"></div>
+        </div>
+        <div class="sessions-toolbar" id="sessionsToolbar">
+          <label>每頁
+            <select id="pageSizeSelect">
+              <option value="10" selected>10</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select> 筆
+          </label>
+          <div class="pager">
+            <button id="pagePrevBtn">‹ 上一頁</button>
+            <span id="pageInfo"></span>
+            <button id="pageNextBtn">下一頁 ›</button>
+          </div>
+        </div>
+        <div id="sessionsList"><div class="loading">載入中...</div></div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<button id="backToTopBtn" class="back-to-top" type="button" aria-label="回到頂端" title="回到頂端">
+  <span class="back-to-top-icon">↑</span>
+  <span class="back-to-top-text">置頂</span>
+</button>
+
+<script src="kb-parser.js"></script>
+<script src="dashboard.js?v=20260716-top-button"></script>
+
+</body>
+</html>
