@@ -375,6 +375,33 @@ app.get('/api/system/status', requireAdminKey, async (req, res) => {
   res.status(health.status === 'ok' ? 200 : 503).json(health);
 });
 
+app.post('/api/iot/station-statuses/sync', requireAdminKey, async (req, res) => {
+  const { toPostgresRow, upsertStationRows } = require('./scripts/sync-iot-stations-to-postgres');
+  const stations = Array.isArray(req.body?.stations) ? req.body.stations : [];
+  if (stations.length === 0) {
+    res.status(400).json({ error: 'stations must be a non-empty array' });
+    return;
+  }
+  if (stations.length > 2000) {
+    res.status(413).json({ error: 'too many stations in one sync request' });
+    return;
+  }
+
+  const requestedSyncedAt = req.body?.syncedAt ? new Date(req.body.syncedAt) : new Date();
+  const syncedAt = Number.isNaN(requestedSyncedAt.getTime()) ? new Date() : requestedSyncedAt;
+  const rows = stations
+    .map(row => toPostgresRow(row, syncedAt))
+    .filter(row => row.station_code);
+  const written = await upsertStationRows(pool, rows);
+
+  res.json({
+    ok: true,
+    received: stations.length,
+    written,
+    syncedAt: syncedAt.toISOString(),
+  });
+});
+
 app.use('/api', createChatRouter({
   pool,
   client,

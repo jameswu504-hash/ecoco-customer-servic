@@ -30,6 +30,7 @@ Customer asks station/machine question
 Trusted local machine
   -> readonly Azure MySQL
   -> npm run iot:sync
+  -> Render admin sync API or direct PostgreSQL/Neon
   -> PostgreSQL/Neon iot_station_statuses
   -> Render bot reads the synced rows
 ```
@@ -48,11 +49,11 @@ It stores station code, name, address, area, district, place, longitude, latitud
 
 ## Local Environment Variables
 
-On the trusted machine that can reach Azure MySQL:
+Recommended mode: upload through the Render admin sync API. This keeps the Neon `DATABASE_URL` only on Render.
 
 ```powershell
-$env:DATABASE_URL = "<Neon PostgreSQL connection string>"
-$env:PGSSL = "require"
+$env:ECOCO_IOT_SYNC_URL = "https://ecoco-customer-servic.onrender.com/api/iot/station-statuses/sync"
+$env:ADMIN_KEY = "<Render ADMIN_KEY>"
 
 $env:ECOCO_IOT_MYSQL_HOST = "<mysql host>"
 $env:ECOCO_IOT_MYSQL_PORT = "3306"
@@ -64,17 +65,25 @@ $env:ECOCO_IOT_MYSQL_SSL_REJECT_UNAUTHORIZED = "false"
 npm run iot:sync
 ```
 
-If the MySQL credentials are in an MCP JSON file, you can use:
+If the MySQL credentials are in an MCP JSON file, use:
 
 ```powershell
 $env:MCP_CONFIG_PATH = "C:\Users\ACER\Downloads\mcp (1).json"
-$env:DATABASE_URL = "<Neon PostgreSQL connection string>"
-$env:PGSSL = "require"
+$env:ECOCO_IOT_SYNC_URL = "https://ecoco-customer-servic.onrender.com/api/iot/station-statuses/sync"
+$env:ADMIN_KEY = "<Render ADMIN_KEY>"
 
 npm run iot:sync
 ```
 
-Do not commit real database credentials.
+Direct PostgreSQL mode is also supported for servers that are allowed to hold the Neon connection string:
+
+```powershell
+$env:DATABASE_URL = "<Neon PostgreSQL connection string>"
+$env:PGSSL = "require"
+npm run iot:sync
+```
+
+Do not commit real database credentials or admin keys.
 
 ## Run Every 5 Minutes
 

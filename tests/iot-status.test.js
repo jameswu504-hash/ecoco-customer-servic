@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { attachLiveStationContext } = require('../routes/chat.routes');
-const { toPostgresRow } = require('../scripts/sync-iot-stations-to-postgres');
+const { toPostgresRow, uploadStationRows } = require('../scripts/sync-iot-stations-to-postgres');
 const {
   buildStationSearchTerms,
   createIotStatusService,
@@ -190,6 +190,47 @@ test('IoT sync script normalizes MySQL station rows for PostgreSQL upsert', () =
   assert.equal(row.bin2_count, null);
   assert.equal(row.station_status_updated_at.toISOString(), '2026-07-24T01:00:00.000Z');
   assert.equal(row.source_synced_at, syncedAt);
+});
+
+test('IoT sync script uploads station rows in admin-protected batches', async () => {
+  const originalFetch = global.fetch;
+  const calls = [];
+  global.fetch = async (url, options) => {
+    calls.push({ url, options });
+    const payload = JSON.parse(options.body);
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify({
+          ok: true,
+          received: payload.stations.length,
+          written: payload.stations.length,
+          syncedAt: payload.syncedAt,
+        });
+      },
+    };
+  };
+
+  try {
+    const rows = Array.from({ length: 501 }, (_, index) => ({
+      station_code: `es${String(index).padStart(4, '0')}`,
+    }));
+    const result = await uploadStationRows({
+      url: 'https://example.invalid/api/iot/station-statuses/sync',
+      adminKey: 'admin-secret',
+      stationRows: rows,
+      syncedAt: new Date('2026-07-24T03:10:00Z'),
+    });
+
+    assert.equal(calls.length, 2);
+    assert.equal(JSON.parse(calls[0].options.body).stations.length, 500);
+    assert.equal(JSON.parse(calls[1].options.body).stations.length, 1);
+    assert.equal(calls[0].options.headers['x-admin-key'], 'admin-secret');
+    assert.equal(result.written, 501);
+  } finally {
+    global.fetch = originalFetch;
+  }
 });
 
 test('IoT MySQL connection diagnostics return sanitized errors', async () => {

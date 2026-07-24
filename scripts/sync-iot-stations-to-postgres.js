@@ -8,6 +8,7 @@ const { SCHEMA } = require('../db/schema');
 
 const TABLE_NAME = 'iot_station_statuses';
 const BATCH_SIZE = 200;
+const UPLOAD_BATCH_SIZE = 500;
 
 function readMcpMysqlEnv(filePath) {
   if (!filePath) return {};
@@ -36,6 +37,13 @@ function getPostgresConfig() {
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.PGSSL === 'disable' ? false : { rejectUnauthorized: false },
   };
+}
+
+function getUploadConfig() {
+  const url = process.env.ECOCO_IOT_SYNC_URL || '';
+  const adminKey = process.env.ADMIN_KEY || process.env.ECOCO_IOT_SYNC_ADMIN_KEY || '';
+  if (!url || !adminKey) return null;
+  return { url, adminKey };
 }
 
 function assertMysqlConfig(config) {
@@ -230,25 +238,85 @@ async function upsertStationRows(pool, rows) {
   return written;
 }
 
+async function uploadStationRows({ url, adminKey, stationRows, syncedAt }) {
+  let written = 0;
+  let received = 0;
+  let lastPayload = {};
+
+  for (let offset = 0; offset < stationRows.length; offset += UPLOAD_BATCH_SIZE) {
+    const batch = stationRows.slice(offset, offset + UPLOAD_BATCH_SIZE);
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-admin-key': adminKey,
+      },
+      body: JSON.stringify({
+        syncedAt: syncedAt.toISOString(),
+        stations: batch,
+      }),
+    });
+
+    const text = await response.text();
+    let payload = {};
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch {
+      payload = { raw: text };
+    }
+
+    if (!response.ok) {
+      throw new Error(`IoT sync upload failed: HTTP ${response.status} ${JSON.stringify(payload).slice(0, 300)}`);
+    }
+
+    written += Number(payload.written || 0);
+    received += Number(payload.received || batch.length);
+    lastPayload = payload;
+  }
+
+  return {
+    ...lastPayload,
+    received,
+    written,
+  };
+}
+
 async function syncIotStations() {
   const mysqlConfig = getMysqlConfig();
   assertMysqlConfig(mysqlConfig);
 
-  const pgPool = new Pool(getPostgresConfig());
   const syncedAt = new Date();
+  const uploadConfig = getUploadConfig();
 
+  const mysqlRows = await fetchMysqlStationRows(mysqlConfig);
+  const stationRows = mysqlRows
+    .map(row => toPostgresRow(row, syncedAt))
+    .filter(row => row.station_code);
+
+  if (uploadConfig) {
+    const uploadResult = await uploadStationRows({
+      ...uploadConfig,
+      stationRows,
+      syncedAt,
+    });
+    return {
+      fetched: mysqlRows.length,
+      written: Number(uploadResult.written || 0),
+      syncedAt: uploadResult.syncedAt || syncedAt.toISOString(),
+      mode: 'upload',
+    };
+  }
+
+  const pgPool = new Pool(getPostgresConfig());
   try {
     await ensureIotStationTable(pgPool);
-    const mysqlRows = await fetchMysqlStationRows(mysqlConfig);
-    const stationRows = mysqlRows
-      .map(row => toPostgresRow(row, syncedAt))
-      .filter(row => row.station_code);
     const written = await upsertStationRows(pgPool, stationRows);
 
     return {
       fetched: mysqlRows.length,
       written,
       syncedAt: syncedAt.toISOString(),
+      mode: 'postgres',
     };
   } finally {
     await pgPool.end();
@@ -258,7 +326,7 @@ async function syncIotStations() {
 if (require.main === module) {
   syncIotStations()
     .then(result => {
-      console.log(`Synced ${result.written}/${result.fetched} IoT station rows to PostgreSQL at ${result.syncedAt}`);
+      console.log(`Synced ${result.written}/${result.fetched} IoT station rows via ${result.mode} at ${result.syncedAt}`);
     })
     .catch(err => {
       console.error(err.message);
@@ -271,7 +339,9 @@ module.exports = {
   fetchMysqlStationRows,
   getMysqlConfig,
   getPostgresConfig,
+  getUploadConfig,
   syncIotStations,
   toPostgresRow,
+  uploadStationRows,
   upsertStationRows,
 };
