@@ -213,7 +213,7 @@ test('IoT sync script uploads station rows in admin-protected batches', async ()
   };
 
   try {
-    const rows = Array.from({ length: 501 }, (_, index) => ({
+    const rows = Array.from({ length: 201 }, (_, index) => ({
       station_code: `es${String(index).padStart(4, '0')}`,
     }));
     const result = await uploadStationRows({
@@ -223,11 +223,15 @@ test('IoT sync script uploads station rows in admin-protected batches', async ()
       syncedAt: new Date('2026-07-24T03:10:00Z'),
     });
 
-    assert.equal(calls.length, 2);
-    assert.equal(JSON.parse(calls[0].options.body).stations.length, 500);
-    assert.equal(JSON.parse(calls[1].options.body).stations.length, 1);
+    assert.equal(calls.length, 3);
+    assert.equal(JSON.parse(calls[0].options.body).stations.length, 100);
+    assert.equal(JSON.parse(calls[1].options.body).stations.length, 100);
+    assert.equal(JSON.parse(calls[2].options.body).stations.length, 1);
+    assert.equal(JSON.parse(calls[0].options.body).pruneOlderThanSyncedAt, false);
+    assert.equal(JSON.parse(calls[1].options.body).pruneOlderThanSyncedAt, false);
+    assert.equal(JSON.parse(calls[2].options.body).pruneOlderThanSyncedAt, true);
     assert.equal(calls[0].options.headers['x-admin-key'], 'admin-secret');
-    assert.equal(result.written, 501);
+    assert.equal(result.written, 201);
   } finally {
     global.fetch = originalFetch;
   }

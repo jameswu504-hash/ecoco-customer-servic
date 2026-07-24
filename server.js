@@ -393,11 +393,20 @@ app.post('/api/iot/station-statuses/sync', requireAdminKey, async (req, res) => 
     .map(row => toPostgresRow(row, syncedAt))
     .filter(row => row.station_code);
   const written = await upsertStationRows(pool, rows);
+  let pruned = 0;
+  if (req.body?.pruneOlderThanSyncedAt === true) {
+    const pruneResult = await pool.query(
+      'DELETE FROM iot_station_statuses WHERE source_synced_at < $1',
+      [syncedAt]
+    );
+    pruned = pruneResult.rowCount || 0;
+  }
 
   res.json({
     ok: true,
     received: stations.length,
     written,
+    pruned,
     syncedAt: syncedAt.toISOString(),
   });
 });

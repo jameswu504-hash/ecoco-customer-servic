@@ -8,7 +8,7 @@ const { SCHEMA } = require('../db/schema');
 
 const TABLE_NAME = 'iot_station_statuses';
 const BATCH_SIZE = 200;
-const UPLOAD_BATCH_SIZE = 500;
+const UPLOAD_BATCH_SIZE = 100;
 
 function readMcpMysqlEnv(filePath) {
   if (!filePath) return {};
@@ -245,6 +245,7 @@ async function uploadStationRows({ url, adminKey, stationRows, syncedAt }) {
 
   for (let offset = 0; offset < stationRows.length; offset += UPLOAD_BATCH_SIZE) {
     const batch = stationRows.slice(offset, offset + UPLOAD_BATCH_SIZE);
+    const isFinalBatch = offset + UPLOAD_BATCH_SIZE >= stationRows.length;
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -254,6 +255,7 @@ async function uploadStationRows({ url, adminKey, stationRows, syncedAt }) {
       body: JSON.stringify({
         syncedAt: syncedAt.toISOString(),
         stations: batch,
+        pruneOlderThanSyncedAt: isFinalBatch,
       }),
     });
 
@@ -272,6 +274,7 @@ async function uploadStationRows({ url, adminKey, stationRows, syncedAt }) {
     written += Number(payload.written || 0);
     received += Number(payload.received || batch.length);
     lastPayload = payload;
+    console.log(`Uploaded IoT station batch ${Math.floor(offset / UPLOAD_BATCH_SIZE) + 1}: ${batch.length} rows`);
   }
 
   return {
