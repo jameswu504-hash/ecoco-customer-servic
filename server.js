@@ -317,7 +317,7 @@ const promptService = createPromptService({
   responsePolicies,
 });
 
-async function buildHealthStatus({ includeDetails = false } = {}) {
+async function buildHealthStatus({ includeDetails = false, includeIotCheck = false } = {}) {
   const health = {
     status: 'ok',
     service: 'ecoco-customer-service',
@@ -334,6 +334,9 @@ async function buildHealthStatus({ includeDetails = false } = {}) {
     health.anthropicModel = process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL;
     health.appMode = isInternalMode() ? 'internal' : 'customer';
     health.startupWarnings = startupWarnings;
+    if (includeIotCheck) {
+      health.liveMysqlIotConnection = await iotStatusService.testConnection();
+    }
   }
 
   try {
@@ -361,7 +364,8 @@ app.get('/healthz', async (req, res) => {
 });
 
 app.get('/api/system/status', requireAdminKey, async (req, res) => {
-  const health = await buildHealthStatus({ includeDetails: true });
+  const includeIotCheck = ['1', 'true', 'yes'].includes(String(req.query.check_iot || '').toLowerCase());
+  const health = await buildHealthStatus({ includeDetails: true, includeIotCheck });
   res.status(health.status === 'ok' ? 200 : 503).json(health);
 });
 

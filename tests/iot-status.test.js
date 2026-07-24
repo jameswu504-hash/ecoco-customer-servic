@@ -6,6 +6,7 @@ const {
   buildStationSearchTerms,
   createIotStatusService,
   isIotMysqlConfigured,
+  sanitizeConnectionError,
   shouldUseLiveStationContext,
 } = require('../services/iot-status.service');
 
@@ -89,6 +90,45 @@ test('live station lookup formats readonly MySQL context', async () => {
   assert.match(result.context, /last_heartbeat_at/);
   assert.equal(queries.length, 1);
   assert.match(queries[0].sql, /FROM stations s/);
+});
+
+test('IoT MySQL connection diagnostics return sanitized errors', async () => {
+  const fakePool = {
+    async query() {
+      const err = new Error('connect ETIMEDOUT');
+      err.code = 'ETIMEDOUT';
+      throw err;
+    },
+    async end() {},
+  };
+  const service = createIotStatusService({
+    env: {
+      ECOCO_IOT_MYSQL_HOST: 'example.invalid',
+      ECOCO_IOT_MYSQL_USER: 'readonly',
+      ECOCO_IOT_MYSQL_PASSWORD: 'secret',
+      ECOCO_IOT_MYSQL_DATABASE: 'ecoco',
+      ECOCO_IOT_MYSQL_CONNECT_TIMEOUT_MS: '5000',
+    },
+    mysqlFactory: {
+      createPool(options) {
+        assert.equal(options.connectTimeout, 5000);
+        return fakePool;
+      },
+    },
+  });
+
+  assert.deepEqual(await service.testConnection(), {
+    configured: true,
+    ok: false,
+    errorCode: 'ETIMEDOUT',
+    message: 'connect ETIMEDOUT',
+  });
+  assert.deepEqual(sanitizeConnectionError(new Error('bad')), {
+    configured: true,
+    ok: false,
+    errorCode: 'Error',
+    message: 'bad',
+  });
 });
 
 test('live station context is attached to the RAG prompt only for station questions', async () => {

@@ -20,6 +20,7 @@ ECOCO_IOT_MYSQL_DATABASE=ecoco
 ECOCO_IOT_MYSQL_SSL=true
 ECOCO_IOT_MYSQL_SSL_REJECT_UNAUTHORIZED=true
 ECOCO_IOT_MYSQL_CONNECTION_LIMIT=4
+ECOCO_IOT_MYSQL_CONNECT_TIMEOUT_MS=10000
 ```
 
 Keep the MySQL user readonly. Do not commit real passwords to Git.
@@ -66,6 +67,26 @@ Check:
   "liveMysqlIotEnabled": true
 }
 ```
+
+To test the actual MySQL network connection without using the Render Shell:
+
+```text
+GET /api/system/status?check_iot=true
+x-admin-key: <ADMIN_KEY>
+```
+
+Check:
+
+```json
+{
+  "liveMysqlIotConnection": {
+    "configured": true,
+    "ok": true
+  }
+}
+```
+
+If `ok` is `false` and `errorCode` is `ETIMEDOUT`, the app is enabled but Azure MySQL is not reachable from Render. In that case, add the Render outbound IPs or a static outbound IP to the Azure MySQL firewall allowlist.
 
 Then ask a station question such as:
 

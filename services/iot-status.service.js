@@ -2,6 +2,7 @@ const mysql = require('mysql2/promise');
 
 const DEFAULT_LIMIT = 5;
 const MAX_LIMIT = 8;
+const DEFAULT_CONNECT_TIMEOUT_MS = 10000;
 
 function normalizeText(value) {
   return String(value || '')
@@ -26,6 +27,7 @@ function getIotMysqlConfig(env = process.env) {
     ssl: getBooleanEnv(env.ECOCO_IOT_MYSQL_SSL, true),
     rejectUnauthorized: getBooleanEnv(env.ECOCO_IOT_MYSQL_SSL_REJECT_UNAUTHORIZED, true),
     connectionLimit: Number(env.ECOCO_IOT_MYSQL_CONNECTION_LIMIT || 4),
+    connectTimeoutMs: Number(env.ECOCO_IOT_MYSQL_CONNECT_TIMEOUT_MS || DEFAULT_CONNECT_TIMEOUT_MS),
   };
 }
 
@@ -37,6 +39,15 @@ function isIotMysqlConfigured(env = process.env) {
 function getMysqlSslOption(config) {
   if (!config.ssl) return undefined;
   return { rejectUnauthorized: config.rejectUnauthorized };
+}
+
+function sanitizeConnectionError(err) {
+  return {
+    configured: true,
+    ok: false,
+    errorCode: err?.code || err?.name || 'UNKNOWN',
+    message: String(err?.message || 'Unknown MySQL connection error').slice(0, 300),
+  };
 }
 
 function shouldUseLiveStationContext(question, classification = null) {
@@ -183,6 +194,9 @@ function createIotStatusService({ env = process.env, mysqlFactory = mysql } = {}
         ssl: getMysqlSslOption(config),
         waitForConnections: true,
         connectionLimit: Number.isFinite(config.connectionLimit) && config.connectionLimit > 0 ? config.connectionLimit : 4,
+        connectTimeout: Number.isFinite(config.connectTimeoutMs) && config.connectTimeoutMs > 0
+          ? config.connectTimeoutMs
+          : DEFAULT_CONNECT_TIMEOUT_MS,
         enableKeepAlive: true,
       });
     }
@@ -191,9 +205,21 @@ function createIotStatusService({ env = process.env, mysqlFactory = mysql } = {}
 
   async function testConnection() {
     const currentPool = getPool();
-    if (!currentPool) return { configured: false, ok: false };
-    await currentPool.query('SELECT 1');
-    return { configured: true, ok: true };
+    if (!currentPool) {
+      return {
+        configured: false,
+        ok: false,
+        errorCode: 'NOT_CONFIGURED',
+        message: 'ECOCO_IOT_MYSQL_* environment variables are incomplete.',
+      };
+    }
+
+    try {
+      await currentPool.query('SELECT 1');
+      return { configured: true, ok: true };
+    } catch (err) {
+      return sanitizeConnectionError(err);
+    }
   }
 
   async function retrieveLiveStationContext(question, { classification = null, limit = DEFAULT_LIMIT } = {}) {
@@ -303,8 +329,10 @@ function createIotStatusService({ env = process.env, mysqlFactory = mysql } = {}
 module.exports = {
   buildStationSearchTerms,
   createIotStatusService,
+  DEFAULT_CONNECT_TIMEOUT_MS,
   formatLiveStationContext,
   getIotMysqlConfig,
   isIotMysqlConfigured,
+  sanitizeConnectionError,
   shouldUseLiveStationContext,
 };
