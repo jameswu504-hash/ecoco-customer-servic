@@ -292,7 +292,17 @@ function buildLiveStationStatusReply(liveStationContext = null) {
   const rows = Array.isArray(liveStationContext?.rows) ? liveStationContext.rows : [];
   if (rows.length === 0) return '';
 
-  const displayedRows = rows.slice(0, 3);
+  const uniqueRows = [];
+  const seenStations = new Set();
+  for (const row of rows) {
+    const fallbackKey = [row.stationName, row.address].filter(Boolean).join('|');
+    const key = String(row.stationCode || fallbackKey).trim();
+    if (key && seenStations.has(key)) continue;
+    if (key) seenStations.add(key);
+    uniqueRows.push(row);
+  }
+
+  const displayedRows = uniqueRows.slice(0, 3);
   const lines = displayedRows.length > 1
     ? ['可可粉，幫你找到幾個可能適合的 ECOCO 站點囉：']
     : ['可可粉，幫你查到這個站點目前的狀況囉：'];

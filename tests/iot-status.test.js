@@ -482,11 +482,20 @@ test('station status reply uses nearby wording when multiple stations are found'
         machineStatus: 'up',
         lastConnectionStatus: 'online',
       },
+      {
+        stationCode: 'es0201',
+        stationName: '成大附近站點 B',
+        address: '台南市東區勝利路1號',
+        machineStatus: 'up',
+        lastConnectionStatus: 'online',
+        assetId: 'second-machine',
+      },
     ],
   });
 
   assert.match(reply, /幾個可能適合/);
   assert.match(reply, /1\. 成大附近站點 A/);
   assert.match(reply, /2\. 成大附近站點 B/);
+  assert.doesNotMatch(reply, /3\. 成大附近站點 B/);
   assert.doesNotMatch(reply, /資料同步時間/);
 });
