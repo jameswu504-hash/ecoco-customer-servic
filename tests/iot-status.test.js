@@ -68,6 +68,26 @@ test('nearby recycling questions are routed to live station lookup', () => {
   }
 });
 
+test('station name status questions use live lookup and clean search terms', () => {
+  for (const question of ['小北百貨台南西門店目前狀態', '小北百貨台南西門店容量']) {
+    const classification = classifyQuestion(question);
+    const terms = buildStationSearchTerms(question);
+
+    assert.equal(classification.category, 'station_machine');
+    assert.equal(shouldUseLiveStationContext(question, classification), true);
+    assert.ok(terms.includes('小北百貨台南西門店'));
+    assert.equal(terms.some(term => /狀態|容量/.test(term)), false);
+  }
+});
+
+test('general recycling rule questions do not trigger live station lookup', () => {
+  const question = '寶特瓶可以回收嗎';
+  const classification = classifyQuestion(question);
+
+  assert.notEqual(classification.category, 'station_machine');
+  assert.equal(shouldUseLiveStationContext(question, classification), false);
+});
+
 test('live station lookup formats readonly MySQL context', async () => {
   const queries = [];
   const fakePool = {

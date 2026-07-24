@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const mysql = require('mysql2/promise');
+const stationQueryIntent = require('./station-query-intent.service');
 
 const DEFAULT_LIMIT = 5;
 const MAX_LIMIT = 8;
@@ -60,68 +61,11 @@ function escapePostgresLike(value) {
 
 function shouldUseLiveStationContext(question, classification = null) {
   if (classification?.category === 'station_machine') return true;
-  const text = normalizeText(question).toLowerCase();
-  const hasNearbyWord = /(附近|周邊|周遭|鄰近|最近|哪裡|哪裏|哪邊)/.test(text);
-  const hasKnownLocation = /(成大|成功大學|國立成功大學|臺南東區|台南東區|東區)/.test(text);
-  const hasRecyclePlaceIntent = /(ecoco|回收|投瓶|投遞|站點|機台|機器)/i.test(text);
-  if (hasNearbyWord && hasKnownLocation && hasRecyclePlaceIntent) return true;
-  if (/(站點|站点|站名|機台|机台|容量|滿袋|满袋|狀態|状态|小北百貨|小北百货|es\d+)/i.test(text)) return true;
-  return /(站點|站|機台|機器|滿倉|故障|維修|地址|營業時間|能不能投|可以投|回收機|offline|online|asset|es\d+)/i.test(text);
-}
-
-function stripCommonStationWords(value) {
-  return String(value || '')
-    .replace(/請問|想問|查詢|現在|目前|可以|可不可以|能不能|是否|怎麼|如何|哪裡|在哪|地址|位置|營業時間|狀態|機台|機器|回收機|回收|投遞|投瓶|滿倉|故障|維修|正常|使用|附近|周邊|周遭|鄰近|最近|推薦|路線|地圖|ECOCO|ecoco|嗎|呢|的|有沒有|有嗎|有/g, '')
-    .trim();
-}
-
-function addTerm(terms, value) {
-  const term = stripCommonStationWords(normalizeText(value));
-  if (term.length >= 2 && term.length <= 40) terms.add(term);
-}
-
-function addLocationAliasTerms(terms, text) {
-  if (/成大|成功大學|國立成功大學/.test(text)) {
-    ['成大', '成功大學', '國立成功大學', '大學路', '勝利路', '東區'].forEach(term => addTerm(terms, term));
-  }
-
-  if (/臺南東區|台南東區|東區/.test(text)) {
-    ['臺南東區', '台南東區', '東區'].forEach(term => addTerm(terms, term));
-  }
+  return stationQueryIntent.isStationDataQuestion(question);
 }
 
 function buildStationSearchTerms(question) {
-  const text = normalizeText(question);
-  const terms = new Set();
-  const cityPrefixes = [
-    '臺北', '台北', '新北', '桃園', '臺中', '台中', '臺南', '台南', '高雄',
-    '基隆', '新竹', '苗栗', '彰化', '南投', '雲林', '嘉義', '屏東', '宜蘭',
-    '花蓮', '臺東', '台東', '澎湖', '金門', '連江',
-  ];
-
-  for (const match of text.matchAll(/es\d{3,6}(?:_[a-z0-9]+)?/gi)) addTerm(terms, match[0]);
-  for (const match of text.matchAll(/\b\d{8,22}\b/g)) addTerm(terms, match[0]);
-  addLocationAliasTerms(terms, text);
-  for (const match of text.matchAll(/[\u4e00-\u9fffA-Za-z0-9]{2,40}站/g)) {
-    const stationName = match[0];
-    addTerm(terms, stationName);
-    if (stationName.length > 2) addTerm(terms, stationName.slice(0, -1));
-    for (const city of cityPrefixes) {
-      if (stationName.startsWith(city) && stationName.length > city.length + 1) {
-        const withoutCity = stationName.slice(city.length);
-        addTerm(terms, withoutCity);
-        if (withoutCity.endsWith('站')) addTerm(terms, withoutCity.slice(0, -1));
-      }
-    }
-  }
-
-  text
-    .split(/[^0-9A-Za-z\u4e00-\u9fff]+/g)
-    .map(stripCommonStationWords)
-    .filter(term => term.length >= 2 && term.length <= 24)
-    .forEach(term => addTerm(terms, term));
-
-  return [...terms].slice(0, 8);
+  return stationQueryIntent.buildStationSearchTerms(question);
 }
 
 function sanitizeRow(row = {}) {

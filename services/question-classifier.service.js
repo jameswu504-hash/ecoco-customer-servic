@@ -1,4 +1,5 @@
 const DEFAULT_CONTACT_URL = 'https://ecoco.tw/kWqgW';
+const { isStationDataQuestion } = require('./station-query-intent.service');
 
 function normalizeQuestionText(value) {
   return String(value || '')
@@ -96,16 +97,7 @@ function getCategory(categoryName) {
 }
 
 function isStationLookupIntent(text) {
-  const hasNearbyWord = /(附近|周邊|周遭|鄰近|最近|哪裡|哪裏|哪邊)/.test(text);
-  const hasKnownLocation = /(成大|成功大學|國立成功大學|臺南東區|台南東區|東區)/.test(text);
-  const hasRecyclePlaceIntent = /(ecoco|回收|投瓶|投遞|站點|機台|機器)/i.test(text);
-
-  return (
-    /(站點|機台|機器|地圖|營業時間)/.test(text)
-    || /站.*(在哪|哪裡|哪裏|位置|地址|怎麼去|如何去)/.test(text)
-    || /(在哪|哪裡|哪裏|位置|地址|怎麼去|如何去).*站/.test(text)
-    || (hasNearbyWord && hasKnownLocation && hasRecyclePlaceIntent)
-  );
+  return isStationDataQuestion(text);
 }
 
 function classifyQuestion(question) {

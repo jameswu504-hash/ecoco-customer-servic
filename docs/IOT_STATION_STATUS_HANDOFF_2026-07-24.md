@@ -83,6 +83,27 @@ Written to PostgreSQL after dedupe: 701 rows
 
 When station rows are found, the app returns a deterministic Traditional Chinese reply instead of asking Claude to invent or interpret the status.
 
+## Station Data Routing Policy
+
+Station data lookup must be intent-based, not a one-off keyword patch.
+
+Use the station data source when the customer is asking about:
+
+- a station code such as `es0140`
+- a station name plus live fields such as status, capacity, full bin, fault, online/offline, or availability
+- a location or landmark plus nearby/place intent, such as asking where to recycle near a school, district, or store
+- station discovery words such as station, machine, recycling machine, map, address, route, recommendation, or business hours
+
+Do not use station data for general FAQ/rule questions unless the customer also provides a location or asks for a station/place. For example, a general bottle-recycling rule question should stay in FAQ/RAG; a question asking where to recycle near a landmark should use station data.
+
+The shared routing and search-term logic lives in:
+
+```text
+services/station-query-intent.service.js
+```
+
+Both `services/question-classifier.service.js` and `services/iot-status.service.js` should use this shared module so LINE and web chat do not drift apart.
+
 Required customer-facing structure:
 
 ```text
