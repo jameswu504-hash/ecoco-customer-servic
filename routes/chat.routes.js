@@ -281,13 +281,6 @@ function formatCapacity(count, max, remain) {
   return parts.length > 0 ? parts.join(' / ') : '目前沒有容量數字';
 }
 
-function formatSyncedAt(value) {
-  if (!value) return '未知';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toISOString();
-}
-
 function buildLiveStationStatusReply(liveStationContext = null) {
   const rows = Array.isArray(liveStationContext?.rows) ? liveStationContext.rows : [];
   if (rows.length === 0) return '';
@@ -303,7 +296,6 @@ function buildLiveStationStatusReply(liveStationContext = null) {
       `連線狀態：${formatStatus(row.lastConnectionStatus)}`,
       `回收槽 1：${formatCapacity(row.bin1Count, row.bin1MaxCapacity, row.bin1RemainCapacity)}`,
       `回收槽 2：${formatCapacity(row.bin2Count, row.bin2MaxCapacity, row.bin2RemainCapacity)}`,
-      `資料同步時間：${formatSyncedAt(row.sourceSyncedAt)}`,
     );
   });
 
