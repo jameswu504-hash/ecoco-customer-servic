@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { attachLiveStationContext } = require('../routes/chat.routes');
+const { toPostgresRow } = require('../scripts/sync-iot-stations-to-postgres');
 const {
   buildStationSearchTerms,
   createIotStatusService,
@@ -91,11 +92,104 @@ test('live station lookup formats readonly MySQL context', async () => {
 
   assert.equal(result.retrievalMode, 'mysql_iot');
   assert.equal(result.rows.length, 1);
-  assert.match(result.context, /Live MySQL station/);
+  assert.match(result.context, /Station \/ machine status/);
+  assert.match(result.context, /Source: live MySQL/);
   assert.match(result.context, /小北百貨台南西門店站/);
   assert.match(result.context, /last_heartbeat_at/);
   assert.equal(queries.length, 1);
   assert.match(queries[0].sql, /FROM stations s/);
+});
+
+test('station lookup prefers PostgreSQL sync rows before MySQL fallback', async () => {
+  const pgQueries = [];
+  const pgPool = {
+    async query(sql, params = []) {
+      pgQueries.push({ sql, params });
+      return {
+        rows: [{
+          station_code: 'es0140',
+          station_name: 'Synced Station',
+          address: 'Synced Address',
+          area_name: 'Tainan',
+          district_name: 'West Central',
+          place_name: 'Synced Place',
+          longitude: '120.197',
+          latitude: '22.991',
+          service_hours: '24H',
+          station_status: 'up',
+          station_status_updated_at: new Date('2026-07-24T01:00:00Z'),
+          asset_id: 'asset-1',
+          machine_type: 'ai',
+          machine_kind: 'AI-4',
+          machine_status: 'up',
+          machine_status_at: new Date('2026-07-24T02:00:00Z'),
+          last_conn_status: 'online',
+          last_conn_status_at: new Date('2026-07-24T03:00:00Z'),
+          last_heartbeat_at: new Date('2026-07-24T03:05:00Z'),
+          bin1_count: 100,
+          bin1_max_capacity: 1500,
+          bin1_remain_capacity: 1400,
+          bin2_count: 200,
+          bin2_max_capacity: 1500,
+          bin2_remain_capacity: 1300,
+          source_synced_at: new Date('2026-07-24T03:10:00Z'),
+        }],
+      };
+    },
+  };
+  const mysqlFactory = {
+    createPool() {
+      throw new Error('MySQL should not be created when PostgreSQL has a hit');
+    },
+  };
+  const service = createIotStatusService({
+    env: {
+      ECOCO_IOT_MYSQL_HOST: 'example.invalid',
+      ECOCO_IOT_MYSQL_USER: 'readonly',
+      ECOCO_IOT_MYSQL_PASSWORD: 'secret',
+      ECOCO_IOT_MYSQL_DATABASE: 'ecoco',
+    },
+    mysqlFactory,
+    pgPool,
+  });
+
+  const result = await service.retrieveLiveStationContext('es0140 status', {
+    classification: { category: 'station_machine' },
+  });
+
+  assert.equal(result.retrievalMode, 'postgres_iot');
+  assert.equal(result.rows[0].stationCode, 'es0140');
+  assert.match(result.context, /Source: Neon PostgreSQL station sync/);
+  assert.match(result.context, /source_synced_at/);
+  assert.equal(pgQueries.length, 1);
+  assert.match(pgQueries[0].sql, /FROM iot_station_statuses/);
+});
+
+test('IoT sync script normalizes MySQL station rows for PostgreSQL upsert', () => {
+  const syncedAt = new Date('2026-07-24T03:10:00Z');
+  const row = toPostgresRow({
+    station_code: ' es0140 ',
+    station_name: 'Synced Station',
+    longitude: 120.197,
+    latitude: 22.991,
+    machine_status: 'up',
+    station_status_updated_at: '2026-07-24T01:00:00Z',
+    bin1_count: '100',
+    bin1_max_capacity: '1500',
+    bin1_remain_capacity: '1400',
+    bin2_count: '',
+  }, syncedAt);
+
+  assert.equal(row.station_code, 'es0140');
+  assert.equal(row.longitude, '120.197');
+  assert.equal(row.latitude, '22.991');
+  assert.equal(row.machine_status, 'up');
+  assert.equal(row.bin1_count, 100);
+  assert.equal(row.bin1_max_capacity, 1500);
+  assert.equal(row.bin1_remain_capacity, 1400);
+  assert.equal(row.bin2_count, null);
+  assert.equal(row.station_status_updated_at.toISOString(), '2026-07-24T01:00:00.000Z');
+  assert.equal(row.source_synced_at, syncedAt);
 });
 
 test('IoT MySQL connection diagnostics return sanitized errors', async () => {

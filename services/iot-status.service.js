@@ -54,6 +54,10 @@ function sanitizeConnectionError(err) {
   };
 }
 
+function escapePostgresLike(value) {
+  return String(value || '').replace(/[\\%_]/g, '\\$&');
+}
+
 function shouldUseLiveStationContext(question, classification = null) {
   if (classification?.category === 'station_machine') return true;
   const text = normalizeText(question).toLowerCase();
@@ -113,6 +117,8 @@ function sanitizeRow(row = {}) {
     areaName: row.area_name || '',
     districtName: row.district_name || '',
     placeName: row.place_name || '',
+    longitude: row.longitude || '',
+    latitude: row.latitude || '',
     serviceHours: row.service_hours || '',
     stationStatus: row.station_status || '',
     stationStatusUpdatedAt: row.station_status_updated_at || '',
@@ -134,6 +140,7 @@ function sanitizeRow(row = {}) {
     bin2MaxCapacity: row.bin2_max_capacity,
     bin2RemainCapacity: row.bin2_remain_capacity,
     bin2FullAt: row.bin2_full_at || '',
+    sourceSyncedAt: row.source_synced_at || '',
   };
 }
 
@@ -146,6 +153,8 @@ function normalizeSnapshotRow(row = {}) {
     area_name: row.areaName,
     district_name: row.districtName,
     place_name: row.placeName,
+    longitude: row.longitude,
+    latitude: row.latitude,
     service_hours: row.serviceHours,
     station_status: row.stationStatus,
     station_status_updated_at: row.stationStatusUpdatedAt,
@@ -167,6 +176,7 @@ function normalizeSnapshotRow(row = {}) {
     bin2_max_capacity: row.bin2MaxCapacity,
     bin2_remain_capacity: row.bin2RemainCapacity,
     bin2_full_at: row.bin2FullAt,
+    source_synced_at: row.sourceSyncedAt,
   });
 }
 
@@ -188,13 +198,17 @@ function formatCapacity(count, max, remain, fullAt) {
 
 function formatLiveStationContext(rows, checkedAt = new Date(), source = 'live MySQL') {
   if (!Array.isArray(rows) || rows.length === 0) return '';
+  const isSnapshot = source === 'snapshot';
+  const isPostgresSync = /postgres|neon/i.test(source);
   const lines = [
-    '## Live MySQL station / machine status',
+    '## Station / machine status',
     `Checked at: ${checkedAt.toISOString()}`,
     `Source: ${source}`,
-    source === 'snapshot'
+    isSnapshot
       ? 'This is a committed station snapshot. Use it when live MySQL is unreachable, and avoid saying it is real-time.'
-      : 'Use this live read-only MySQL context for station location, opening hours, machine status, bin capacity, alarms, and heartbeat. Prefer it over older RAG content when there is a conflict.',
+      : isPostgresSync
+        ? 'This context comes from the cloud PostgreSQL station table refreshed by the local MySQL sync job. Use source_synced_at to judge freshness, and do not call it real-time if the sync is stale.'
+        : 'Use this live read-only MySQL context for station location, opening hours, machine status, bin capacity, alarms, and heartbeat. Prefer it over older RAG content when there is a conflict.',
   ];
 
   rows.forEach((row, index) => {
@@ -202,6 +216,7 @@ function formatLiveStationContext(rows, checkedAt = new Date(), source = 'live M
       '',
       `[IOT-${index + 1}] ${row.stationName || '(unnamed station)'} (${row.stationCode || 'no code'})`,
       `- Address: ${row.address || 'unknown'}`,
+      `- Coordinates: ${[row.latitude, row.longitude].filter(Boolean).join(', ') || 'unknown'}`,
       `- Area: ${[row.areaName, row.districtName].filter(Boolean).join(' / ') || 'unknown'}`,
       `- Place: ${row.placeName || 'unknown'}`,
       `- Service hours: ${row.serviceHours || 'unknown'}`,
@@ -212,6 +227,7 @@ function formatLiveStationContext(rows, checkedAt = new Date(), source = 'live M
       `- Alarm: ${row.alarmCode || 'none'}${row.alarmDescription ? ` (${row.alarmDescription})` : ''}`,
       `- Bin 1: ${formatCapacity(row.bin1Count, row.bin1MaxCapacity, row.bin1RemainCapacity, row.bin1FullAt)}`,
       `- Bin 2: ${formatCapacity(row.bin2Count, row.bin2MaxCapacity, row.bin2RemainCapacity, row.bin2FullAt)}`,
+      `- Source synced at: ${formatDate(row.sourceSyncedAt) || 'unknown'}`,
     );
   });
 
@@ -278,7 +294,7 @@ function searchStationSnapshot(snapshot, terms, limit = DEFAULT_LIMIT) {
     .map(item => item.row);
 }
 
-function createIotStatusService({ env = process.env, mysqlFactory = mysql } = {}) {
+function createIotStatusService({ env = process.env, mysqlFactory = mysql, pgPool = null } = {}) {
   const config = getIotMysqlConfig(env);
   let pool = null;
   let snapshot = null;
@@ -347,6 +363,101 @@ function createIotStatusService({ env = process.env, mysqlFactory = mysql } = {}
     };
   }
 
+  async function retrievePostgresStationContext(terms, { limit = DEFAULT_LIMIT } = {}) {
+    if (!pgPool || !Array.isArray(terms) || terms.length === 0) {
+      return { retrievalMode: 'postgres_iot_disabled', terms, rows: [], context: '' };
+    }
+
+    const cappedLimit = Math.min(Math.max(Number(limit) || DEFAULT_LIMIT, 1), MAX_LIMIT);
+    const searchableFields = [
+      'station_code',
+      'station_name',
+      'address',
+      'area_name',
+      'district_name',
+      'place_name',
+      'asset_id',
+    ];
+    const clauses = [];
+    const values = [];
+
+    for (const term of terms) {
+      for (const field of searchableFields) {
+        values.push(`%${escapePostgresLike(term)}%`);
+        clauses.push(`COALESCE(${field}, '') ILIKE $${values.length} ESCAPE '\\'`);
+      }
+    }
+
+    values.push(terms.map(term => String(term)));
+    const exactTermsIndex = values.length;
+    values.push(`%${escapePostgresLike(terms[0])}%`);
+    const firstTermIndex = values.length;
+    values.push(cappedLimit);
+    const limitIndex = values.length;
+
+    const { rows } = await pgPool.query(
+      `SELECT
+         station_code,
+         station_name,
+         address,
+         area_name,
+         district_name,
+         place_name,
+         longitude,
+         latitude,
+         service_hours,
+         station_status,
+         station_status_updated_at,
+         asset_id,
+         machine_type,
+         machine_kind,
+         machine_status,
+         machine_status_at,
+         last_conn_status,
+         last_conn_status_at,
+         last_heartbeat_at,
+         alarm_code,
+         alarm_description,
+         bin1_count,
+         bin1_max_capacity,
+         bin1_remain_capacity,
+         bin1_full_at,
+         bin2_count,
+         bin2_max_capacity,
+         bin2_remain_capacity,
+         bin2_full_at,
+         source_synced_at
+       FROM iot_station_statuses
+       WHERE ${clauses.join(' OR ')}
+       ORDER BY
+         CASE
+           WHEN station_code = ANY($${exactTermsIndex}::text[]) THEN 0
+           WHEN station_name = ANY($${exactTermsIndex}::text[]) THEN 1
+           WHEN station_name ILIKE $${firstTermIndex} ESCAPE '\\' THEN 2
+           ELSE 3
+         END,
+         machine_status = 'up' DESC,
+         station_code ASC
+       LIMIT $${limitIndex}`,
+      values
+    );
+
+    const safeRows = rows.map(sanitizeRow);
+    const syncedDates = safeRows
+      .map(row => new Date(row.sourceSyncedAt))
+      .filter(date => !Number.isNaN(date.getTime()));
+    const checkedAt = syncedDates.length > 0
+      ? new Date(Math.max(...syncedDates.map(date => date.getTime())))
+      : new Date();
+
+    return {
+      retrievalMode: safeRows.length > 0 ? 'postgres_iot' : 'postgres_iot_miss',
+      terms,
+      rows: safeRows,
+      context: formatLiveStationContext(safeRows, checkedAt, 'Neon PostgreSQL station sync'),
+    };
+  }
+
   async function retrieveLiveStationContext(question, { classification = null, limit = DEFAULT_LIMIT } = {}) {
     if (!shouldUseLiveStationContext(question, classification)) {
       return { retrievalMode: 'none', terms: [], rows: [], context: '' };
@@ -355,6 +466,15 @@ function createIotStatusService({ env = process.env, mysqlFactory = mysql } = {}
     const terms = buildStationSearchTerms(question);
     if (terms.length === 0) {
       return { retrievalMode: 'mysql_iot_no_terms', terms, rows: [], context: '' };
+    }
+
+    if (pgPool) {
+      try {
+        const postgresResult = await retrievePostgresStationContext(terms, { limit });
+        if (postgresResult.rows.length > 0) return postgresResult;
+      } catch (err) {
+        console.warn(`PostgreSQL IoT station lookup error: ${err.message}`);
+      }
     }
 
     const currentPool = getPool();

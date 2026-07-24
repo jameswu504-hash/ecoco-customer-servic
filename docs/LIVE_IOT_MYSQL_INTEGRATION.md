@@ -1,32 +1,13 @@
-# Live IoT MySQL Integration
+# IoT Station Status Sync
 
-This project can keep two data paths separate:
+The production data path is intentionally split:
 
-- PostgreSQL knowledge: stable FAQ, SOP, policy, response rules, and RAG chunks.
-- MySQL IoT: live station and machine state such as address, opening hours, online/offline status, bin capacity, alarm code, and heartbeat time.
+- PostgreSQL/Neon: customer knowledge, chat history, RAG chunks, and the cloud copy of station status.
+- Azure MySQL: readonly source of truth for station and machine operational state.
+- Local sync job: runs from a trusted machine or network that can reach Azure MySQL, then writes the latest station status into PostgreSQL/Neon.
+- Render bot: serves LINE/web requests and reads station status from PostgreSQL/Neon.
 
-The app does not copy all MySQL rows into PostgreSQL. When a user asks a station or machine question, the chat flow performs a readonly MySQL lookup and appends the result to the Claude context for that one reply.
-
-If live MySQL is unreachable from Render, the app falls back to `data/iot-station-snapshot.json`. This keeps station answers available while Azure firewall access is pending. Snapshot answers are not real-time and should not be described as live status.
-
-## Render Environment Variables
-
-Set these on the Render Web Service:
-
-```text
-ECOCO_IOT_MYSQL_HOST=<mysql host>
-ECOCO_IOT_MYSQL_PORT=3306
-ECOCO_IOT_MYSQL_USER=<readonly user>
-ECOCO_IOT_MYSQL_PASSWORD=<readonly password>
-ECOCO_IOT_MYSQL_DATABASE=ecoco
-ECOCO_IOT_MYSQL_SSL=true
-ECOCO_IOT_MYSQL_SSL_REJECT_UNAUTHORIZED=true
-ECOCO_IOT_MYSQL_CONNECTION_LIMIT=4
-ECOCO_IOT_MYSQL_CONNECT_TIMEOUT_MS=10000
-ECOCO_IOT_STATION_SNAPSHOT_PATH=
-```
-
-Keep the MySQL user readonly. Do not commit real passwords to Git.
+Render does not need direct Azure MySQL access when the local sync job is running. If Azure firewall blocks Render outbound traffic, that is expected for this architecture.
 
 ## Runtime Flow
 
@@ -38,42 +19,94 @@ Customer asks FAQ/SOP/policy question
 
 Customer asks station/machine question
   -> PostgreSQL RAG still runs
-  -> readonly MySQL stations/machines lookup also runs
-  -> if MySQL is unreachable, data/iot-station-snapshot.json is searched
-  -> Claude receives both contexts and should prefer live MySQL for status
+  -> PostgreSQL iot_station_statuses lookup also runs
+  -> if Neon has no match, optional MySQL/snapshot fallback is tried
+  -> Claude receives both contexts and should prefer iot_station_statuses for status
 ```
 
-## Refreshing The Snapshot
-
-From a trusted machine that can reach the readonly MySQL server:
-
-```bash
-MCP_CONFIG_PATH="/path/to/mcp.json" npm run iot:snapshot
-```
-
-The script writes:
+## Local Sync Flow
 
 ```text
-data/iot-station-snapshot.json
+Trusted local machine
+  -> readonly Azure MySQL
+  -> npm run iot:sync
+  -> PostgreSQL/Neon iot_station_statuses
+  -> Render bot reads the synced rows
 ```
 
-Commit and deploy that file to refresh fallback station data. The snapshot intentionally excludes member fields, phone, email, password, token, and long machine asset IDs.
+The recommended interval is every 5 minutes. If the local machine is off, the bot still works, but station data stays at the last successful `source_synced_at`.
 
-## Tables Used
+## PostgreSQL Table
 
-The live lookup currently reads:
+The app creates this table on startup:
 
-- `stations`
-- `machines`
-- `areas`
-- `districts`
-- `places`
+```text
+iot_station_statuses
+```
 
-It selects only station/machine operational fields. It does not read member, phone, email, password, or token fields.
+It stores station code, name, address, area, district, place, longitude, latitude, service hours, station status, machine status, connection status, heartbeat time, alarms, bin capacity, and `source_synced_at`.
 
-## How To Verify
+## Local Environment Variables
 
-After deploy, open the admin-only status endpoint:
+On the trusted machine that can reach Azure MySQL:
+
+```powershell
+$env:DATABASE_URL = "<Neon PostgreSQL connection string>"
+$env:PGSSL = "require"
+
+$env:ECOCO_IOT_MYSQL_HOST = "<mysql host>"
+$env:ECOCO_IOT_MYSQL_PORT = "3306"
+$env:ECOCO_IOT_MYSQL_USER = "<readonly user>"
+$env:ECOCO_IOT_MYSQL_PASSWORD = "<readonly password>"
+$env:ECOCO_IOT_MYSQL_DATABASE = "ecoco"
+$env:ECOCO_IOT_MYSQL_SSL_REJECT_UNAUTHORIZED = "false"
+
+npm run iot:sync
+```
+
+If the MySQL credentials are in an MCP JSON file, you can use:
+
+```powershell
+$env:MCP_CONFIG_PATH = "C:\Users\ACER\Downloads\mcp (1).json"
+$env:DATABASE_URL = "<Neon PostgreSQL connection string>"
+$env:PGSSL = "require"
+
+npm run iot:sync
+```
+
+Do not commit real database credentials.
+
+## Run Every 5 Minutes
+
+Simple PowerShell loop:
+
+```powershell
+while ($true) {
+  npm run iot:sync
+  Start-Sleep -Seconds 300
+}
+```
+
+For production operations, use Windows Task Scheduler, a small internal VM, or a CI runner that has network access to Azure MySQL.
+
+## Render Environment Variables
+
+Render still needs:
+
+```text
+DATABASE_URL=<Neon PostgreSQL connection string>
+PGSSL=require
+ANTHROPIC_API_KEY=<key>
+ADMIN_KEY=<key>
+LINE_CHANNEL_SECRET=<key>
+LINE_CHANNEL_ACCESS_TOKEN=<key>
+```
+
+The `ECOCO_IOT_MYSQL_*` variables are optional on Render after the sync path is enabled. Keeping them set only provides a fallback attempt, but Azure firewall may still block it.
+
+## Verify
+
+After deploying the app and running one successful local sync:
 
 ```text
 GET /api/system/status
@@ -84,34 +117,10 @@ Check:
 
 ```json
 {
-  "liveMysqlIotEnabled": true
+  "database": "ok",
+  "iotStationStatusCount": 630,
+  "iotStationLastSyncedAt": "2026-07-24T00:00:00.000Z"
 }
 ```
 
-To test the actual MySQL network connection without using the Render Shell:
-
-```text
-GET /api/system/status?check_iot=true
-x-admin-key: <ADMIN_KEY>
-```
-
-Check:
-
-```json
-{
-  "liveMysqlIotConnection": {
-    "configured": true,
-    "ok": true
-  }
-}
-```
-
-If `ok` is `false` and `errorCode` is `ETIMEDOUT`, the app is enabled but Azure MySQL is not reachable from Render. In that case, add the Render outbound IPs or a static outbound IP to the Azure MySQL firewall allowlist.
-
-Then ask a station question such as:
-
-```text
-小北百貨台南西門店站現在正常嗎？
-```
-
-The answer should use live status, connection, alarm, bin, and heartbeat data when a matching station is found.
+Then ask LINE a station question. The answer should include current station or machine status from the synced PostgreSQL rows. If `iotStationStatusCount` is `0`, run `npm run iot:sync` from a machine that can reach Azure MySQL.

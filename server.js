@@ -312,7 +312,7 @@ const responsePolicies = Array.isArray(responsePolicyPayload.policies)
   : [];
 
 const ragService = createRagService({ pool, env: process.env });
-const iotStatusService = createIotStatusService({ env: process.env });
+const iotStatusService = createIotStatusService({ env: process.env, pgPool: pool });
 const promptService = createPromptService({
   responsePolicies,
 });
@@ -348,6 +348,12 @@ async function buildHealthStatus({ includeDetails = false, includeIotCheck = fal
       );
       health.knowledgeSectionCount = Number(rows[0].section_count);
       health.knowledgeContentChars = Number(rows[0].content_chars);
+
+      const stationStatus = await pool.query(
+        'SELECT COUNT(*) AS station_count, MAX(source_synced_at) AS last_synced_at FROM iot_station_statuses'
+      );
+      health.iotStationStatusCount = Number(stationStatus.rows[0].station_count);
+      health.iotStationLastSyncedAt = stationStatus.rows[0].last_synced_at || null;
     }
   } catch (err) {
     health.status = 'degraded';
