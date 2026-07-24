@@ -408,9 +408,10 @@ test('station status reply is deterministic when live station rows are found', (
   });
 
   assert.match(reply, /小北百貨台南西門店站/);
-  assert.match(reply, /機台狀態：正常/);
-  assert.match(reply, /回收槽 1：剩餘 56 \/ 目前 199 \/ 上限 450/);
-  assert.match(reply, /回收槽 2：剩餘 0 \/ 目前 1500 \/ 上限 1500/);
+  assert.match(reply, /幫你查到這個站點目前的狀況/);
+  assert.match(reply, /目前狀態\n機台：正常\n連線：正常/);
+  assert.match(reply, /回收槽容量\n第 1 槽：剩餘 56，目前 199\/450/);
+  assert.match(reply, /第 2 槽：剩餘 0，目前 1500\/1500（目前看起來已滿）/);
   assert.doesNotMatch(reply, /資料同步時間/);
   assert.doesNotMatch(reply, /2026-07-24T08:30:17.872Z/);
 });

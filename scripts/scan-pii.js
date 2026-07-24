@@ -8,7 +8,7 @@ const {
   countSensitiveLongNumbers,
 } = require('./anonymize-pii');
 
-const EXCLUDED_DIRS = new Set(['.git', 'node_modules', '.cache', 'dist', 'build']);
+const EXCLUDED_DIRS = new Set(['.git', 'node_modules', '.cache', 'dist', 'build', '.local-iot-sync']);
 const ALLOWED_EMAILS = new Set([
   'actions@github.com',
 ]);

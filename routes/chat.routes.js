@@ -273,33 +273,44 @@ function formatStatus(value) {
   return String(value);
 }
 
-function formatCapacity(count, max, remain) {
-  const parts = [];
-  if (remain !== null && remain !== undefined) parts.push(`剩餘 ${remain}`);
-  if (count !== null && count !== undefined) parts.push(`目前 ${count}`);
-  if (max !== null && max !== undefined) parts.push(`上限 ${max}`);
-  return parts.length > 0 ? parts.join(' / ') : '目前沒有容量數字';
+function hasNumber(value) {
+  return value !== null && value !== undefined && value !== '';
+}
+
+function formatCapacity(slotName, count, max, remain) {
+  if (!hasNumber(count) && !hasNumber(max) && !hasNumber(remain)) {
+    return `${slotName}：目前還沒有容量數字`;
+  }
+
+  const remainText = hasNumber(remain) ? `剩餘 ${remain}` : '剩餘量未知';
+  const usageText = hasNumber(count) && hasNumber(max) ? `目前 ${count}/${max}` : '';
+  const fullHint = Number(remain) === 0 ? '（目前看起來已滿）' : '';
+  return `${slotName}：${[remainText, usageText].filter(Boolean).join('，')}${fullHint}`;
 }
 
 function buildLiveStationStatusReply(liveStationContext = null) {
   const rows = Array.isArray(liveStationContext?.rows) ? liveStationContext.rows : [];
   if (rows.length === 0) return '';
 
-  const lines = ['可可粉，查到目前站點資料如下：'];
+  const lines = ['可可粉，幫你查到這個站點目前的狀況囉：'];
   rows.slice(0, 3).forEach((row, index) => {
     const name = row.stationName || row.stationCode || `站點 ${index + 1}`;
     lines.push(
       '',
-      `${index + 1}. ${name}`,
+      name,
       `地址：${row.address || '未知'}`,
-      `機台狀態：${formatStatus(row.machineStatus || row.stationStatus)}`,
-      `連線狀態：${formatStatus(row.lastConnectionStatus)}`,
-      `回收槽 1：${formatCapacity(row.bin1Count, row.bin1MaxCapacity, row.bin1RemainCapacity)}`,
-      `回收槽 2：${formatCapacity(row.bin2Count, row.bin2MaxCapacity, row.bin2RemainCapacity)}`,
+      '',
+      '目前狀態',
+      `機台：${formatStatus(row.machineStatus || row.stationStatus)}`,
+      `連線：${formatStatus(row.lastConnectionStatus)}`,
+      '',
+      '回收槽容量',
+      formatCapacity('第 1 槽', row.bin1Count, row.bin1MaxCapacity, row.bin1RemainCapacity),
+      formatCapacity('第 2 槽', row.bin2Count, row.bin2MaxCapacity, row.bin2RemainCapacity),
     );
   });
 
-  lines.push('', '若現場狀態和資料不同，可以再透過 App 或客服表單回報，我們會協助確認。');
+  lines.push('', '如果你到現場看到的狀態和這裡不一樣，可以直接透過 App 或客服表單回報，我們會協助確認。');
   return lines.join('\n');
 }
 
