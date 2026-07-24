@@ -7,8 +7,8 @@ const { Pool } = require('pg');
 const { SCHEMA } = require('../db/schema');
 
 const TABLE_NAME = 'iot_station_statuses';
-const BATCH_SIZE = 200;
-const UPLOAD_BATCH_SIZE = 100;
+const BATCH_SIZE = 20;
+const UPLOAD_BATCH_SIZE = 20;
 
 function readMcpMysqlEnv(filePath) {
   if (!filePath) return {};
@@ -208,6 +208,8 @@ async function upsertStationRows(pool, rows) {
   const db = await pool.connect();
   try {
     await db.query('BEGIN');
+    await db.query("SET LOCAL statement_timeout = '30s'");
+    await db.query("SET LOCAL lock_timeout = '10s'");
     for (let offset = 0; offset < rows.length; offset += BATCH_SIZE) {
       const batch = rows.slice(offset, offset + BATCH_SIZE);
       const values = [];
