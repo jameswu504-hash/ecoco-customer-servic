@@ -411,6 +411,48 @@ app.post('/api/iot/station-statuses/sync', requireAdminKey, async (req, res) => 
   });
 });
 
+app.get('/api/iot/station-statuses/search', requireAdminKey, async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) {
+    res.status(400).json({ error: 'q must be at least 2 characters' });
+    return;
+  }
+
+  const limit = Math.min(Math.max(Number(req.query.limit || 10), 1), 50);
+  const pattern = `%${q.replace(/[\\%_]/g, '\\$&')}%`;
+  const { rows } = await pool.query(
+    `SELECT
+       station_code,
+       station_name,
+       address,
+       area_name,
+       district_name,
+       place_name,
+       longitude,
+       latitude,
+       asset_id,
+       machine_status,
+       last_conn_status,
+       last_heartbeat_at,
+       bin1_count,
+       bin1_max_capacity,
+       bin1_remain_capacity,
+       bin2_count,
+       bin2_max_capacity,
+       bin2_remain_capacity,
+       source_synced_at
+     FROM iot_station_statuses
+     WHERE station_code ILIKE $1 ESCAPE '\\'
+        OR station_name ILIKE $1 ESCAPE '\\'
+        OR address ILIKE $1 ESCAPE '\\'
+     ORDER BY station_code ASC, asset_id ASC
+     LIMIT $2`,
+    [pattern, limit]
+  );
+
+  res.json({ q, count: rows.length, rows });
+});
+
 app.use('/api', createChatRouter({
   pool,
   client,
