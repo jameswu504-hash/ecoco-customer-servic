@@ -117,7 +117,7 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_internal_wiki_archived ON internal_wiki_entries(archived_at)`,
   `CREATE INDEX IF NOT EXISTS idx_internal_wiki_sort ON internal_wiki_entries(sort_order, id)`,
   `CREATE TABLE IF NOT EXISTS iot_station_statuses (
-      station_code              TEXT PRIMARY KEY,
+      station_code              TEXT NOT NULL,
       station_name              TEXT NOT NULL DEFAULT '',
       address                   TEXT NOT NULL DEFAULT '',
       area_name                 TEXT NOT NULL DEFAULT '',
@@ -147,8 +147,11 @@ const SCHEMA = [
       bin2_remain_capacity      INTEGER,
       bin2_full_at              TIMESTAMPTZ,
       source_synced_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at                TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      updated_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (station_code, asset_id)
     )`,
+  `ALTER TABLE iot_station_statuses DROP CONSTRAINT IF EXISTS iot_station_statuses_pkey`,
+  `ALTER TABLE iot_station_statuses ADD PRIMARY KEY (station_code, asset_id)`,
   `ALTER TABLE iot_station_statuses ADD COLUMN IF NOT EXISTS longitude TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE iot_station_statuses ADD COLUMN IF NOT EXISTS latitude TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE iot_station_statuses ADD COLUMN IF NOT EXISTS source_synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`,

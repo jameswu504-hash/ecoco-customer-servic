@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { attachLiveStationContext } = require('../routes/chat.routes');
-const { toPostgresRow, uploadStationRows } = require('../scripts/sync-iot-stations-to-postgres');
+const { dedupeStationRows, toPostgresRow, uploadStationRows } = require('../scripts/sync-iot-stations-to-postgres');
 const {
   buildStationSearchTerms,
   createIotStatusService,
@@ -190,6 +190,33 @@ test('IoT sync script normalizes MySQL station rows for PostgreSQL upsert', () =
   assert.equal(row.bin2_count, null);
   assert.equal(row.station_status_updated_at.toISOString(), '2026-07-24T01:00:00.000Z');
   assert.equal(row.source_synced_at, syncedAt);
+});
+
+test('IoT sync script dedupes station rows by station code and asset id', () => {
+  const rows = dedupeStationRows([
+    {
+      station_code: 'es0002',
+      asset_id: 'asset-a',
+      machine_status: 'down',
+      last_heartbeat_at: new Date('2026-07-24T01:00:00Z'),
+    },
+    {
+      station_code: 'es0002',
+      asset_id: 'asset-a',
+      machine_status: 'up',
+      last_heartbeat_at: new Date('2026-07-24T02:00:00Z'),
+    },
+    {
+      station_code: 'es0002',
+      asset_id: 'asset-b',
+      machine_status: 'up',
+      last_heartbeat_at: new Date('2026-07-24T01:30:00Z'),
+    },
+  ]);
+
+  assert.equal(rows.length, 2);
+  assert.equal(rows.find(row => row.asset_id === 'asset-a').machine_status, 'up');
+  assert.equal(rows.find(row => row.asset_id === 'asset-b').machine_status, 'up');
 });
 
 test('IoT sync script uploads station rows in admin-protected batches', async () => {

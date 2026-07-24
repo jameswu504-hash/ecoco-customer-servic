@@ -376,7 +376,7 @@ app.get('/api/system/status', requireAdminKey, async (req, res) => {
 });
 
 app.post('/api/iot/station-statuses/sync', requireAdminKey, async (req, res) => {
-  const { toPostgresRow, upsertStationRows } = require('./scripts/sync-iot-stations-to-postgres');
+  const { dedupeStationRows, toPostgresRow, upsertStationRows } = require('./scripts/sync-iot-stations-to-postgres');
   const stations = Array.isArray(req.body?.stations) ? req.body.stations : [];
   if (stations.length === 0) {
     res.status(400).json({ error: 'stations must be a non-empty array' });
@@ -392,7 +392,7 @@ app.post('/api/iot/station-statuses/sync', requireAdminKey, async (req, res) => 
   const rows = stations
     .map(row => toPostgresRow(row, syncedAt))
     .filter(row => row.station_code);
-  const written = await upsertStationRows(pool, rows);
+  const written = await upsertStationRows(pool, dedupeStationRows(rows));
   let pruned = 0;
   if (req.body?.pruneOlderThanSyncedAt === true) {
     const pruneResult = await pool.query(

@@ -161,6 +161,30 @@ function toPostgresRow(row, syncedAt) {
   };
 }
 
+function rowFreshnessTime(row) {
+  const dates = [
+    row.last_heartbeat_at,
+    row.machine_status_at,
+    row.last_conn_status_at,
+    row.station_status_updated_at,
+  ]
+    .map(value => (value ? new Date(value).getTime() : 0))
+    .filter(value => Number.isFinite(value));
+  return dates.length > 0 ? Math.max(...dates) : 0;
+}
+
+function dedupeStationRows(rows) {
+  const byStationAsset = new Map();
+  for (const row of rows) {
+    const key = `${row.station_code}|${row.asset_id || ''}`;
+    const existing = byStationAsset.get(key);
+    if (!existing || rowFreshnessTime(row) >= rowFreshnessTime(existing)) {
+      byStationAsset.set(key, row);
+    }
+  }
+  return [...byStationAsset.values()];
+}
+
 async function ensureIotStationTable(pool) {
   for (const stmt of SCHEMA.filter(sql => sql.includes(TABLE_NAME))) {
     await pool.query(stmt);
@@ -222,7 +246,7 @@ async function upsertStationRows(pool, rows) {
       await db.query(
         `INSERT INTO ${TABLE_NAME} (${columns.join(', ')})
          VALUES ${placeholders.join(', ')}
-         ON CONFLICT (station_code) DO UPDATE SET
+         ON CONFLICT (station_code, asset_id) DO UPDATE SET
            ${updateColumns.map(column => `${column} = EXCLUDED.${column}`).join(', ')},
            updated_at = NOW()`,
         values
@@ -297,11 +321,12 @@ async function syncIotStations() {
   const stationRows = mysqlRows
     .map(row => toPostgresRow(row, syncedAt))
     .filter(row => row.station_code);
+  const uniqueStationRows = dedupeStationRows(stationRows);
 
   if (uploadConfig) {
     const uploadResult = await uploadStationRows({
       ...uploadConfig,
-      stationRows,
+      stationRows: uniqueStationRows,
       syncedAt,
     });
     return {
@@ -315,7 +340,7 @@ async function syncIotStations() {
   const pgPool = new Pool(getPostgresConfig());
   try {
     await ensureIotStationTable(pgPool);
-    const written = await upsertStationRows(pgPool, stationRows);
+    const written = await upsertStationRows(pgPool, uniqueStationRows);
 
     return {
       fetched: mysqlRows.length,
@@ -345,6 +370,7 @@ module.exports = {
   getMysqlConfig,
   getPostgresConfig,
   getUploadConfig,
+  dedupeStationRows,
   syncIotStations,
   toPostgresRow,
   uploadStationRows,
