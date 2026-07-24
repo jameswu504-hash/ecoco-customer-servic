@@ -5,6 +5,7 @@ const path = require('node:path');
 
 const { attachLiveStationContext, buildLiveStationStatusReply } = require('../routes/chat.routes');
 const { dedupeStationRows, toPostgresRow, uploadStationRows } = require('../scripts/sync-iot-stations-to-postgres');
+const { classifyQuestion } = require('../services/question-classifier.service');
 const {
   buildStationSearchTerms,
   createIotStatusService,
@@ -53,6 +54,18 @@ test('nearby landmark questions extract searchable location aliases', () => {
   assert.ok(terms.includes('大學路'));
   assert.ok(terms.includes('東區'));
   assert.equal(terms.includes('成大附近有'), false);
+});
+
+test('nearby recycling questions are routed to live station lookup', () => {
+  for (const question of ['成大附近哪裡可以回收', '成功大學附近有 ECOCO 嗎']) {
+    const classification = classifyQuestion(question);
+    const terms = buildStationSearchTerms(question);
+
+    assert.equal(classification.category, 'station_machine');
+    assert.equal(shouldUseLiveStationContext(question, classification), true);
+    assert.ok(terms.includes('成大'));
+    assert.ok(terms.includes('成功大學'));
+  }
 });
 
 test('live station lookup formats readonly MySQL context', async () => {

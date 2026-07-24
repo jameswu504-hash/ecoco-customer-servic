@@ -61,13 +61,17 @@ function escapePostgresLike(value) {
 function shouldUseLiveStationContext(question, classification = null) {
   if (classification?.category === 'station_machine') return true;
   const text = normalizeText(question).toLowerCase();
+  const hasNearbyWord = /(附近|周邊|周遭|鄰近|最近|哪裡|哪裏|哪邊)/.test(text);
+  const hasKnownLocation = /(成大|成功大學|國立成功大學|臺南東區|台南東區|東區)/.test(text);
+  const hasRecyclePlaceIntent = /(ecoco|回收|投瓶|投遞|站點|機台|機器)/i.test(text);
+  if (hasNearbyWord && hasKnownLocation && hasRecyclePlaceIntent) return true;
   if (/(站點|站点|站名|機台|机台|容量|滿袋|满袋|狀態|状态|小北百貨|小北百货|es\d+)/i.test(text)) return true;
   return /(站點|站|機台|機器|滿倉|故障|維修|地址|營業時間|能不能投|可以投|回收機|offline|online|asset|es\d+)/i.test(text);
 }
 
 function stripCommonStationWords(value) {
   return String(value || '')
-    .replace(/請問|想問|查詢|現在|目前|可以|可不可以|能不能|是否|怎麼|如何|哪裡|在哪|地址|位置|營業時間|狀態|機台|機器|回收機|回收|投遞|投瓶|滿倉|故障|維修|正常|使用|附近|周邊|周遭|鄰近|最近|推薦|路線|地圖|嗎|呢|的|有沒有|有嗎|有/g, '')
+    .replace(/請問|想問|查詢|現在|目前|可以|可不可以|能不能|是否|怎麼|如何|哪裡|在哪|地址|位置|營業時間|狀態|機台|機器|回收機|回收|投遞|投瓶|滿倉|故障|維修|正常|使用|附近|周邊|周遭|鄰近|最近|推薦|路線|地圖|ECOCO|ecoco|嗎|呢|的|有沒有|有嗎|有/g, '')
     .trim();
 }
 
