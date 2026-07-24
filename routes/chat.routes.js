@@ -284,7 +284,7 @@ function formatCapacity(slotName, count, max, remain) {
 
   const remainText = hasNumber(remain) ? `剩餘 ${remain}` : '剩餘量未知';
   const usageText = hasNumber(count) && hasNumber(max) ? `目前 ${count}/${max}` : '';
-  const fullHint = Number(remain) === 0 ? '（目前看起來已滿）' : '';
+  const fullHint = hasNumber(remain) && Number(remain) === 0 ? '（目前看起來已滿）' : '';
   return `${slotName}：${[remainText, usageText].filter(Boolean).join('，')}${fullHint}`;
 }
 

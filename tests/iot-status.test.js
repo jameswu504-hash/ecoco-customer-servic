@@ -499,3 +499,21 @@ test('station status reply uses nearby wording when multiple stations are found'
   assert.doesNotMatch(reply, /3\. 成大附近站點 B/);
   assert.doesNotMatch(reply, /資料同步時間/);
 });
+
+test('station status reply does not mark unknown capacity as full', () => {
+  const reply = buildLiveStationStatusReply({
+    rows: [{
+      stationCode: 'es0300',
+      stationName: '容量未知站',
+      address: '台南市東區',
+      machineStatus: 'up',
+      lastConnectionStatus: 'online',
+      bin1Count: '',
+      bin1MaxCapacity: '',
+      bin1RemainCapacity: '',
+    }],
+  });
+
+  assert.match(reply, /第 1 槽：目前還沒有容量數字/);
+  assert.doesNotMatch(reply, /第 1 槽：.*已滿/);
+});
