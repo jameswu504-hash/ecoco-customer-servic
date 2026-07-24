@@ -265,6 +265,52 @@ async function attachLiveStationContext({
   }
 }
 
+function formatStatus(value) {
+  const status = String(value || '').trim().toLowerCase();
+  if (!status) return '未知';
+  if (['up', 'online', 'normal', 'ok'].includes(status)) return '正常';
+  if (['down', 'offline'].includes(status)) return '離線';
+  return String(value);
+}
+
+function formatCapacity(count, max, remain) {
+  const parts = [];
+  if (remain !== null && remain !== undefined) parts.push(`剩餘 ${remain}`);
+  if (count !== null && count !== undefined) parts.push(`目前 ${count}`);
+  if (max !== null && max !== undefined) parts.push(`上限 ${max}`);
+  return parts.length > 0 ? parts.join(' / ') : '目前沒有容量數字';
+}
+
+function formatSyncedAt(value) {
+  if (!value) return '未知';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toISOString();
+}
+
+function buildLiveStationStatusReply(liveStationContext = null) {
+  const rows = Array.isArray(liveStationContext?.rows) ? liveStationContext.rows : [];
+  if (rows.length === 0) return '';
+
+  const lines = ['可可粉，查到目前站點資料如下：'];
+  rows.slice(0, 3).forEach((row, index) => {
+    const name = row.stationName || row.stationCode || `站點 ${index + 1}`;
+    lines.push(
+      '',
+      `${index + 1}. ${name}`,
+      `地址：${row.address || '未知'}`,
+      `機台狀態：${formatStatus(row.machineStatus || row.stationStatus)}`,
+      `連線狀態：${formatStatus(row.lastConnectionStatus)}`,
+      `回收槽 1：${formatCapacity(row.bin1Count, row.bin1MaxCapacity, row.bin1RemainCapacity)}`,
+      `回收槽 2：${formatCapacity(row.bin2Count, row.bin2MaxCapacity, row.bin2RemainCapacity)}`,
+      `資料同步時間：${formatSyncedAt(row.sourceSyncedAt)}`,
+    );
+  });
+
+  lines.push('', '若現場狀態和資料不同，可以再透過 App 或客服表單回報，我們會協助確認。');
+  return lines.join('\n');
+}
+
 function createChatRouter({
   pool,
   client,
@@ -336,6 +382,31 @@ function createChatRouter({
         classification,
         retrieveLiveStationContext,
       });
+      const stationStatusReply = buildLiveStationStatusReply(rag.liveStationContext);
+      if (stationStatusReply) {
+        await saveChatTrace(pool, {
+          sessionId,
+          channel: 'web',
+          question: userMsg.content,
+          rag,
+          latencyMs: Date.now() - traceStart,
+          questionClassification: classification,
+        });
+
+        try {
+          await storeChatExchange({
+            pool,
+            sessionId,
+            question: userMsg.content,
+            reply: stationStatusReply,
+            classification,
+          });
+        } catch (dbErr) {
+          console.error('DB conversation write error:', dbErr.message);
+        }
+
+        return res.json({ reply: stationStatusReply });
+      }
       const runtimeGuardrails = buildRuntimeGuardrails(userMsg.content, rag);
       const response = await client.messages.create({
         model: process.env.ANTHROPIC_MODEL || defaultAnthropicModel,
@@ -475,6 +546,7 @@ module.exports = {
   KNOWLEDGE_GAP_MACHINE_MARKER,
   KNOWLEDGE_GAP_MARKERS,
   attachLiveStationContext,
+  buildLiveStationStatusReply,
   createChatRouter,
   detectKnowledgeGap,
   FRIENDLY_AI_ERROR_REPLY,

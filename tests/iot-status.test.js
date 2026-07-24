@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { attachLiveStationContext } = require('../routes/chat.routes');
+const { attachLiveStationContext, buildLiveStationStatusReply } = require('../routes/chat.routes');
 const { dedupeStationRows, toPostgresRow, uploadStationRows } = require('../scripts/sync-iot-stations-to-postgres');
 const {
   buildStationSearchTerms,
@@ -379,4 +379,29 @@ test('live station context is attached to the RAG prompt only for station questi
   assert.equal(merged.retrievalMode, 'keyword+mysql_iot');
   assert.match(merged.context, /RAG FAQ context/);
   assert.match(merged.context, /Live station context/);
+});
+
+test('station status reply is deterministic when live station rows are found', () => {
+  const reply = buildLiveStationStatusReply({
+    rows: [{
+      stationCode: 'es0140',
+      stationName: '小北百貨台南西門店站',
+      address: '臺南市北區西門路四段5號',
+      machineStatus: 'up',
+      lastConnectionStatus: 'online',
+      bin1Count: 199,
+      bin1MaxCapacity: 450,
+      bin1RemainCapacity: 56,
+      bin2Count: 1500,
+      bin2MaxCapacity: 1500,
+      bin2RemainCapacity: 0,
+      sourceSyncedAt: '2026-07-24T08:30:17.872Z',
+    }],
+  });
+
+  assert.match(reply, /小北百貨台南西門店站/);
+  assert.match(reply, /機台狀態：正常/);
+  assert.match(reply, /回收槽 1：剩餘 56 \/ 目前 199 \/ 上限 450/);
+  assert.match(reply, /回收槽 2：剩餘 0 \/ 目前 1500 \/ 上限 1500/);
+  assert.match(reply, /2026-07-24T08:30:17.872Z/);
 });

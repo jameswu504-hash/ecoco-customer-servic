@@ -3,6 +3,7 @@ const express = require('express');
 const {
   KNOWLEDGE_GAP_MACHINE_MARKER,
   attachLiveStationContext,
+  buildLiveStationStatusReply,
   detectKnowledgeGap,
   loadServerConversationHistory,
   normalizeModelMessages,
@@ -206,6 +207,18 @@ async function buildAiReply({
     classification,
     retrieveLiveStationContext,
   });
+  const stationStatusReply = buildLiveStationStatusReply(rag.liveStationContext);
+  if (stationStatusReply) {
+    await saveChatTrace(pool, {
+      sessionId,
+      channel: 'line',
+      question,
+      rag,
+      latencyMs: Date.now() - traceStart,
+      questionClassification: classification,
+    });
+    return stationStatusReply;
+  }
   const runtimeGuardrails = buildRuntimeGuardrails(question, rag);
   const modelMessages = await buildLineModelMessages({ pool, sessionId, text: question });
   const response = await client.messages.create({
