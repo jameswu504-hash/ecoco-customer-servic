@@ -292,12 +292,15 @@ function buildLiveStationStatusReply(liveStationContext = null) {
   const rows = Array.isArray(liveStationContext?.rows) ? liveStationContext.rows : [];
   if (rows.length === 0) return '';
 
-  const lines = ['可可粉，幫你查到這個站點目前的狀況囉：'];
-  rows.slice(0, 3).forEach((row, index) => {
+  const displayedRows = rows.slice(0, 3);
+  const lines = displayedRows.length > 1
+    ? ['可可粉，幫你找到幾個可能適合的 ECOCO 站點囉：']
+    : ['可可粉，幫你查到這個站點目前的狀況囉：'];
+  displayedRows.forEach((row, index) => {
     const name = row.stationName || row.stationCode || `站點 ${index + 1}`;
     lines.push(
       '',
-      name,
+      displayedRows.length > 1 ? `${index + 1}. ${name}` : name,
       `地址：${row.address || '未知'}`,
       '',
       '目前狀態',

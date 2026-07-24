@@ -45,6 +45,16 @@ test('station code questions extract useful terms before English words', () => {
   assert.equal(shouldUseLiveStationContext(question), true);
 });
 
+test('nearby landmark questions extract searchable location aliases', () => {
+  const terms = buildStationSearchTerms('成大附近有機台嗎');
+
+  assert.ok(terms.includes('成大'));
+  assert.ok(terms.includes('成功大學'));
+  assert.ok(terms.includes('大學路'));
+  assert.ok(terms.includes('東區'));
+  assert.equal(terms.includes('成大附近有'), false);
+});
+
 test('live station lookup formats readonly MySQL context', async () => {
   const queries = [];
   const fakePool = {
@@ -171,6 +181,45 @@ test('station lookup prefers PostgreSQL sync rows before MySQL fallback', async 
   assert.match(result.context, /source_synced_at/);
   assert.equal(pgQueries.length, 1);
   assert.match(pgQueries[0].sql, /FROM iot_station_statuses/);
+});
+
+test('nearby landmark lookup can match PostgreSQL address and district fields', async () => {
+  const pgQueries = [];
+  const pgPool = {
+    async query(sql, params = []) {
+      pgQueries.push({ sql, params });
+      return {
+        rows: [{
+          station_code: 'es0200',
+          station_name: 'Nearby Station',
+          address: '台南市東區大學路1號',
+          area_name: '台南',
+          district_name: '東區',
+          place_name: '成功大學',
+          station_status: 'up',
+          machine_status: 'up',
+          last_conn_status: 'online',
+          bin1_count: 20,
+          bin1_max_capacity: 450,
+          bin1_remain_capacity: 430,
+          source_synced_at: new Date('2026-07-24T03:10:00Z'),
+        }],
+      };
+    },
+  };
+  const service = createIotStatusService({
+    env: {},
+    pgPool,
+  });
+
+  const result = await service.retrieveLiveStationContext('成大附近有機台嗎', {
+    classification: { category: 'station_machine' },
+  });
+
+  assert.equal(result.retrievalMode, 'postgres_iot');
+  assert.equal(result.rows[0].stationCode, 'es0200');
+  assert.ok(pgQueries[0].params.some(param => String(param).includes('成功大學')));
+  assert.ok(pgQueries[0].params.some(param => String(param).includes('大學路')));
 });
 
 test('IoT sync script normalizes MySQL station rows for PostgreSQL upsert', () => {
@@ -414,4 +463,30 @@ test('station status reply is deterministic when live station rows are found', (
   assert.match(reply, /第 2 槽：剩餘 0，目前 1500\/1500（目前看起來已滿）/);
   assert.doesNotMatch(reply, /資料同步時間/);
   assert.doesNotMatch(reply, /2026-07-24T08:30:17.872Z/);
+});
+
+test('station status reply uses nearby wording when multiple stations are found', () => {
+  const reply = buildLiveStationStatusReply({
+    rows: [
+      {
+        stationCode: 'es0200',
+        stationName: '成大附近站點 A',
+        address: '台南市東區大學路1號',
+        machineStatus: 'up',
+        lastConnectionStatus: 'online',
+      },
+      {
+        stationCode: 'es0201',
+        stationName: '成大附近站點 B',
+        address: '台南市東區勝利路1號',
+        machineStatus: 'up',
+        lastConnectionStatus: 'online',
+      },
+    ],
+  });
+
+  assert.match(reply, /幾個可能適合/);
+  assert.match(reply, /1\. 成大附近站點 A/);
+  assert.match(reply, /2\. 成大附近站點 B/);
+  assert.doesNotMatch(reply, /資料同步時間/);
 });

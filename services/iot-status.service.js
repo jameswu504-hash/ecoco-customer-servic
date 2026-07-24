@@ -67,13 +67,23 @@ function shouldUseLiveStationContext(question, classification = null) {
 
 function stripCommonStationWords(value) {
   return String(value || '')
-    .replace(/請問|想問|查詢|現在|目前|可以|可不可以|能不能|是否|怎麼|如何|哪裡|在哪|地址|位置|營業時間|狀態|機台|機器|回收機|回收|投遞|投瓶|滿倉|故障|維修|正常|使用|嗎|呢|的|有沒有/g, '')
+    .replace(/請問|想問|查詢|現在|目前|可以|可不可以|能不能|是否|怎麼|如何|哪裡|在哪|地址|位置|營業時間|狀態|機台|機器|回收機|回收|投遞|投瓶|滿倉|故障|維修|正常|使用|附近|周邊|周遭|鄰近|最近|推薦|路線|地圖|嗎|呢|的|有沒有|有嗎|有/g, '')
     .trim();
 }
 
 function addTerm(terms, value) {
   const term = stripCommonStationWords(normalizeText(value));
   if (term.length >= 2 && term.length <= 40) terms.add(term);
+}
+
+function addLocationAliasTerms(terms, text) {
+  if (/成大|成功大學|國立成功大學/.test(text)) {
+    ['成大', '成功大學', '國立成功大學', '大學路', '勝利路', '東區'].forEach(term => addTerm(terms, term));
+  }
+
+  if (/臺南東區|台南東區|東區/.test(text)) {
+    ['臺南東區', '台南東區', '東區'].forEach(term => addTerm(terms, term));
+  }
 }
 
 function buildStationSearchTerms(question) {
@@ -87,6 +97,7 @@ function buildStationSearchTerms(question) {
 
   for (const match of text.matchAll(/es\d{3,6}(?:_[a-z0-9]+)?/gi)) addTerm(terms, match[0]);
   for (const match of text.matchAll(/\b\d{8,22}\b/g)) addTerm(terms, match[0]);
+  addLocationAliasTerms(terms, text);
   for (const match of text.matchAll(/[\u4e00-\u9fffA-Za-z0-9]{2,40}站/g)) {
     const stationName = match[0];
     addTerm(terms, stationName);
