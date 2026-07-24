@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const { attachLiveStationContext } = require('../routes/chat.routes');
 const {
@@ -11,14 +13,18 @@ const {
 } = require('../services/iot-status.service');
 
 test('IoT MySQL config is optional', async () => {
-  const service = createIotStatusService({ env: {} });
+  const service = createIotStatusService({
+    env: {
+      ECOCO_IOT_STATION_SNAPSHOT_PATH: path.join(__dirname, '.missing-iot-snapshot.json'),
+    },
+  });
   const result = await service.retrieveLiveStationContext('台南崇學站現在能不能投', {
     classification: { category: 'station_machine' },
   });
 
   assert.equal(isIotMysqlConfigured({}), false);
   assert.equal(service.isConfigured(), false);
-  assert.equal(result.retrievalMode, 'mysql_iot_disabled');
+  assert.equal(result.retrievalMode, 'iot_snapshot_miss');
   assert.equal(result.context, '');
 });
 
@@ -129,6 +135,60 @@ test('IoT MySQL connection diagnostics return sanitized errors', async () => {
     errorCode: 'Error',
     message: 'bad',
   });
+});
+
+test('IoT snapshot is used when live MySQL is unreachable', async () => {
+  const tempPath = path.join(__dirname, `.tmp-iot-snapshot-${Date.now()}.json`);
+  fs.writeFileSync(tempPath, JSON.stringify({
+    generatedAt: '2026-07-24T00:00:00.000Z',
+    stations: [{
+      stationCode: 'es0140',
+      stationName: '小北百貨台南西門店站',
+      address: '臺南市北區西門路四段5號',
+      areaName: '臺南',
+      districtName: '北區',
+      placeName: '小北百貨',
+      serviceHours: '24H',
+      stationStatus: 'up',
+      machineStatus: 'up',
+      lastConnectionStatus: 'online',
+      bin1RemainCapacity: 56,
+      bin2RemainCapacity: 0,
+    }],
+  }), 'utf8');
+
+  const fakePool = {
+    async query() {
+      const err = new Error('connect ETIMEDOUT');
+      err.code = 'ETIMEDOUT';
+      throw err;
+    },
+    async end() {},
+  };
+  const service = createIotStatusService({
+    env: {
+      ECOCO_IOT_MYSQL_HOST: 'example.invalid',
+      ECOCO_IOT_MYSQL_USER: 'readonly',
+      ECOCO_IOT_MYSQL_PASSWORD: 'secret',
+      ECOCO_IOT_MYSQL_DATABASE: 'ecoco',
+      ECOCO_IOT_STATION_SNAPSHOT_PATH: tempPath,
+    },
+    mysqlFactory: { createPool: () => fakePool },
+  });
+
+  try {
+    const result = await service.retrieveLiveStationContext('小北百貨台南西門店站現在正常嗎', {
+      classification: { category: 'station_machine' },
+    });
+
+    assert.equal(result.retrievalMode, 'iot_snapshot');
+    assert.equal(result.fallbackReason, 'ETIMEDOUT');
+    assert.equal(result.rows[0].stationCode, 'es0140');
+    assert.match(result.context, /Source: snapshot/);
+    assert.match(result.context, /小北百貨台南西門店站/);
+  } finally {
+    fs.unlinkSync(tempPath);
+  }
 });
 
 test('live station context is attached to the RAG prompt only for station questions', async () => {

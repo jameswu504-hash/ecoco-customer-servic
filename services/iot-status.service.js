@@ -1,8 +1,11 @@
+const fs = require('fs');
+const path = require('path');
 const mysql = require('mysql2/promise');
 
 const DEFAULT_LIMIT = 5;
 const MAX_LIMIT = 8;
 const DEFAULT_CONNECT_TIMEOUT_MS = 10000;
+const DEFAULT_SNAPSHOT_PATH = path.join(__dirname, '..', 'data', 'iot-station-snapshot.json');
 
 function normalizeText(value) {
   return String(value || '')
@@ -28,6 +31,7 @@ function getIotMysqlConfig(env = process.env) {
     rejectUnauthorized: getBooleanEnv(env.ECOCO_IOT_MYSQL_SSL_REJECT_UNAUTHORIZED, true),
     connectionLimit: Number(env.ECOCO_IOT_MYSQL_CONNECTION_LIMIT || 4),
     connectTimeoutMs: Number(env.ECOCO_IOT_MYSQL_CONNECT_TIMEOUT_MS || DEFAULT_CONNECT_TIMEOUT_MS),
+    snapshotPath: env.ECOCO_IOT_STATION_SNAPSHOT_PATH || DEFAULT_SNAPSHOT_PATH,
   };
 }
 
@@ -133,6 +137,39 @@ function sanitizeRow(row = {}) {
   };
 }
 
+function normalizeSnapshotRow(row = {}) {
+  return sanitizeRow({
+    station_id: row.stationId,
+    station_code: row.stationCode,
+    station_name: row.stationName,
+    address: row.address,
+    area_name: row.areaName,
+    district_name: row.districtName,
+    place_name: row.placeName,
+    service_hours: row.serviceHours,
+    station_status: row.stationStatus,
+    station_status_updated_at: row.stationStatusUpdatedAt,
+    asset_id: row.assetId,
+    machine_type: row.machineType,
+    machine_kind: row.machineKind,
+    machine_status: row.machineStatus,
+    machine_status_at: row.machineStatusAt,
+    last_conn_status: row.lastConnectionStatus,
+    last_conn_status_at: row.lastConnectionStatusAt,
+    last_heartbeat_at: row.lastHeartbeatAt,
+    alarm_code: row.alarmCode,
+    alarm_description: row.alarmDescription,
+    bin1_count: row.bin1Count,
+    bin1_max_capacity: row.bin1MaxCapacity,
+    bin1_remain_capacity: row.bin1RemainCapacity,
+    bin1_full_at: row.bin1FullAt,
+    bin2_count: row.bin2Count,
+    bin2_max_capacity: row.bin2MaxCapacity,
+    bin2_remain_capacity: row.bin2RemainCapacity,
+    bin2_full_at: row.bin2FullAt,
+  });
+}
+
 function formatDate(value) {
   if (!value) return '';
   const date = new Date(value);
@@ -149,12 +186,15 @@ function formatCapacity(count, max, remain, fullAt) {
   return parts.length ? parts.join(', ') : 'no capacity data';
 }
 
-function formatLiveStationContext(rows, checkedAt = new Date()) {
+function formatLiveStationContext(rows, checkedAt = new Date(), source = 'live MySQL') {
   if (!Array.isArray(rows) || rows.length === 0) return '';
   const lines = [
     '## Live MySQL station / machine status',
     `Checked at: ${checkedAt.toISOString()}`,
-    'Use this live read-only MySQL context for station location, opening hours, machine status, bin capacity, alarms, and heartbeat. Prefer it over older RAG content when there is a conflict.',
+    `Source: ${source}`,
+    source === 'snapshot'
+      ? 'This is a committed station snapshot. Use it when live MySQL is unreachable, and avoid saying it is real-time.'
+      : 'Use this live read-only MySQL context for station location, opening hours, machine status, bin capacity, alarms, and heartbeat. Prefer it over older RAG content when there is a conflict.',
   ];
 
   rows.forEach((row, index) => {
@@ -178,9 +218,70 @@ function formatLiveStationContext(rows, checkedAt = new Date()) {
   return lines.join('\n');
 }
 
+function loadStationSnapshot(snapshotPath = DEFAULT_SNAPSHOT_PATH) {
+  if (!fs.existsSync(snapshotPath)) {
+    return { generatedAt: '', rows: [] };
+  }
+
+  try {
+    const payload = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
+    const rows = Array.isArray(payload.stations)
+      ? payload.stations.map(normalizeSnapshotRow)
+      : [];
+    return {
+      generatedAt: payload.generatedAt || payload.generated_at || '',
+      rows,
+    };
+  } catch (err) {
+    console.warn(`IoT station snapshot read failed: ${err.message}`);
+    return { generatedAt: '', rows: [] };
+  }
+}
+
+function scoreSnapshotRow(row, terms) {
+  const code = normalizeText(row.stationCode).toLowerCase();
+  const name = normalizeText(row.stationName).toLowerCase();
+  const haystack = normalizeText([
+    row.stationCode,
+    row.stationName,
+    row.address,
+    row.areaName,
+    row.districtName,
+    row.placeName,
+  ].filter(Boolean).join(' ')).toLowerCase();
+  let score = 0;
+
+  for (const rawTerm of terms) {
+    const term = normalizeText(rawTerm).toLowerCase();
+    if (!term) continue;
+    if (code === term) score += 100;
+    if (name === term) score += 90;
+    if (name.includes(term)) score += 40;
+    if (code.includes(term)) score += 30;
+    if (haystack.includes(term)) score += 10;
+  }
+
+  return score;
+}
+
+function searchStationSnapshot(snapshot, terms, limit = DEFAULT_LIMIT) {
+  if (!Array.isArray(snapshot?.rows) || snapshot.rows.length === 0 || terms.length === 0) {
+    return [];
+  }
+
+  const cappedLimit = Math.min(Math.max(Number(limit) || DEFAULT_LIMIT, 1), MAX_LIMIT);
+  return snapshot.rows
+    .map(row => ({ row, score: scoreSnapshotRow(row, terms) }))
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score || String(a.row.stationCode).localeCompare(String(b.row.stationCode)))
+    .slice(0, cappedLimit)
+    .map(item => item.row);
+}
+
 function createIotStatusService({ env = process.env, mysqlFactory = mysql } = {}) {
   const config = getIotMysqlConfig(env);
   let pool = null;
+  let snapshot = null;
 
   function getPool() {
     if (!isIotMysqlConfigured(env)) return null;
@@ -222,19 +323,46 @@ function createIotStatusService({ env = process.env, mysqlFactory = mysql } = {}
     }
   }
 
+  function getSnapshot() {
+    if (!snapshot) snapshot = loadStationSnapshot(config.snapshotPath);
+    return snapshot;
+  }
+
+  function retrieveSnapshotStationContext(terms, { limit = DEFAULT_LIMIT, fallbackReason = '' } = {}) {
+    const currentSnapshot = getSnapshot();
+    const rows = searchStationSnapshot(currentSnapshot, terms, limit);
+    return {
+      retrievalMode: rows.length > 0 ? 'iot_snapshot' : 'iot_snapshot_miss',
+      terms,
+      rows,
+      snapshotGeneratedAt: currentSnapshot.generatedAt || '',
+      fallbackReason,
+      context: rows.length > 0
+        ? formatLiveStationContext(
+          rows,
+          currentSnapshot.generatedAt ? new Date(currentSnapshot.generatedAt) : new Date(),
+          'snapshot'
+        )
+        : '',
+    };
+  }
+
   async function retrieveLiveStationContext(question, { classification = null, limit = DEFAULT_LIMIT } = {}) {
     if (!shouldUseLiveStationContext(question, classification)) {
       return { retrievalMode: 'none', terms: [], rows: [], context: '' };
     }
 
-    const currentPool = getPool();
-    if (!currentPool) {
-      return { retrievalMode: 'mysql_iot_disabled', terms: [], rows: [], context: '' };
-    }
-
     const terms = buildStationSearchTerms(question);
     if (terms.length === 0) {
       return { retrievalMode: 'mysql_iot_no_terms', terms, rows: [], context: '' };
+    }
+
+    const currentPool = getPool();
+    if (!currentPool) {
+      return retrieveSnapshotStationContext(terms, {
+        limit,
+        fallbackReason: 'mysql_iot_disabled',
+      });
     }
 
     const cappedLimit = Math.min(Math.max(Number(limit) || DEFAULT_LIMIT, 1), MAX_LIMIT);
@@ -248,61 +376,71 @@ function createIotStatusService({ env = process.env, mysqlFactory = mysql } = {}
       }
     }
 
-    const [rows] = await currentPool.query(
-      `SELECT
-         s.id AS station_id,
-         s.code AS station_code,
-         s.name AS station_name,
-         s.address,
-         a.name AS area_name,
-         d.name AS district_name,
-         p.name AS place_name,
-         s.service_hours,
-         s.status AS station_status,
-         s.status_updated_at AS station_status_updated_at,
-         s.asset_id,
-         m.type AS machine_type,
-         m.kind AS machine_kind,
-         m.status AS machine_status,
-         m.status_at AS machine_status_at,
-         m.last_conn_status,
-         m.last_conn_status_at,
-         m.last_heartbeat_at,
-         m.alarm_code,
-         m.alarm_description,
-         m.bin1_count,
-         m.bin1_max_capacity,
-         m.bin1_remain_capacity,
-         m.bin1_full_at,
-         m.bin2_count,
-         m.bin2_max_capacity,
-         m.bin2_remain_capacity,
-         m.bin2_full_at
-       FROM stations s
-       LEFT JOIN machines m ON m.asset_id = s.asset_id
-       LEFT JOIN areas a ON a.id = s.area_id
-       LEFT JOIN districts d ON d.id = s.district_id
-       LEFT JOIN places p ON p.id = s.place_id
-       WHERE COALESCE(s.is_delete, 0) = 0
-         AND (${clauses.join(' OR ')})
-       ORDER BY
-         CASE
-           WHEN s.code IN (${terms.map(() => '?').join(',')}) THEN 0
-           WHEN s.name IN (${terms.map(() => '?').join(',')}) THEN 1
-           WHEN s.name LIKE ? THEN 2
-           ELSE 3
-         END,
-         s.status = 'up' DESC,
-         s.id ASC
-       LIMIT ?`,
-      [
-        ...values,
-        ...terms,
-        ...terms,
-        `%${terms[0]}%`,
-        cappedLimit,
-      ]
-    );
+    let rows = [];
+    try {
+      [rows] = await currentPool.query(
+        `SELECT
+           s.id AS station_id,
+           s.code AS station_code,
+           s.name AS station_name,
+           s.address,
+           a.name AS area_name,
+           d.name AS district_name,
+           p.name AS place_name,
+           s.service_hours,
+           s.status AS station_status,
+           s.status_updated_at AS station_status_updated_at,
+           s.asset_id,
+           m.type AS machine_type,
+           m.kind AS machine_kind,
+           m.status AS machine_status,
+           m.status_at AS machine_status_at,
+           m.last_conn_status,
+           m.last_conn_status_at,
+           m.last_heartbeat_at,
+           m.alarm_code,
+           m.alarm_description,
+           m.bin1_count,
+           m.bin1_max_capacity,
+           m.bin1_remain_capacity,
+           m.bin1_full_at,
+           m.bin2_count,
+           m.bin2_max_capacity,
+           m.bin2_remain_capacity,
+           m.bin2_full_at
+         FROM stations s
+         LEFT JOIN machines m ON m.asset_id = s.asset_id
+         LEFT JOIN areas a ON a.id = s.area_id
+         LEFT JOIN districts d ON d.id = s.district_id
+         LEFT JOIN places p ON p.id = s.place_id
+         WHERE COALESCE(s.is_delete, 0) = 0
+           AND (${clauses.join(' OR ')})
+         ORDER BY
+           CASE
+             WHEN s.code IN (${terms.map(() => '?').join(',')}) THEN 0
+             WHEN s.name IN (${terms.map(() => '?').join(',')}) THEN 1
+             WHEN s.name LIKE ? THEN 2
+             ELSE 3
+           END,
+           s.status = 'up' DESC,
+           s.id ASC
+         LIMIT ?`,
+        [
+          ...values,
+          ...terms,
+          ...terms,
+          `%${terms[0]}%`,
+          cappedLimit,
+        ]
+      );
+    } catch (err) {
+      const fallback = retrieveSnapshotStationContext(terms, {
+        limit,
+        fallbackReason: err?.code || err?.message || 'mysql_iot_error',
+      });
+      if (fallback.context) return fallback;
+      throw err;
+    }
 
     const safeRows = rows.map(sanitizeRow);
     return {
@@ -322,6 +460,7 @@ function createIotStatusService({ env = process.env, mysqlFactory = mysql } = {}
     end,
     isConfigured: () => isIotMysqlConfigured(env),
     retrieveLiveStationContext,
+    retrieveSnapshotStationContext,
     testConnection,
   };
 }
@@ -330,9 +469,13 @@ module.exports = {
   buildStationSearchTerms,
   createIotStatusService,
   DEFAULT_CONNECT_TIMEOUT_MS,
+  DEFAULT_SNAPSHOT_PATH,
   formatLiveStationContext,
   getIotMysqlConfig,
   isIotMysqlConfigured,
+  loadStationSnapshot,
   sanitizeConnectionError,
+  scoreSnapshotRow,
+  searchStationSnapshot,
   shouldUseLiveStationContext,
 };

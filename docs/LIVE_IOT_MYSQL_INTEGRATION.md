@@ -7,6 +7,8 @@ This project can keep two data paths separate:
 
 The app does not copy all MySQL rows into PostgreSQL. When a user asks a station or machine question, the chat flow performs a readonly MySQL lookup and appends the result to the Claude context for that one reply.
 
+If live MySQL is unreachable from Render, the app falls back to `data/iot-station-snapshot.json`. This keeps station answers available while Azure firewall access is pending. Snapshot answers are not real-time and should not be described as live status.
+
 ## Render Environment Variables
 
 Set these on the Render Web Service:
@@ -21,6 +23,7 @@ ECOCO_IOT_MYSQL_SSL=true
 ECOCO_IOT_MYSQL_SSL_REJECT_UNAUTHORIZED=true
 ECOCO_IOT_MYSQL_CONNECTION_LIMIT=4
 ECOCO_IOT_MYSQL_CONNECT_TIMEOUT_MS=10000
+ECOCO_IOT_STATION_SNAPSHOT_PATH=
 ```
 
 Keep the MySQL user readonly. Do not commit real passwords to Git.
@@ -36,8 +39,25 @@ Customer asks FAQ/SOP/policy question
 Customer asks station/machine question
   -> PostgreSQL RAG still runs
   -> readonly MySQL stations/machines lookup also runs
+  -> if MySQL is unreachable, data/iot-station-snapshot.json is searched
   -> Claude receives both contexts and should prefer live MySQL for status
 ```
+
+## Refreshing The Snapshot
+
+From a trusted machine that can reach the readonly MySQL server:
+
+```bash
+MCP_CONFIG_PATH="/path/to/mcp.json" npm run iot:snapshot
+```
+
+The script writes:
+
+```text
+data/iot-station-snapshot.json
+```
+
+Commit and deploy that file to refresh fallback station data. The snapshot intentionally excludes member fields, phone, email, password, token, and long machine asset IDs.
 
 ## Tables Used
 

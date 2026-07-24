@@ -20,6 +20,7 @@
     "eval": "node scripts/run-evals.mjs",
     "eval:validate": "node scripts/run-evals.mjs --validate-only",
     "knowledge:drift": "node scripts/check-knowledge-drift.mjs",
+    "iot:snapshot": "node scripts/export-iot-station-snapshot.js",
     "suggest:synonyms": "node scripts/suggest-synonyms.mjs"
   },
   "dependencies": {
