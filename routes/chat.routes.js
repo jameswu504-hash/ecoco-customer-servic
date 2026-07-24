@@ -240,6 +240,31 @@ async function storeChatExchange({
   }
 }
 
+async function attachLiveStationContext({
+  rag,
+  question,
+  classification,
+  retrieveLiveStationContext,
+}) {
+  if (typeof retrieveLiveStationContext !== 'function') return rag;
+
+  try {
+    const live = await retrieveLiveStationContext(question, { classification });
+    if (!live.context) return rag;
+    const retrievalModes = [rag.retrievalMode, live.retrievalMode]
+      .filter(mode => mode && mode !== 'none');
+    return {
+      ...rag,
+      retrievalMode: retrievalModes.length > 0 ? retrievalModes.join('+') : rag.retrievalMode,
+      context: [rag.context, live.context].filter(Boolean).join('\n\n'),
+      liveStationContext: live,
+    };
+  } catch (err) {
+    console.error('Live station context lookup error:', err.message);
+    return rag;
+  }
+}
+
 function createChatRouter({
   pool,
   client,
@@ -252,6 +277,7 @@ function createChatRouter({
   buildSystemPromptBlocks,
   defaultAnthropicModel,
   classifyQuestion,
+  retrieveLiveStationContext = null,
 }) {
   const router = express.Router();
 
@@ -303,6 +329,12 @@ function createChatRouter({
       rag = await retrieveKnowledgeForQuestion(userMsg.content, {
         classification,
         ragScope: classification?.ragScope || [],
+      });
+      rag = await attachLiveStationContext({
+        rag,
+        question: userMsg.content,
+        classification,
+        retrieveLiveStationContext,
       });
       const runtimeGuardrails = buildRuntimeGuardrails(userMsg.content, rag);
       const response = await client.messages.create({
@@ -442,6 +474,7 @@ function createChatRouter({
 module.exports = {
   KNOWLEDGE_GAP_MACHINE_MARKER,
   KNOWLEDGE_GAP_MARKERS,
+  attachLiveStationContext,
   createChatRouter,
   detectKnowledgeGap,
   FRIENDLY_AI_ERROR_REPLY,

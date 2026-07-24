@@ -18,6 +18,7 @@ const { createKnowledgeRouter } = require('./routes/knowledge.routes');
 const { createLineRouter } = require('./routes/line.routes');
 const { createReportsRouter } = require('./routes/reports.routes');
 const { createUnansweredRouter } = require('./routes/unanswered.routes');
+const { createIotStatusService } = require('./services/iot-status.service');
 const { isInternalMode } = require('./services/internal-wiki.service');
 const { createPromptService } = require('./services/prompt.service');
 const { classifyQuestion } = require('./services/question-classifier.service');
@@ -311,6 +312,7 @@ const responsePolicies = Array.isArray(responsePolicyPayload.policies)
   : [];
 
 const ragService = createRagService({ pool, env: process.env });
+const iotStatusService = createIotStatusService({ env: process.env });
 const promptService = createPromptService({
   responsePolicies,
 });
@@ -327,6 +329,7 @@ async function buildHealthStatus({ includeDetails = false } = {}) {
     health.startedAt = startedAt;
     health.knowledgeAutoSyncMode = getKnowledgeAutoSyncMode();
     health.semanticRagEnabled = ragService.shouldUseSemanticSearch();
+    health.liveMysqlIotEnabled = iotStatusService.isConfigured();
     health.embeddingModel = process.env.EMBEDDING_MODEL || 'text-embedding-3-small';
     health.anthropicModel = process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL;
     health.appMode = isInternalMode() ? 'internal' : 'customer';
@@ -374,6 +377,7 @@ app.use('/api', createChatRouter({
   buildSystemPromptBlocks: promptService.buildSystemPromptBlocks,
   defaultAnthropicModel: DEFAULT_ANTHROPIC_MODEL,
   classifyQuestion,
+  retrieveLiveStationContext: iotStatusService.retrieveLiveStationContext,
 }));
 app.use('/api', createLineRouter({
   pool,
@@ -384,6 +388,7 @@ app.use('/api', createLineRouter({
   buildSystemPromptBlocks: promptService.buildSystemPromptBlocks,
   defaultAnthropicModel: DEFAULT_ANTHROPIC_MODEL,
   classifyQuestion,
+  retrieveLiveStationContext: iotStatusService.retrieveLiveStationContext,
 }));
 app.use('/api', createDashboardRouter({ pool, requireAdminKey }));
 app.use('/api/reports', createReportsRouter({ pool, requireAdminKey, readJsonFile }));
@@ -428,6 +433,7 @@ async function shutdown(signal) {
   if (httpServer) {
     await new Promise(resolve => httpServer.close(resolve));
   }
+  await iotStatusService.end();
   await pool.end();
   process.exit(0);
 }

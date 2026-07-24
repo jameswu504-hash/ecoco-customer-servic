@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const express = require('express');
 const {
   KNOWLEDGE_GAP_MACHINE_MARKER,
+  attachLiveStationContext,
   detectKnowledgeGap,
   loadServerConversationHistory,
   normalizeModelMessages,
@@ -191,12 +192,19 @@ async function buildAiReply({
   defaultAnthropicModel,
   signal = undefined,
   classification = null,
+  retrieveLiveStationContext = null,
 }) {
   const question = String(text || '').trim().slice(0, LINE_MAX_INPUT_CHARS);
   const traceStart = Date.now();
-  const rag = await retrieveKnowledgeForQuestion(question, {
+  let rag = await retrieveKnowledgeForQuestion(question, {
     classification,
     ragScope: classification?.ragScope || [],
+  });
+  rag = await attachLiveStationContext({
+    rag,
+    question,
+    classification,
+    retrieveLiveStationContext,
   });
   const runtimeGuardrails = buildRuntimeGuardrails(question, rag);
   const modelMessages = await buildLineModelMessages({ pool, sessionId, text: question });
@@ -262,6 +270,7 @@ function createLineRouter({
   buildSystemPromptBlocks,
   defaultAnthropicModel,
   classifyQuestion,
+  retrieveLiveStationContext = null,
 }) {
   const router = express.Router();
 
@@ -320,6 +329,7 @@ function createLineRouter({
           defaultAnthropicModel,
           signal: abortController.signal,
           classification,
+          retrieveLiveStationContext,
         });
 
         try {
