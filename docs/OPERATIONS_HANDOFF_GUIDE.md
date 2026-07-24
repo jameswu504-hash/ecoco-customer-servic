@@ -263,3 +263,28 @@ npm.cmd run scan:pii
 - 風險清楚：高風險問題不讓 AI 過度承諾。
 - 版本清楚：PostgreSQL 線上資料與 Git JSON 版本有明確同步流程。
 - 文件清楚：接手者不需要依賴口頭說明才能維護系統。
+# IoT Station Status Operations - 2026-07-24
+
+Current station/machine status is not served by Render connecting directly to Azure MySQL. The operational path is:
+
+```text
+local Windows sync machine -> Azure MySQL readonly -> Render admin sync API -> Neon/PostgreSQL -> LINE/web replies
+```
+
+Current local scheduled task:
+
+```text
+Task Scheduler: ECOCO IoT Station Sync
+Interval: every 5 minutes
+Logs: .local-iot-sync/logs/iot-sync-*.log
+```
+
+Operational checks:
+
+1. Render deploy should be Live.
+2. `/api/system/status` should show `database=ok`, `iotStationStatusCount > 0`, and recent `iotStationLastSyncedAt`.
+3. `/api/iot/station-statuses/search?q=es0140&limit=10` should find 小北百貨台南西門店站.
+4. Customer replies should be friendly and line-broken, and should not show data sync timestamps.
+5. If sync is stale, check Task Scheduler and `.local-iot-sync/logs` on the local sync machine.
+
+See also: `docs/IOT_STATION_STATUS_HANDOFF_2026-07-24.md` and `docs/LIVE_IOT_MYSQL_INTEGRATION.md`.

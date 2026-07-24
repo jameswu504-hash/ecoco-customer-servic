@@ -201,3 +201,44 @@ npm.cmd run scan:pii
 - PostgreSQL 是否支援 `vector`
 - `/api/system/status` 的 `semanticRagEnabled`
 - Render Logs 是否有 embedding 或 pgvector 錯誤
+## 11. IoT Station Status Deployment Checks
+
+Production station status flow:
+
+```text
+trusted local machine -> readonly Azure MySQL -> Render admin sync API -> Neon/PostgreSQL -> LINE/web bot
+```
+
+Render does not need to connect directly to Azure MySQL for normal station replies. A direct MySQL `ETIMEDOUT` in Render logs is an optional fallback failure, not the main production path, as long as the Neon station table is synced.
+
+After deploy, verify:
+
+```text
+GET /api/system/status
+x-admin-key: <ADMIN_KEY>
+```
+
+Important fields:
+
+| Field | Expected |
+| --- | --- |
+| `database` | `ok` |
+| `iotStationStatusCount` | greater than `0`; current synced production value is around `701` |
+| `iotStationLastSyncedAt` | recent timestamp; should refresh every 5 minutes while the local sync machine is running |
+
+Admin-only station lookup:
+
+```text
+GET /api/iot/station-statuses/search?q=es0140&limit=10
+x-admin-key: <ADMIN_KEY>
+```
+
+Customer-visible station replies should be line-broken and friendly. They must not show `source_synced_at` or "資料同步時間"; freshness is for admin verification only.
+
+If station replies say no data:
+
+1. Check `/api/system/status` and confirm `iotStationStatusCount > 0`.
+2. Search the station through `/api/iot/station-statuses/search`.
+3. On the sync machine, check Windows Task Scheduler task `ECOCO IoT Station Sync`.
+4. Check `.local-iot-sync/logs/iot-sync-*.log` on the sync machine.
+5. Run one manual sync with `npm run iot:sync` from a network that can reach Azure MySQL.

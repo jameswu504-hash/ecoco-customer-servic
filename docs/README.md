@@ -93,3 +93,9 @@
 - 客服、主管、技術窗口、專案維護者的角色分工
 
 Render 環境變數可參考 [config/render-production.env.example](../config/render-production.env.example)。
+# Current IoT Station Status Docs
+
+The live station/machine status integration added on 2026-07-24 is documented here:
+
+- [IOT_STATION_STATUS_HANDOFF_2026-07-24.md](IOT_STATION_STATUS_HANDOFF_2026-07-24.md) - current architecture, sync job, reply style, verification, troubleshooting.
+- [LIVE_IOT_MYSQL_INTEGRATION.md](LIVE_IOT_MYSQL_INTEGRATION.md) - MySQL -> Render admin sync API -> Neon/PostgreSQL implementation notes.

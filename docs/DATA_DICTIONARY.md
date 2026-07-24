@@ -167,3 +167,43 @@ RAG 第一版使用的檢索片段表。這張表由 `knowledge_sections` 自動
 - 本機用 `.env`。
 - Render 上線用 Environment Variables。
 - GitHub 只能放 `.env.example`，不能放真正 `.env`。
+# IoT Station Status Table
+
+## `iot_station_statuses`
+
+Cloud copy of readonly Azure MySQL station/machine state. Render reads this table for station and machine status replies.
+
+Primary key:
+
+```text
+(station_code, asset_id)
+```
+
+The sync job writes one row per station asset after deduping duplicate MySQL rows. Customer replies should use this table for station address, machine status, connection status, and bin capacity.
+
+Important columns:
+
+| Column | Meaning |
+| --- | --- |
+| `station_code` | Station code such as `es0140` |
+| `asset_id` | Machine asset identifier; paired with station code as the primary key |
+| `station_name` | Customer-visible station name |
+| `address` | Customer-visible address |
+| `area_name`, `district_name`, `place_name` | Location metadata |
+| `longitude`, `latitude` | Coordinates from the source station table |
+| `station_status` | Station-level status from MySQL |
+| `machine_status` | Machine-level status from MySQL |
+| `last_conn_status` | Latest connection status |
+| `last_heartbeat_at` | Latest heartbeat timestamp when available |
+| `bin1_count`, `bin1_max_capacity`, `bin1_remain_capacity` | Bin 1 capacity values |
+| `bin2_count`, `bin2_max_capacity`, `bin2_remain_capacity` | Bin 2 capacity values |
+| `source_synced_at` | Admin-only freshness marker; do not show in customer replies |
+
+Related scripts and endpoints:
+
+| Item | Purpose |
+| --- | --- |
+| `npm run iot:sync` | Local sync from readonly MySQL into Neon via Render admin upload |
+| `POST /api/iot/station-statuses/sync` | Admin-only upload endpoint used by the local sync job |
+| `GET /api/iot/station-statuses/search` | Admin-only verification endpoint |
+| `/api/system/status` | Shows `iotStationStatusCount` and `iotStationLastSyncedAt` |
