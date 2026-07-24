@@ -61,6 +61,7 @@ function escapePostgresLike(value) {
 function shouldUseLiveStationContext(question, classification = null) {
   if (classification?.category === 'station_machine') return true;
   const text = normalizeText(question).toLowerCase();
+  if (/(站點|站点|站名|機台|机台|容量|滿袋|满袋|狀態|状态|小北百貨|小北百货|es\d+)/i.test(text)) return true;
   return /(站點|站|機台|機器|滿倉|故障|維修|地址|營業時間|能不能投|可以投|回收機|offline|online|asset|es\d+)/i.test(text);
 }
 
@@ -84,7 +85,7 @@ function buildStationSearchTerms(question) {
     '花蓮', '臺東', '台東', '澎湖', '金門', '連江',
   ];
 
-  for (const match of text.matchAll(/\bes\d{3,6}\b/gi)) addTerm(terms, match[0]);
+  for (const match of text.matchAll(/es\d{3,6}(?:_[a-z0-9]+)?/gi)) addTerm(terms, match[0]);
   for (const match of text.matchAll(/\b\d{8,22}\b/g)) addTerm(terms, match[0]);
   for (const match of text.matchAll(/[\u4e00-\u9fffA-Za-z0-9]{2,40}站/g)) {
     const stationName = match[0];

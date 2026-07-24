@@ -37,6 +37,14 @@ test('station questions extract useful MySQL search terms', () => {
   assert.ok(terms.includes('崇學'));
 });
 
+test('station code questions extract useful terms before English words', () => {
+  const question = 'es0140 current machine status and bin capacity';
+  const terms = buildStationSearchTerms(question);
+
+  assert.ok(terms.includes('es0140'));
+  assert.equal(shouldUseLiveStationContext(question), true);
+});
+
 test('live station lookup formats readonly MySQL context', async () => {
   const queries = [];
   const fakePool = {

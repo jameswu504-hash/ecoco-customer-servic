@@ -117,6 +117,20 @@ function classifyQuestion(question) {
     };
   }
 
+  if (/es\d{3,6}(?:_[a-z0-9]+)?/i.test(text)) {
+    const station = getCategory('station_machine');
+    return {
+      category: station.category,
+      label: station.label,
+      confidence: 'high',
+      ragScope: station.ragScope,
+      shouldUseRag: true,
+      shouldEscalate: false,
+      reason: 'matched station code',
+      directReply: '',
+    };
+  }
+
   if (hasAny(text, HIGH_RISK_KEYWORDS)) {
     return {
       category: 'high_risk',
