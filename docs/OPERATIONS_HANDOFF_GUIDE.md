@@ -27,7 +27,7 @@ ECOCO AI 客服是一套結合前台客服頁、內部後台、PostgreSQL 知識
   -> Claude API
   -> AI 回覆
   -> conversations / ratings / unanswered_questions
-  -> public/dashboard.html
+  -> /dashboard.html（由 server.js 送出 public/dashboard-v2.html）
 ```
 
 | 元件 | 用途 |
@@ -41,7 +41,7 @@ ECOCO AI 客服是一套結合前台客服頁、內部後台、PostgreSQL 知識
 | `services/prompt.service.js` | System prompt 與品牌語氣組合 |
 | `services/privacy.service.js` | 手機與 Email 等敏感資訊遮罩 |
 | `public/index.html` | 使用者端 AI 客服頁 |
-| `public/dashboard.html` | 內部客服後台 |
+| `public/dashboard-v2.html` | 內部客服後台實際 shell；固定入口為 `/dashboard.html` |
 | PostgreSQL | 線上知識庫、對話、評分、知識缺口與 RAG chunks |
 | Claude API | 產生客服回答 |
 | OpenAI Embedding API | 產生向量，支援 pgvector 語意檢索 |

@@ -12,7 +12,7 @@ const {
   getClientSessionId,
   getLatestUserMessage,
   getSafeSessionId,
-  loadLatestExchangeForSession,
+  loadExchangeByMessageId,
   normalizeModelMessages,
   parseKnowledgeGapMeta,
   stripKnowledgeGapMarker,
@@ -43,6 +43,7 @@ const {
 const { normalizeAdminNote, MAX_ADMIN_NOTE_CHARS } = require('../routes/unanswered.routes');
 const {
   cleanWikiEntryInput,
+  escapeWikiSearchTerm,
   isInternalMode,
   normalizeDepartment,
   normalizeVisibility,
@@ -330,6 +331,7 @@ test('/api/chat integration returns an AI reply and stores masked conversation r
 
   const server = app.listen(0);
   await new Promise(resolve => server.once('listening', resolve));
+  let chatResponseBody;
   try {
     const { port } = server.address();
     const response = await fetch(`http://127.0.0.1:${port}/api/chat`, {
@@ -341,9 +343,11 @@ test('/api/chat integration returns an AI reply and stores masked conversation r
       body: JSON.stringify({ message: integrationMessage }),
     });
     const body = await response.json();
+    chatResponseBody = body;
 
     assert.equal(response.status, 200);
-    assert.deepEqual(body, { reply: '請到 App 的點數歷程查看。' });
+    assert.equal(body.reply, '請到 App 的點數歷程查看。');
+    assert.match(body.messageId, /^[0-9a-f-]{36}$/);
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
@@ -353,6 +357,8 @@ test('/api/chat integration returns an AI reply and stores masked conversation r
   assert.equal(conversationInsert.params[0], 'session_integration123');
   assert.equal(conversationInsert.params[2].includes(phone), false);
   assert.match(conversationInsert.params[2], /\[phone\]/);
+  assert.match(conversationInsert.sql, /message_id/);
+  assert.equal(conversationInsert.params[6], chatResponseBody.messageId);
 });
 
 test('/api/chat direct manual routing bypasses Claude and records an unanswered item', async () => {
@@ -678,33 +684,88 @@ test('rating session id is strict and invalid headers do not create orphan sessi
   assert.equal(getClientSessionId({ 'x-session-id': 'session_abcdefgh' }), 'session_abcdefgh');
 });
 
-test('rating question and reply are looked up from DB instead of trusting client input', async () => {
+test('rating question and reply are looked up by session and message id', async () => {
   const fakePool = {
     query: async (sql, params) => {
       assert.match(sql, /FROM conversations/);
-      assert.deepEqual(params, ['session_abcdefgh', 6]);
+      assert.match(sql, /message_id = \$2/);
+      assert.deepEqual(params, ['session_abcdefgh', 'reply-123']);
       return {
         rows: [
-          { role: 'assistant', content: '這是 AI 的回覆' },
           { role: 'user', content: '這是使用者的問題' },
-          { role: 'assistant', content: '更早的回覆' },
+          { role: 'assistant', content: '這是 AI 的回覆' },
         ],
       };
     },
   };
 
-  const exchange = await loadLatestExchangeForSession(fakePool, 'session_abcdefgh');
+  const exchange = await loadExchangeByMessageId(fakePool, 'session_abcdefgh', 'reply-123');
   assert.deepEqual(exchange, { question: '這是使用者的問題', reply: '這是 AI 的回覆' });
 
-  const empty = await loadLatestExchangeForSession(fakePool, null);
+  const empty = await loadExchangeByMessageId(fakePool, null, 'reply-123');
   assert.deepEqual(empty, { question: '', reply: '' });
+});
+
+test('/api/rating binds feedback to the selected response instead of the latest exchange', async () => {
+  const queries = [];
+  const fakePool = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (/FROM conversations/.test(sql)) {
+        return {
+          rows: [
+            { role: 'user', content: 'selected question' },
+            { role: 'assistant', content: 'selected reply' },
+          ],
+        };
+      }
+      return { rows: [] };
+    },
+  };
+  const app = express();
+  app.use(express.json());
+  app.use('/api', createChatRouter({
+    pool: fakePool,
+    client: { messages: { create: async () => ({}) } },
+    chatLimiter: (req, res, next) => next(),
+    ratingLimiter: (req, res, next) => next(),
+    requireAdminKey: (req, res, next) => next(),
+    retrieveKnowledgeForQuestion: async () => ({ context: '', chunks: [], retrievalMode: 'none' }),
+    buildRuntimeGuardrails: () => '',
+    buildSystemPrompt: () => '',
+    defaultAnthropicModel: 'test-model',
+  }));
+
+  const server = app.listen(0);
+  await new Promise(resolve => server.once('listening', resolve));
+  try {
+    const { port } = server.address();
+    const response = await fetch(`http://127.0.0.1:${port}/api/rating`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-session-id': 'session_rating123',
+      },
+      body: JSON.stringify({ msgId: 'selected-message-id', type: 'positive' }),
+    });
+
+    assert.equal(response.status, 200);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+
+  const lookup = queries.find(item => /FROM conversations/.test(item.sql));
+  const insert = queries.find(item => /INSERT INTO ratings/.test(item.sql));
+  assert.deepEqual(lookup.params, ['session_rating123', 'selected-message-id']);
+  assert.deepEqual(insert.params.slice(0, 2), ['selected-message-id', 'positive']);
+  assert.deepEqual(insert.params.slice(3), ['selected question', 'selected reply']);
 });
 
 test('rating endpoint rejects unmatched sessions and ignores client-provided question text', () => {
   const chatRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'chat.routes.js'), 'utf8');
   const ratingBlock = chatRoute.slice(chatRoute.indexOf("router.post('/rating'"), chatRoute.indexOf("router.get('/ratings'"));
 
-  assert.match(ratingBlock, /loadLatestExchangeForSession/);
+  assert.match(ratingBlock, /loadExchangeByMessageId/);
   assert.match(ratingBlock, /getClientSessionId/);
   assert.match(ratingBlock, /No matching conversation found for rating/);
   assert.equal(/req\.body[^\n]*question/.test(ratingBlock), false);
@@ -786,6 +847,9 @@ test('runtime config fails fast when required production secrets are missing', (
 
 test('PostgreSQL SSL modes distinguish encryption from certificate verification', () => {
   const { getPostgresSslConfig, validateRuntimeConfig } = require('../server');
+  const importScript = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'import-knowledge-json.js'), 'utf8');
+  const syncScript = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'sync-iot-stations-to-postgres.js'), 'utf8');
+  const snapshotScript = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'export-iot-station-snapshot.js'), 'utf8');
   const baseEnv = {
     DATABASE_URL: 'postgresql://example',
     ANTHROPIC_API_KEY: 'anthropic-key',
@@ -799,6 +863,10 @@ test('PostgreSQL SSL modes distinguish encryption from certificate verification'
     validateRuntimeConfig({ ...baseEnv, PGSSL: 'require' }).warnings.join('\n'),
     /does not verify the server certificate/
   );
+  assert.match(importScript, /getPostgresSslConfig/);
+  assert.match(syncScript, /getPostgresSslConfig/);
+  assert.match(syncScript, /ECOCO_IOT_MYSQL_SSL_REJECT_UNAUTHORIZED \|\| 'true'/);
+  assert.match(snapshotScript, /ECOCO_IOT_MYSQL_SSL_REJECT_UNAUTHORIZED \|\| 'true'/);
 });
 
 test('admin IoT routes use async error handling', () => {
@@ -1095,6 +1163,8 @@ test('timestamp column migration is conditional instead of running ALTER on ever
   const schemaText = SCHEMA.join('\n');
 
   assert.equal(schemaText.includes('ALTER COLUMN timestamp TYPE TIMESTAMPTZ'), false);
+  assert.match(schemaText, /conversations ADD COLUMN IF NOT EXISTS message_id/);
+  assert.match(schemaText, /idx_conv_session_message/);
   assert.equal(typeof migrateTimestampColumns, 'function');
 });
 
@@ -1134,6 +1204,14 @@ test('internal wiki routes are mounted only for internal app mode', () => {
   assert.match(envExample, /STAFF_KEY=/);
 });
 
+test('internal wiki search treats PostgreSQL wildcard characters as literals', () => {
+  const internalRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'internal.routes.js'), 'utf8');
+
+  assert.equal(escapeWikiSearchTerm('APP_100%\\test'), 'APP\\_100\\%\\\\test');
+  assert.match(internalRoute, /ESCAPE '\\\\'/);
+  assert.match(internalRoute, /escapeWikiSearchTerm/);
+});
+
 test('internal wiki async handlers are wrapped with JSON error handling', () => {
   const internalRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'internal.routes.js'), 'utf8');
 
@@ -1149,6 +1227,14 @@ test('knowledge writes use transaction advisory locks around duplicate checks', 
   assert.match(knowledgeRoute, /await db\.query\('BEGIN'\)/);
   assert.match(knowledgeRoute, /await db\.query\('COMMIT'\)/);
   assert.match(knowledgeRoute, /Duplicate active knowledge category/);
+});
+
+test('section chunk refresh shifts following sort orders when chunk count changes', () => {
+  const ragService = fs.readFileSync(path.join(__dirname, '..', 'services', 'rag.service.js'), 'utf8');
+
+  assert.match(ragService, /old_chunk_count/);
+  assert.match(ragService, /UPDATE knowledge_chunks[\s\S]*sort_order = sort_order \+ \$1/);
+  assert.match(ragService, /KNOWLEDGE_CHUNK_LOCK_ID/);
 });
 
 test('admin notes are truncated before database writes', () => {

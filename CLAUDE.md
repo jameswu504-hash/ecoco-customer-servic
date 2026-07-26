@@ -14,7 +14,7 @@ npm run build:knowledge     # 從 data/ 組出 ecoco-knowledge-import.json
 npm run import:knowledge    # 把 ecoco-knowledge-import.json 匯入 PostgreSQL
 
 npm run lint                # 語法檢查（scripts/lint.mjs 自動掃描所有 .js/.mjs）
-npm test                    # 執行 tests/smoke.test.js（node --test）
+npm test                    # 執行 tests/*.test.js（node --test，目前共 4 個測試檔）
 npm run eval:validate       # 驗證 evals/golden-set.json 格式
 npm run eval                # 對線上服務跑 golden set（需設 ECOCO_BASE_URL、ADMIN_KEY）
 npm run scan:pii            # 掃描 repo 是否含個資
@@ -29,7 +29,7 @@ ANTHROPIC_API_KEY=...
 ADMIN_KEY=...
 DATABASE_URL=postgresql://...
 KNOWLEDGE_AUTO_SYNC=disable       # 日常維護只用後台 PostgreSQL；大改版才匯出 JSON 回 Git
-# PGSSL=disable                   # Render 內部連線時啟用
+PGSSL=require                    # 雲端連線加密；需驗證憑證時改 verify-full
 ```
 
 ## 架構
@@ -63,7 +63,7 @@ KNOWLEDGE_AUTO_SYNC=disable       # 日常維護只用後台 PostgreSQL；大改
 2. 靜態 system prompt 標記 `cache_control: ephemeral` 啟用 prompt caching；RAG 片段放在動態區塊
 3. 呼叫 Claude（預設 `claude-sonnet-4-6`，可用 `ANTHROPIC_MODEL` 環境變數覆蓋，`max_tokens: 1024`）
 
-`knowledge_chunks` 是從 `knowledge_sections` 自動切分的衍生資料，**不要手動編輯**。每次後台修改分類或伺服器重啟都會重建。
+`knowledge_chunks` 是從 `knowledge_sections` 自動切分的衍生資料，**不要手動編輯**。後台修改分類時只刷新該 section；啟動時僅在 chunks 為空、知識同步有變更，或明確設定 `REBUILD_KNOWLEDGE_CHUNKS_ON_START=always` 時完整重建。
 
 ### 知識缺口偵測
 
@@ -100,7 +100,7 @@ KNOWLEDGE_AUTO_SYNC=disable       # 日常維護只用後台 PostgreSQL；大改
 | 頁面 | 路徑 |
 |---|---|
 | 客服前台 | `public/index.html` |
-| 後台儀表板 | `public/dashboard.html` |
+| 後台儀表板 | 對外入口 `/dashboard.html`；實際 shell 為 `public/dashboard-v2.html`，共用 `public/dashboard.js` |
 
 ## 部署
 
@@ -111,4 +111,4 @@ Render 從 GitHub main 分支自動部署，執行 `npm start`。環境變數在
 - Primary retrieval: pgvector semantic search on `knowledge_chunks.embedding`, enabled only when PostgreSQL has the `vector` extension and `OPENAI_API_KEY` is configured.
 - Fallback retrieval: keyword/synonym search through `search_text ILIKE`, so the service still works without embeddings.
 - Chunk risk control: `knowledge_chunks.risk_level` is the source of truth for high-risk guardrails. Do not rely on matching prompt text such as `風險：High`.
-- Embedding defaults: `EMBEDDING_MODEL=text-embedding-3-small`, `EMBEDDING_DIMENSIONS=1536`.
+- Embedding defaults: `EMBEDDING_MODEL=text-embedding-3-small`, `EMBEDDING_DIMENSIONS=1536`, `EMBEDDING_BATCH_SIZE=80`.

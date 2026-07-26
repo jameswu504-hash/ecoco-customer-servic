@@ -176,6 +176,9 @@ async function loadServerConversationHistory(pool, sessionId, limit = 12) {
 function getSafeSessionId(headers = {}) {
   const raw = String(headers['x-session-id'] || '').trim();
   if (/^session_[A-Za-z0-9_-]{8,80}$/.test(raw)) return raw;
+  if (raw) {
+    console.warn('Invalid x-session-id header; generated a new server session.');
+  }
   return `server_${crypto.randomUUID()}`;
 }
 
@@ -185,26 +188,25 @@ function getClientSessionId(headers = {}) {
   return null;
 }
 
-async function loadLatestExchangeForSession(pool, sessionId) {
-  if (!pool || !sessionId) return { question: '', reply: '' };
+async function loadExchangeByMessageId(pool, sessionId, messageId) {
+  if (!pool || !sessionId || !messageId) return { question: '', reply: '' };
 
   const { rows } = await pool.query(
     `SELECT role, content
      FROM conversations
      WHERE session_id = $1
-     ORDER BY timestamp DESC, id DESC
-     LIMIT $2`,
-    [sessionId, 6]
+       AND message_id = $2
+     ORDER BY timestamp ASC, id ASC`,
+    [sessionId, messageId]
   );
 
   let question = '';
   let reply = '';
   for (const row of rows) {
-    if (!reply && row.role === 'assistant') {
-      reply = String(row.content || '');
-    } else if (reply && !question && row.role === 'user') {
+    if (!question && row.role === 'user') {
       question = String(row.content || '');
-      break;
+    } else if (!reply && row.role === 'assistant') {
+      reply = String(row.content || '');
     }
   }
 
@@ -216,6 +218,7 @@ async function storeChatExchange({
   sessionId,
   question,
   reply,
+  messageId,
   gap = { isGap: false, reason: '' },
   classification = null,
 }) {
@@ -224,9 +227,9 @@ async function storeChatExchange({
   const storedReply = maskSensitiveText(reply);
 
   await pool.query(
-    `INSERT INTO conversations (session_id, role, content, timestamp)
-     VALUES ($1, $2, $3, $4), ($1, $5, $6, $4)`,
-    [sessionId, 'user', storedQuestion, ts, 'assistant', storedReply]
+    `INSERT INTO conversations (session_id, role, content, timestamp, message_id)
+     VALUES ($1, $2, $3, $4, $7), ($1, $5, $6, $4, $7)`,
+    [sessionId, 'user', storedQuestion, ts, 'assistant', storedReply, messageId]
   );
 
   if (gap.isGap || classification?.shouldEscalate) {
@@ -359,6 +362,7 @@ function createChatRouter({
     const sessionId = getSafeSessionId(req.headers);
     const { message: userMsg, error } = getLatestUserMessage(req.body || {});
     if (error) return res.status(400).json({ error });
+    const messageId = crypto.randomUUID();
 
     const traceStart = Date.now();
     let rag = { retrievalMode: 'none', chunks: [] };
@@ -391,13 +395,15 @@ function createChatRouter({
             sessionId,
             question: userMsg.content,
             reply,
+            messageId,
             classification,
           });
         } catch (dbErr) {
           console.error('DB conversation write error:', dbErr.message);
+          return res.json({ reply });
         }
 
-        return res.json({ reply });
+        return res.json({ reply, messageId });
       }
 
       rag = await retrieveKnowledgeForQuestion(userMsg.content, {
@@ -429,13 +435,15 @@ function createChatRouter({
             sessionId,
             question: userMsg.content,
             reply: stationStatusReply,
+            messageId,
             classification,
           });
         } catch (dbErr) {
           console.error('DB conversation write error:', dbErr.message);
+          return res.json({ reply: stationStatusReply });
         }
 
-        return res.json({ reply: stationStatusReply });
+        return res.json({ reply: stationStatusReply, messageId });
       }
       const runtimeGuardrails = buildRuntimeGuardrails(userMsg.content, rag);
       const response = await client.messages.create({
@@ -467,12 +475,21 @@ function createChatRouter({
       });
 
       try {
-        await storeChatExchange({ pool, sessionId, question: userMsg.content, reply, gap, classification });
+        await storeChatExchange({
+          pool,
+          sessionId,
+          question: userMsg.content,
+          reply,
+          messageId,
+          gap,
+          classification,
+        });
       } catch (dbErr) {
         console.error('DB conversation write error:', dbErr.message);
+        return res.json({ reply });
       }
 
-      res.json({ reply });
+      res.json({ reply, messageId });
     } catch (err) {
       console.error('Claude API error:', err.message);
       await saveChatTrace(pool, {
@@ -496,9 +513,9 @@ function createChatRouter({
     try {
       const ts = new Date().toISOString();
       const sessionId = getClientSessionId(req.headers);
-      const latestExchange = await loadLatestExchangeForSession(pool, sessionId);
-      const storedQuestion = maskSensitiveText(latestExchange.question).substring(0, 300);
-      const storedReply = maskSensitiveText(latestExchange.reply).substring(0, 300);
+      const exchange = await loadExchangeByMessageId(pool, sessionId, String(msgId).substring(0, 120));
+      const storedQuestion = maskSensitiveText(exchange.question).substring(0, 300);
+      const storedReply = maskSensitiveText(exchange.reply).substring(0, 300);
 
       if (!sessionId || !storedQuestion || !storedReply) {
         return res.status(404).json({ error: 'No matching conversation found for rating.' });
@@ -584,7 +601,7 @@ module.exports = {
   getClientSessionId,
   getLatestUserMessage,
   getSafeSessionId,
-  loadLatestExchangeForSession,
+  loadExchangeByMessageId,
   loadServerConversationHistory,
   normalizeModelMessages,
   parseKnowledgeGapMeta,

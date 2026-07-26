@@ -3,6 +3,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
+const { getPostgresSslConfig } = require('../config/postgres-ssl');
 
 const inputPath = process.argv[2] || path.join(__dirname, '..', 'data', 'ecoco-knowledge-import.json');
 const shouldReplace = process.argv.includes('--replace');
@@ -27,7 +28,7 @@ if (sections.length === 0) {
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.PGSSL === 'disable' ? false : { rejectUnauthorized: false },
+  ssl: getPostgresSslConfig(process.env),
 });
 
 async function ensureKnowledgeTable() {

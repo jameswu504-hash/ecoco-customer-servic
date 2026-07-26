@@ -18,6 +18,9 @@ function getConfig() {
     user: process.env.ECOCO_IOT_MYSQL_USER || mcpEnv.MYSQL_USER,
     password: process.env.ECOCO_IOT_MYSQL_PASSWORD || mcpEnv.MYSQL_PASS,
     database: process.env.ECOCO_IOT_MYSQL_DATABASE || mcpEnv.MYSQL_DB,
+    sslRejectUnauthorized: String(
+      process.env.ECOCO_IOT_MYSQL_SSL_REJECT_UNAUTHORIZED || 'true'
+    ).toLowerCase() === 'true',
     outputPath: process.env.IOT_STATION_SNAPSHOT_OUTPUT || DEFAULT_OUTPUT_PATH,
   };
 }
@@ -83,7 +86,7 @@ async function main() {
     user: config.user,
     password: config.password,
     database: config.database,
-    ssl: { rejectUnauthorized: false },
+    ssl: { rejectUnauthorized: config.sslRejectUnauthorized },
     connectTimeout: 15000,
   });
 

@@ -4,6 +4,7 @@ const fs = require('fs');
 const mysql = require('mysql2/promise');
 const { Pool } = require('pg');
 
+const { getPostgresSslConfig } = require('../config/postgres-ssl');
 const { SCHEMA } = require('../db/schema');
 
 const TABLE_NAME = 'iot_station_statuses';
@@ -24,7 +25,7 @@ function getMysqlConfig() {
     user: process.env.ECOCO_IOT_MYSQL_USER || mcpEnv.MYSQL_USER,
     password: process.env.ECOCO_IOT_MYSQL_PASSWORD || mcpEnv.MYSQL_PASS,
     database: process.env.ECOCO_IOT_MYSQL_DATABASE || mcpEnv.MYSQL_DB,
-    sslRejectUnauthorized: String(process.env.ECOCO_IOT_MYSQL_SSL_REJECT_UNAUTHORIZED || 'false').toLowerCase() === 'true',
+    sslRejectUnauthorized: String(process.env.ECOCO_IOT_MYSQL_SSL_REJECT_UNAUTHORIZED || 'true').toLowerCase() === 'true',
   };
 }
 
@@ -35,7 +36,7 @@ function getPostgresConfig() {
 
   return {
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.PGSSL === 'disable' ? false : { rejectUnauthorized: false },
+    ssl: getPostgresSslConfig(process.env),
   };
 }
 

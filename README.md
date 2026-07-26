@@ -30,6 +30,8 @@ flowchart LR
   API --> Claude["Claude 回覆生成"]
   Claude --> API
   API --> Logs[("conversations<br/>ratings<br/>unanswered_questions<br/>chat_traces")]
+  Sync["本機排程<br/>唯讀 Azure MySQL"] --> StationDB[("PostgreSQL<br/>iot_station_statuses")]
+  StationDB --> API
   Admin["客服 / 主管後台"] --> API
   GitHub["GitHub Actions<br/>備份 / 健檢 / 評測"] --> API
   Line["LINE Official Account<br/>Webhook"] --> API
@@ -63,7 +65,7 @@ flowchart LR
 | `services/` | RAG、prompt、報表與隱私遮罩 |
 | `db/schema.js` | PostgreSQL schema 初始化 |
 | `public/index.html` | 對外客服前台 |
-| `public/dashboard.html` | 管理後台 |
+| `public/dashboard-v2.html` | 管理後台實際 shell；公開入口仍為 `/dashboard.html` |
 | `data/ecoco-knowledge-import.json` | 正式匯入 PostgreSQL 的知識庫 JSON |
 | `data/ecoco-ai-customer-service-database.json` | 整合來源資料與稽核用資料庫 |
 | `.github/workflows/` | GitHub Actions 自動備份與健檢，為正式維運主線 |
@@ -76,13 +78,21 @@ flowchart LR
 | --- | --- | --- |
 | `DATABASE_URL` | 是 | PostgreSQL / Neon 連線字串 |
 | `ANTHROPIC_API_KEY` | 是 | Claude 回覆生成 |
+| `ANTHROPIC_MODEL` | 選填 | 覆蓋預設 Claude 模型 |
 | `ADMIN_KEY` | 是 | 後台與管理 API 存取 |
 | `OPENAI_API_KEY` | 選填 | embedding / pgvector 語意檢索 |
+| `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS` | 選填 | embedding 模型與向量維度 |
+| `EMBEDDING_BATCH_SIZE` / `EMBEDDING_TIMEOUT_MS` | 選填 | embedding 批次量與 timeout |
+| `PGSSL` | 選填 | `require` 加密但不驗證憑證；`verify-full` 驗證憑證；本機可信環境才用 `disable` |
+| `APP_MODE` | 建議 | 正式客服使用 `customer`；`internal` 才啟用內部 Wiki API |
+| `STAFF_KEY` | internal 模式需要 | 內部 Wiki API 權限，不得與 `ADMIN_KEY` 共用 |
 | `CONVERSATION_RETENTION_DAYS` | 建議 | 對話紀錄保存天數，建議 `180` |
 | `KNOWLEDGE_AUTO_SYNC` | 選填 | 是否啟動時從 Git JSON 同步知識庫 |
 | `REBUILD_KNOWLEDGE_CHUNKS_ON_START` | 選填 | 是否啟動時強制重建 RAG chunks |
 | `LINE_CHANNEL_SECRET` | LINE 上線需要 | 驗證 LINE Webhook |
 | `LINE_CHANNEL_ACCESS_TOKEN` | LINE 上線需要 | 呼叫 LINE Reply API |
+| `ECOCO_IOT_MYSQL_*` | 本機同步需要 | 本機/VPN 連唯讀 Azure MySQL；不要設定在 Render，完整清單見 `.env.example` |
+| `ECOCO_IOT_SYNC_URL` / `ECOCO_IOT_SYNC_ADMIN_KEY` | 本機同步需要 | 將站點快照上傳 Render 管理 API；可由本機加密設定提供 |
 
 ## 本機開發
 
@@ -158,12 +168,16 @@ https://ecoco-customer-servic.onrender.com/api/line/webhook
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 系統架構與主要選型說明 |
 | [`docs/CUSTOMER_ROLLOUT_GUIDE.md`](docs/CUSTOMER_ROLLOUT_GUIDE.md) | 客服落地討論指南，供客服、主管與營運確認實際使用流程 |
 | [`docs/CUSTOMER_SUPPORT_GUIDE.md`](docs/CUSTOMER_SUPPORT_GUIDE.md) | 客服人員後台操作指南 |
+| [`docs/CUSTOMER_SERVICE_FLOW.md`](docs/CUSTOMER_SERVICE_FLOW.md) | 客服問答、RAG、站點資料與人工處理流程 |
+| [`docs/MAINTENANCE_GUIDE.md`](docs/MAINTENANCE_GUIDE.md) | 日常維護、知識缺口狀態與檢查重點 |
 | [`docs/OPERATIONS_HANDOFF_GUIDE.md`](docs/OPERATIONS_HANDOFF_GUIDE.md) | 維護與交接總整理 |
 | [`docs/DEPLOYMENT_RUNBOOK.md`](docs/DEPLOYMENT_RUNBOOK.md) | Render 部署、環境變數與故障排查 |
 | [`docs/archive/GO_LIVE_CHECKLIST.md`](docs/archive/GO_LIVE_CHECKLIST.md) | 上線前檢查表 |
 | [`docs/LINE_ROLLOUT_CHECKLIST.md`](docs/LINE_ROLLOUT_CHECKLIST.md) | LINE@ 串接落地清單，列出權限、資源與測試項目 |
 | [`docs/LINE_INTEGRATION_GUIDE.md`](docs/LINE_INTEGRATION_GUIDE.md) | LINE@ 技術串接說明 |
 | [`docs/EVAL_OBSERVABILITY_GUIDE.md`](docs/EVAL_OBSERVABILITY_GUIDE.md) | 回覆品質評測、chat traces 與知識漂移檢查 |
+| [`docs/IOT_STATION_STATUS_HANDOFF_2026-07-24.md`](docs/IOT_STATION_STATUS_HANDOFF_2026-07-24.md) | IoT 站點同步架構、排程、驗證與排錯 |
+| [`docs/LIVE_IOT_MYSQL_INTEGRATION.md`](docs/LIVE_IOT_MYSQL_INTEGRATION.md) | MySQL 到 PostgreSQL/Neon 的欄位與實作說明 |
 | [`docs/DATA_DICTIONARY.md`](docs/DATA_DICTIONARY.md) | PostgreSQL 與 JSON 欄位說明 |
 | [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md) | 知識來源與資料治理說明 |
 | [`docs/PRD_ECOCO_AI_CUSTOMER_SERVICE.md`](docs/PRD_ECOCO_AI_CUSTOMER_SERVICE.md) | 產品需求文件 |

@@ -46,6 +46,10 @@ function normalizeSearchQuery(value) {
   return String(value || '').trim().slice(0, 120);
 }
 
+function escapeWikiSearchTerm(value) {
+  return String(value || '').replace(/[\\%_]/g, '\\$&');
+}
+
 function rowToWikiEntry(row) {
   return {
     id: row.id,
@@ -63,6 +67,7 @@ function rowToWikiEntry(row) {
 module.exports = {
   ALLOWED_VISIBILITIES,
   cleanWikiEntryInput,
+  escapeWikiSearchTerm,
   isInternalMode,
   normalizeDepartment,
   normalizeSearchQuery,

@@ -73,7 +73,9 @@ const SESSION_ID = "session_" + (
       if (role === "bot") {
         wrapper.appendChild(bubble);
         wrapper.appendChild(time);
-        wrapper.appendChild(renderRatingBar());
+        if (options.messageId) {
+          wrapper.appendChild(renderRatingBar(options.messageId));
+        }
 
         if (shouldShowContact(text)) {
           const contactWrapper = document.createElement("div");
@@ -99,11 +101,9 @@ const SESSION_ID = "session_" + (
       return bubble;
     }
 
-    function renderRatingBar() {
+    function renderRatingBar(msgId) {
       const ratingBar = document.createElement("div");
       ratingBar.className = "rating-bar";
-
-      const msgId = Date.now();
 
       const thumbUp = document.createElement("button");
       thumbUp.className = "rating-btn";
@@ -215,7 +215,7 @@ const SESSION_ID = "session_" + (
         chatHistory.push({ role: "assistant", content: reply });
 
         removeTyping();
-        appendMessage("bot", reply);
+        appendMessage("bot", reply, { messageId: data.messageId });
       } catch (err) {
         removeTyping();
         appendMessage("bot", "抱歉，連線暫時不穩。請稍後再試，或點選下方「聯絡 ECOCO 客服」補充問題。");

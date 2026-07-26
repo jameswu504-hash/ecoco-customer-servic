@@ -145,9 +145,9 @@ function createReportsRouter({ pool, requireAdminKey, readJsonFile }) {
         gapStatuses: gapStatusCounts.rows.map(row => ({
           status: row.status,
           statusLabel: {
-            pending: '待確認',
-            resolved: '已解決',
-            ignored: '不處理',
+            pending: '待處理',
+            resolved: '已補知識',
+            ignored: '不需處理',
             manual: '需人工處理',
           }[row.status] || row.status,
           count: Number(row.count),
@@ -163,7 +163,7 @@ function createReportsRouter({ pool, requireAdminKey, readJsonFile }) {
       };
 
       payload.optimizations = [
-        { key: 'resolved-gaps', label: '已解決知識缺口', count: payload.summary.resolvedGaps, unit: '則', samples: gapRowsByStatus.resolved || [] },
+        { key: 'resolved-gaps', label: '已補知識', count: payload.summary.resolvedGaps, unit: '則', samples: gapRowsByStatus.resolved || [] },
         { key: 'manual-gaps', label: '需人工處理', count: payload.summary.manualGaps, unit: '則', samples: gapRowsByStatus.manual || [] },
         {
           key: 'archived-duplicates',

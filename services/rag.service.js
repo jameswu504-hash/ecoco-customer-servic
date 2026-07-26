@@ -433,17 +433,7 @@ function createRagService({ pool, env = process.env }) {
     const section = rows[0];
     const activeSections = section && !section.archived_at ? [section] : [];
     const now = new Date().toISOString();
-    const baseSortResult = await pool.query(
-      `SELECT COALESCE(
-          MIN(sort_order),
-          (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM knowledge_chunks)
-        ) AS base_sort_order
-       FROM knowledge_chunks
-       WHERE section_id = $1`,
-      [id]
-    );
-    const baseSortOrder = Number(baseSortResult.rows[0].base_sort_order || 0);
-    const insertRows = buildInsertRowsFromSections(activeSections, now, baseSortOrder);
+    const insertRows = buildInsertRowsFromSections(activeSections, now);
 
     await attachEmbeddings(insertRows);
 
@@ -451,7 +441,38 @@ function createRagService({ pool, env = process.env }) {
     try {
       await db.query('BEGIN');
       await db.query('SELECT pg_advisory_xact_lock($1)', [KNOWLEDGE_CHUNK_LOCK_ID]);
+      const { rows: sortRows } = await db.query(
+        `SELECT
+           COUNT(*)::int AS old_chunk_count,
+           COALESCE(
+             MIN(sort_order),
+             (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM knowledge_chunks)
+           ) AS base_sort_order,
+           COALESCE(
+             MAX(sort_order),
+             (SELECT COALESCE(MAX(sort_order), -1) FROM knowledge_chunks)
+           ) AS last_sort_order
+         FROM knowledge_chunks
+         WHERE section_id = $1`,
+        [id]
+      );
+      const oldChunkCount = Number(sortRows[0].old_chunk_count || 0);
+      const baseSortOrder = Number(sortRows[0].base_sort_order || 0);
+      const lastSortOrder = Number(sortRows[0].last_sort_order || -1);
+      const sortOrderDelta = insertRows.length - oldChunkCount;
+
       await db.query('DELETE FROM knowledge_chunks WHERE section_id = $1', [id]);
+      if (oldChunkCount > 0 && sortOrderDelta !== 0) {
+        await db.query(
+          `UPDATE knowledge_chunks
+           SET sort_order = sort_order + $1
+           WHERE sort_order > $2`,
+          [sortOrderDelta, lastSortOrder]
+        );
+      }
+      insertRows.forEach((row, index) => {
+        row.sortOrder = baseSortOrder + index;
+      });
       await insertKnowledgeChunkRows(db, insertRows);
       await db.query('COMMIT');
       console.log(`Knowledge chunks refreshed for section ${id}: ${insertRows.length} chunks`);

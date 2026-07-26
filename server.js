@@ -8,6 +8,7 @@ const { Pool } = require('pg');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 
+const { getPostgresSslConfig } = require('./config/postgres-ssl');
 const { SCHEMA, migrateTimestampColumns } = require('./db/schema');
 const { requireAdminKey } = require('./middleware/admin-auth');
 const { requireStaffKey } = require('./middleware/staff-auth');
@@ -74,15 +75,6 @@ let httpServer = null;
 
 function asyncHandler(handler) {
   return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
-}
-
-function getPostgresSslConfig(env = process.env) {
-  const mode = String(env.PGSSL || 'require').trim().toLowerCase();
-  if (mode === 'disable') return false;
-  if (['verify-full', 'verify_ca', 'verify-ca'].includes(mode)) {
-    return { rejectUnauthorized: true };
-  }
-  return { rejectUnauthorized: false };
 }
 
 const client = new Anthropic();

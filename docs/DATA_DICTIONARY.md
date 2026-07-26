@@ -12,6 +12,7 @@
 | `session_id` | 同一段對話的識別碼 |
 | `role` | `user` 或 `assistant` |
 | `content` | 訊息內容 |
+| `message_id` | 同一輪問答共用的伺服器訊息 ID；評分以 `session_id + message_id` 精準綁定 |
 | `timestamp` | 建立時間 |
 
 用途：
@@ -27,7 +28,7 @@
 | 欄位 | 說明 |
 | --- | --- |
 | `id` | 系統流水號 |
-| `msg_id` | 前端訊息 ID |
+| `msg_id` | `/api/chat` 回傳的伺服器 `messageId`，對應 `conversations.message_id` |
 | `type` | 評分類型，例如喜歡或不喜歡 |
 | `question` | 使用者問題 |
 | `reply` | AI 回覆 |
@@ -71,6 +72,7 @@ AI 實際回答時讀取的主要知識庫。
 | `content` | 該分類的完整內容 |
 | `sort_order` | 排序 |
 | `updated_at` | 最後更新時間 |
+| `archived_at` | 封存時間；空字串代表啟用中 |
 
 用途：
 
@@ -90,8 +92,11 @@ RAG 第一版使用的檢索片段表。這張表由 `knowledge_sections` 自動
 | `title` | chunk 標題 |
 | `content` | chunk 內容 |
 | `search_text` | 給搜尋使用的合併文字 |
+| `risk_level` | `Low` / `High` 等風險等級；高風險 guardrail 的正式依據 |
 | `sort_order` | 排序 |
 | `source_updated_at` | 來源 section 的更新時間 |
+| `embedding` | pgvector 向量；只有 extension 與 embedding 設定可用時存在 |
+| `embedding_model` | 產生該向量的模型名稱 |
 | `updated_at` | chunk 建立/更新時間 |
 
 用途：
@@ -102,8 +107,35 @@ RAG 第一版使用的檢索片段表。這張表由 `knowledge_sections` 自動
 
 注意：
 
-- 這張表是衍生資料，會在 server 啟動、知識庫同步、後台新增/修改/封存/恢復分類時重建。
+- 這張表是衍生資料。後台修改只刷新對應 section；啟動時僅在 chunks 為空、同步有變更或明確要求時完整重建。
 - 不建議手動編輯這張表；要改知識內容，請改 `knowledge_sections` 或 GitHub JSON 來源。
+
+### `chat_traces`
+
+記錄每次網站或 LINE 問答的分類、RAG 檢索摘要、token、延遲與錯誤，不保存完整 RAG 內容。
+
+| 欄位群組 | 說明 |
+| --- | --- |
+| `session_id`, `channel`, `question` | 對話識別、來源與已遮罩問題 |
+| `question_category*`, `rag_scope` | 問題分類、信心與檢索範圍 |
+| `retrieval_mode`, `retrieved_chunks` | 使用的檢索方式與 chunk 摘要 |
+| `latency_ms`, `input_tokens`, `output_tokens` | 效能與用量 |
+| `stop_reason`, `error`, `timestamp` | 模型停止原因、錯誤與時間 |
+
+### `admin_audit_logs`
+
+記錄後台管理動作。主要欄位為 `actor`、`action`、`target_type`、`target_id`、`details` 與 `timestamp`。
+
+### `internal_wiki_entries`
+
+只在 `APP_MODE=internal` 使用的內部 Wiki 資料，正式客服模式不掛載相關 API。
+
+| 欄位 | 說明 |
+| --- | --- |
+| `department` | 部門範圍 |
+| `visibility` | `staff`、`manager`、`training` 或 `internal` |
+| `title`, `content`, `tags` | 內部知識內容 |
+| `sort_order`, `updated_at`, `archived_at` | 排序、更新與封存時間 |
 
 ## JSON 資料檔
 
@@ -159,6 +191,11 @@ RAG 第一版使用的檢索片段表。這張表由 `knowledge_sections` 自動
 | `DATABASE_URL` | PostgreSQL 連線字串 |
 | `PGSSL` | PostgreSQL SSL 設定 |
 | `ADMIN_KEY` | 後台管理 key |
+| `APP_MODE` / `STAFF_KEY` | 正式客服或內部 Wiki 模式，以及 staff-only API key |
+| `OPENAI_API_KEY` | pgvector embedding API key；未設定時改用關鍵字檢索 |
+| `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS` | embedding 模型與維度 |
+| `EMBEDDING_BATCH_SIZE` / `EMBEDDING_TIMEOUT_MS` | embedding 批次與 timeout |
+| `ECOCO_IOT_MYSQL_*` | 本機/VPN 唯讀 MySQL 同步設定，不需要放在 Render |
 | `KNOWLEDGE_AUTO_SYNC` | 啟動時是否同步知識 JSON；預設 `disable`，日常只用後台 PostgreSQL。`insert_only` 只新增缺少分類，`upsert` 會覆寫同名分類，`replace` 會重建 |
 | `PORT` | 本機或平台使用的 port |
 

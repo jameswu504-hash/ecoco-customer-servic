@@ -4,8 +4,10 @@ const SCHEMA = [
       session_id TEXT NOT NULL,
       role       TEXT NOT NULL,
       content    TEXT NOT NULL,
+      message_id TEXT NOT NULL DEFAULT '',
       timestamp  TIMESTAMPTZ NOT NULL
     )`,
+  `ALTER TABLE conversations ADD COLUMN IF NOT EXISTS message_id TEXT NOT NULL DEFAULT ''`,
   `CREATE TABLE IF NOT EXISTS ratings (
       id        SERIAL PRIMARY KEY,
       msg_id    TEXT NOT NULL,
@@ -52,6 +54,7 @@ const SCHEMA = [
   `ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS embedding_model TEXT NOT NULL DEFAULT ''`,
   `CREATE INDEX IF NOT EXISTS idx_conv_session  ON conversations(session_id)`,
   `CREATE INDEX IF NOT EXISTS idx_conv_session_ts ON conversations(session_id, timestamp)`,
+  `CREATE INDEX IF NOT EXISTS idx_conv_session_message ON conversations(session_id, message_id)`,
   `CREATE INDEX IF NOT EXISTS idx_conv_role     ON conversations(role)`,
   `CREATE INDEX IF NOT EXISTS idx_conv_timestamp ON conversations(timestamp)`,
   `CREATE INDEX IF NOT EXISTS idx_conv_role_timestamp ON conversations(role, timestamp)`,

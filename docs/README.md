@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | 客服人員 | [客服落地討論指南](CUSTOMER_ROLLOUT_GUIDE.md)、[客服人員操作指南](CUSTOMER_SUPPORT_GUIDE.md) | 了解試營運流程、日常後台操作與知識缺口處理 |
 | 客服主管 / 營運主管 | [客服落地討論指南](CUSTOMER_ROLLOUT_GUIDE.md)、[LINE@ 串接落地清單](LINE_ROLLOUT_CHECKLIST.md)、[PRD](PRD_ECOCO_AI_CUSTOMER_SERVICE.md) | 確認上線範圍、LINE 權限、客服口徑與角色分工 |
-| 系統維護者 | [維運與交接手冊](OPERATIONS_HANDOFF_GUIDE.md)、[部署與環境手冊](DEPLOYMENT_RUNBOOK.md) | 了解部署、資料庫、知識更新與交接流程 |
+| 系統維護者 | [維運與交接手冊](OPERATIONS_HANDOFF_GUIDE.md)、[部署與環境手冊](DEPLOYMENT_RUNBOOK.md)、[日常維護指南](MAINTENANCE_GUIDE.md) | 了解部署、資料庫、知識更新與交接流程 |
 | 工程協作者 | [資料字典](DATA_DICTIONARY.md)、[資料來源清單](DATA_SOURCES.md) | 了解資料表、JSON、來源與限制 |
 | AI / LLM 評估者 | [Eval 與可觀測性](EVAL_OBSERVABILITY_GUIDE.md) | 了解回覆品質評測、RAG traces 與後續改善方向 |
 
@@ -23,8 +23,11 @@
 | [CUSTOMER_SERVICE_FLOW.md](CUSTOMER_SERVICE_FLOW.md) | 客服流程與風險控管摘要，作為落地討論的輔助文件 |
 | [OPERATIONS_HANDOFF_GUIDE.md](OPERATIONS_HANDOFF_GUIDE.md) | 維運、權限、資料庫、部署與交接標準 |
 | [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md) | Render、PostgreSQL、Claude、OpenAI embedding 與健康檢查 |
+| [MAINTENANCE_GUIDE.md](MAINTENANCE_GUIDE.md) | 日常維護、知識缺口狀態與例行檢查 |
 | [LINE_ROLLOUT_CHECKLIST.md](LINE_ROLLOUT_CHECKLIST.md) | LINE@ 正式串接前的權限、資源、測試與決策清單 |
 | [LINE_INTEGRATION_GUIDE.md](LINE_INTEGRATION_GUIDE.md) | LINE Messaging API Webhook 技術串接方式 |
+| [IOT_STATION_STATUS_HANDOFF_2026-07-24.md](IOT_STATION_STATUS_HANDOFF_2026-07-24.md) | IoT 站點資料同步架構、排程、驗證與排錯 |
+| [LIVE_IOT_MYSQL_INTEGRATION.md](LIVE_IOT_MYSQL_INTEGRATION.md) | Azure MySQL 到 Neon/PostgreSQL 的實作與欄位說明 |
 
 ## 資料與知識庫文件
 
@@ -93,9 +96,9 @@
 - 客服、主管、技術窗口、專案維護者的角色分工
 
 Render 環境變數可參考 [config/render-production.env.example](../config/render-production.env.example)。
-# Current IoT Station Status Docs
+## IoT 站點狀態文件
 
-The live station/machine status integration added on 2026-07-24 is documented here:
+目前採「本機/VPN 讀取唯讀 Azure MySQL，再上傳 Neon/PostgreSQL；Render 只查雲端副本」：
 
-- [IOT_STATION_STATUS_HANDOFF_2026-07-24.md](IOT_STATION_STATUS_HANDOFF_2026-07-24.md) - current architecture, sync job, reply style, verification, troubleshooting.
-- [LIVE_IOT_MYSQL_INTEGRATION.md](LIVE_IOT_MYSQL_INTEGRATION.md) - MySQL -> Render admin sync API -> Neon/PostgreSQL implementation notes.
+- [IOT_STATION_STATUS_HANDOFF_2026-07-24.md](IOT_STATION_STATUS_HANDOFF_2026-07-24.md)：架構、排程、客服回覆格式、驗證與排錯。
+- [LIVE_IOT_MYSQL_INTEGRATION.md](LIVE_IOT_MYSQL_INTEGRATION.md)：MySQL → Render 管理上傳 API → Neon/PostgreSQL 實作細節。

@@ -1,6 +1,7 @@
 const express = require('express');
 const {
   cleanWikiEntryInput,
+  escapeWikiSearchTerm,
   normalizeDepartment,
   normalizeSearchQuery,
   normalizeVisibility,
@@ -73,8 +74,8 @@ function createInternalRouter({ pool, requireStaffKey }) {
     const params = [department, visibility, limit];
     const textConditions = [];
     for (const term of terms) {
-      params.push(`%${term.replace(/[%_]/g, '')}%`);
-      textConditions.push(`(title ILIKE $${params.length} OR content ILIKE $${params.length} OR tags ILIKE $${params.length})`);
+      params.push(`%${escapeWikiSearchTerm(term)}%`);
+      textConditions.push(`(title ILIKE $${params.length} ESCAPE '\\' OR content ILIKE $${params.length} ESCAPE '\\' OR tags ILIKE $${params.length} ESCAPE '\\')`);
     }
 
     const { rows } = await pool.query(

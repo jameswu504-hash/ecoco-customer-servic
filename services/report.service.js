@@ -62,7 +62,7 @@ ${categories}
 
 ## 三、處理與優化
 - 知識缺口：${payload.summary.knowledgeGaps} 則
-- 已解決知識缺口：${payload.summary.resolvedGaps} 則
+- 已補知識：${payload.summary.resolvedGaps} 則
 - 需人工處理：${payload.summary.manualGaps} 則
 - 正向評分：${payload.summary.positiveRatings} 則
 - 負向評分：${payload.summary.negativeRatings} 則
