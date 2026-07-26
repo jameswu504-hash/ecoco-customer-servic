@@ -861,7 +861,7 @@ test('PostgreSQL SSL modes distinguish encryption from certificate verification'
   assert.deepEqual(getPostgresSslConfig({ PGSSL: 'verify-full' }), { rejectUnauthorized: true });
   assert.deepEqual(getPostgresSslConfig({}), { rejectUnauthorized: true });
   const poolConfig = getPostgresPoolConfig({
-    DATABASE_URL: 'postgresql://user:pass@example.com/db?sslmode=require&channel_binding=require',
+    DATABASE_URL: 'postgresql://user:pass@127.0.0.1/db?sslmode=require&channel_binding=require',
     PGSSL: 'verify-full',
   });
   assert.deepEqual(poolConfig.ssl, { rejectUnauthorized: true });

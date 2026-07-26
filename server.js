@@ -17,11 +17,13 @@ const { createDashboardRouter } = require('./routes/dashboard.routes');
 const { createInternalRouter } = require('./routes/internal.routes');
 const { createKnowledgeRouter } = require('./routes/knowledge.routes');
 const { createLineRouter } = require('./routes/line.routes');
+const { createPartnersRouter } = require('./routes/partners.routes');
 const { createReportsRouter } = require('./routes/reports.routes');
 const { createUnansweredRouter } = require('./routes/unanswered.routes');
 const { createIotStatusService } = require('./services/iot-status.service');
 const { isInternalMode } = require('./services/internal-wiki.service');
 const { createPromptService } = require('./services/prompt.service');
+const { createPartnerService } = require('./services/partner.service');
 const { classifyQuestion } = require('./services/question-classifier.service');
 const { createRagService } = require('./services/rag.service');
 const { purgeExpiredConversationData } = require('./services/privacy.service');
@@ -57,7 +59,7 @@ app.use(express.json({
   },
 }));
 app.use((req, res, next) => {
-  if (['/dashboard.html', '/dashboard.css', '/dashboard.js', '/dashboard-v2.html', '/dashboard-v2.css'].includes(req.path)) {
+  if (['/dashboard.html', '/dashboard.css', '/dashboard.js', '/dashboard-v2.html', '/dashboard-v2.css', '/partners.html', '/partners.css', '/partners.js'].includes(req.path)) {
     res.setHeader('Cache-Control', 'no-store');
   }
   next();
@@ -326,6 +328,17 @@ const iotStatusService = createIotStatusService({ env: process.env, pgPool: pool
 const promptService = createPromptService({
   responsePolicies,
 });
+const partnerService = createPartnerService({
+  pool,
+  client,
+  retrieveKnowledgeForQuestion: ragService.retrieveKnowledgeForQuestion,
+  buildRuntimeGuardrails: ragService.buildRuntimeGuardrails,
+  buildSystemPrompt: promptService.buildSystemPrompt,
+  buildSystemPromptBlocks: promptService.buildSystemPromptBlocks,
+  defaultAnthropicModel: DEFAULT_ANTHROPIC_MODEL,
+  classifyQuestion,
+  retrieveLiveStationContext: iotStatusService.retrieveLiveStationContext,
+});
 
 async function buildHealthStatus({ includeDetails = false, includeIotCheck = false } = {}) {
   const health = {
@@ -487,6 +500,12 @@ app.use('/api', createLineRouter({
   defaultAnthropicModel: DEFAULT_ANTHROPIC_MODEL,
   classifyQuestion,
   retrieveLiveStationContext: iotStatusService.retrieveLiveStationContext,
+  partnerService,
+}));
+app.use('/api/partners', createPartnersRouter({
+  partnerService,
+  requireAdminKey,
+  pool,
 }));
 app.use('/api', createDashboardRouter({ pool, requireAdminKey }));
 app.use('/api/reports', createReportsRouter({ pool, requireAdminKey, readJsonFile }));

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/jameswu504-hash/ecoco-customer-servic/actions/workflows/ci.yml/badge.svg)](https://github.com/jameswu504-hash/ecoco-customer-servic/actions/workflows/ci.yml)
 
-ECOCO AI 客服系統是一套以官方知識庫為核心的客服輔助與自動回覆服務。系統支援網站客服、客服後台、PostgreSQL 知識庫、RAG 檢索、知識缺口紀錄、使用者回饋、主管報表與 LINE Official Account Webhook 串接準備。正式維運自動化以 GitHub Actions 為準。
+ECOCO AI 客服系統是一套以官方知識庫為核心的客服輔助與自動回覆服務。系統支援網站客服、客服後台、PostgreSQL 知識庫、RAG 檢索、知識缺口紀錄、使用者回饋、主管報表、LINE Official Account Webhook，以及依 LINE 群組隔離的 B2B 合作夥伴分支。正式維運自動化以 GitHub Actions 為準。
 
 本專案目標不是另外建立一套分散的 FAQ，而是讓網站、後台與未來 LINE@ 回覆共用同一份知識庫與同一套風險控管規則。
 
@@ -10,6 +10,7 @@ ECOCO AI 客服系統是一套以官方知識庫為核心的客服輔助與自�
 
 - Live demo：[ECOCO 智慧客服前台](https://ecoco-customer-servic.onrender.com/)
 - 管理後台：[ECOCO 客服後台](https://ecoco-customer-servic.onrender.com/dashboard.html)（需 `ADMIN_KEY`）
+- B2B 合作夥伴管理：[ECOCO B2B 管理頁](https://ecoco-customer-servic.onrender.com/partners.html)（需 `ADMIN_KEY`）
 - 健康檢查：[healthz](https://ecoco-customer-servic.onrender.com/healthz)
 
 ### 前台客服畫面
@@ -35,6 +36,8 @@ flowchart LR
   Admin["客服 / 主管後台"] --> API
   GitHub["GitHub Actions<br/>備份 / 健檢 / 評測"] --> API
   Line["LINE Official Account<br/>Webhook"] --> API
+  Partner["B2B LINE 群組"] --> API
+  API --> PartnerDB[("partner_companies<br/>partner_line_groups<br/>partner_knowledge_sections")]
 ```
 
 ## 目前狀態
@@ -43,7 +46,8 @@ flowchart LR
 - 後台可維護 `knowledge_sections`，新增或封存知識後會重建 RAG chunks。
 - 支援 pgvector / embedding 語意檢索；若 OpenAI embedding 失敗，會降級為關鍵字檢索。
 - 對話、評分與知識缺口會寫入 PostgreSQL。
-- LINE Messaging API Webhook 路由已預留，正式串接需公司提供 LINE Developers 權限。
+- LINE Messaging API Webhook 已串接；一對一訊息走 B2C，已綁定群組走公司隔離的 B2B 分支。
+- B2B 管理頁可在尚未綁定真實 LINE 群組前，先建立公司、加入測試資料與模擬問答。
 - GitHub Actions 為目前正式維運自動化方式，負責 CI、知識庫備份與每週 AI 維運分析。
 
 ## 系統架構
@@ -66,6 +70,7 @@ flowchart LR
 | `db/schema.js` | PostgreSQL schema 初始化 |
 | `public/index.html` | 對外客服前台 |
 | `public/dashboard-v2.html` | 管理後台實際 shell；公開入口仍為 `/dashboard.html` |
+| `public/partners.html` | ECOCO 管理者使用的 B2B 公司、群組綁定與分支測試頁 |
 | `data/ecoco-knowledge-import.json` | 正式匯入 PostgreSQL 的知識庫 JSON |
 | `data/ecoco-ai-customer-service-database.json` | 整合來源資料與稽核用資料庫 |
 | `.github/workflows/` | GitHub Actions 自動備份與健檢，為正式維運主線 |
@@ -108,6 +113,7 @@ npm start
 | --- | --- |
 | 客服前台 | `http://localhost:3000` |
 | 管理後台 | `http://localhost:3000/dashboard.html` |
+| B2B 合作夥伴管理 | `http://localhost:3000/partners.html` |
 | 健康檢查 | `http://localhost:3000/healthz` |
 | 詳細系統狀態 | `http://localhost:3000/api/system/status`，需 `x-admin-key` |
 
@@ -175,6 +181,7 @@ https://ecoco-customer-servic.onrender.com/api/line/webhook
 | [`docs/archive/GO_LIVE_CHECKLIST.md`](docs/archive/GO_LIVE_CHECKLIST.md) | 上線前檢查表 |
 | [`docs/LINE_ROLLOUT_CHECKLIST.md`](docs/LINE_ROLLOUT_CHECKLIST.md) | LINE@ 串接落地清單，列出權限、資源與測試項目 |
 | [`docs/LINE_INTEGRATION_GUIDE.md`](docs/LINE_INTEGRATION_GUIDE.md) | LINE@ 技術串接說明 |
+| [`docs/B2B_LINE_PARTNER_FRAMEWORK.md`](docs/B2B_LINE_PARTNER_FRAMEWORK.md) | 單一 LINE OA 的 B2B 公司分支、群組綁定與資料隔離 |
 | [`docs/EVAL_OBSERVABILITY_GUIDE.md`](docs/EVAL_OBSERVABILITY_GUIDE.md) | 回覆品質評測、chat traces 與知識漂移檢查 |
 | [`docs/IOT_STATION_STATUS_HANDOFF_2026-07-24.md`](docs/IOT_STATION_STATUS_HANDOFF_2026-07-24.md) | IoT 站點同步架構、排程、驗證與排錯 |
 | [`docs/LIVE_IOT_MYSQL_INTEGRATION.md`](docs/LIVE_IOT_MYSQL_INTEGRATION.md) | MySQL 到 PostgreSQL/Neon 的欄位與實作說明 |

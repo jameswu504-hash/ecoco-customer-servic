@@ -104,6 +104,58 @@ const SCHEMA = [
     )`,
   `CREATE INDEX IF NOT EXISTS idx_admin_audit_ts ON admin_audit_logs(timestamp)`,
   `CREATE INDEX IF NOT EXISTS idx_admin_audit_target ON admin_audit_logs(target_type, target_id)`,
+  `CREATE TABLE IF NOT EXISTS partner_companies (
+      id         SERIAL PRIMARY KEY,
+      slug       TEXT NOT NULL UNIQUE,
+      name       TEXT NOT NULL,
+      status     TEXT NOT NULL DEFAULT 'active',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+  `CREATE INDEX IF NOT EXISTS idx_partner_companies_status ON partner_companies(status, name)`,
+  `CREATE TABLE IF NOT EXISTS partner_line_groups (
+      id                 SERIAL PRIMARY KEY,
+      company_id         INTEGER NOT NULL REFERENCES partner_companies(id) ON DELETE CASCADE,
+      group_key          TEXT NOT NULL UNIQUE,
+      group_id_last4     TEXT NOT NULL DEFAULT '',
+      label              TEXT NOT NULL DEFAULT '',
+      status             TEXT NOT NULL DEFAULT 'active',
+      bound_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+  `CREATE INDEX IF NOT EXISTS idx_partner_line_groups_company ON partner_line_groups(company_id, status)`,
+  `CREATE TABLE IF NOT EXISTS partner_binding_codes (
+      id          SERIAL PRIMARY KEY,
+      company_id  INTEGER NOT NULL REFERENCES partner_companies(id) ON DELETE CASCADE,
+      code_hash   TEXT NOT NULL UNIQUE,
+      code_hint   TEXT NOT NULL DEFAULT '',
+      expires_at  TIMESTAMPTZ NOT NULL,
+      used_at     TIMESTAMPTZ,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+  `CREATE INDEX IF NOT EXISTS idx_partner_binding_codes_company ON partner_binding_codes(company_id, expires_at)`,
+  `CREATE TABLE IF NOT EXISTS partner_knowledge_sections (
+      id          SERIAL PRIMARY KEY,
+      company_id  INTEGER NOT NULL REFERENCES partner_companies(id) ON DELETE CASCADE,
+      category    TEXT NOT NULL,
+      content     TEXT NOT NULL DEFAULT '',
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      archived_at TIMESTAMPTZ,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+  `CREATE INDEX IF NOT EXISTS idx_partner_knowledge_company ON partner_knowledge_sections(company_id, archived_at, sort_order)`,
+  `CREATE TABLE IF NOT EXISTS partner_conversations (
+      id            SERIAL PRIMARY KEY,
+      company_id    INTEGER NOT NULL REFERENCES partner_companies(id) ON DELETE CASCADE,
+      line_group_id INTEGER REFERENCES partner_line_groups(id) ON DELETE SET NULL,
+      session_id    TEXT NOT NULL,
+      role          TEXT NOT NULL,
+      content       TEXT NOT NULL,
+      timestamp     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+  `CREATE INDEX IF NOT EXISTS idx_partner_conversations_scope ON partner_conversations(company_id, session_id, timestamp)`,
+  `CREATE INDEX IF NOT EXISTS idx_partner_conversations_group ON partner_conversations(line_group_id, timestamp)`,
   `CREATE TABLE IF NOT EXISTS internal_wiki_entries (
       id          SERIAL PRIMARY KEY,
       department  TEXT NOT NULL DEFAULT 'general',

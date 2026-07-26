@@ -87,8 +87,13 @@ async function replyToLine({ replyToken, text, channelAccessToken }) {
 }
 
 function buildLineSessionId(event = {}) {
-  const userId = event.source?.userId || event.source?.groupId || event.source?.roomId || 'unknown';
-  return `line_${crypto.createHash('sha256').update(userId).digest('hex').slice(0, 32)}`;
+  const source = event.source || {};
+  const sourceId = source.type === 'group'
+    ? source.groupId
+    : source.type === 'room'
+      ? source.roomId
+      : source.userId;
+  return `line_${crypto.createHash('sha256').update(sourceId || 'unknown').digest('hex').slice(0, 32)}`;
 }
 
 function getLineRateLimitMax(env = process.env) {
@@ -287,6 +292,7 @@ function createLineRouter({
   defaultAnthropicModel,
   classifyQuestion,
   retrieveLiveStationContext = null,
+  partnerService = null,
 }) {
   const router = express.Router();
 
@@ -315,7 +321,8 @@ function createLineRouter({
       const sessionId = buildLineSessionId(event);
       let reply = LINE_FALLBACK_REPLY;
       let shouldStoreConversation = true;
-      const classification = typeof classifyQuestion === 'function'
+      const isPartnerGroup = event.source?.type === 'group' && partnerService;
+      const classification = !isPartnerGroup && typeof classifyQuestion === 'function'
         ? classifyQuestion(userText)
         : null;
       if (isLineRateLimited(sessionId)) {
@@ -329,6 +336,71 @@ function createLineRouter({
           latencyMs: 0,
           questionClassification: classification,
         });
+      } else if (isPartnerGroup) {
+        shouldStoreConversation = false;
+        try {
+          const partnerRoute = await partnerService.routeLineGroupMessage({
+            groupId: event.source.groupId,
+            text: userText,
+          });
+          if (partnerRoute.type !== 'partner') {
+            reply = partnerRoute.reply;
+            await saveChatTrace(pool, {
+              sessionId,
+              channel: 'line_b2b',
+              question: userText,
+              rag: {
+                retrievalMode: partnerRoute.type === 'binding'
+                  ? 'partner_binding'
+                  : 'partner_unbound',
+                chunks: [],
+              },
+              latencyMs: 0,
+            });
+          } else {
+            const timeoutMs = getLineReplyTimeoutMs();
+            const timeoutReply = getLineTimeoutReply();
+            const abortController = new AbortController();
+            const partnerReplyPromise = partnerService.answerPartnerQuestion({
+              company: partnerRoute.company,
+              lineGroupId: partnerRoute.lineGroupId,
+              sessionId,
+              question: userText,
+              channel: 'line_b2b',
+              signal: abortController.signal,
+            });
+            const result = await resolveWithTimeout(
+              partnerReplyPromise,
+              timeoutMs,
+              timeoutReply,
+              () => abortController.abort()
+            );
+            reply = result.value?.reply || result.value || LINE_FALLBACK_REPLY;
+            if (result.timedOut) {
+              await saveChatTrace(pool, {
+                sessionId,
+                channel: 'line_b2b',
+                question: userText,
+                rag: { retrievalMode: 'partner_timeout', chunks: [] },
+                latencyMs: timeoutMs,
+                error: `LINE B2B reply timed out after ${timeoutMs}ms`,
+              });
+              partnerReplyPromise.catch(err => {
+                console.warn('Late LINE B2B reply failed after timeout:', err.message);
+              });
+            }
+          }
+        } catch (err) {
+          console.error('LINE B2B reply error:', err.message);
+          reply = LINE_FALLBACK_REPLY;
+          await saveChatTrace(pool, {
+            sessionId,
+            channel: 'line_b2b',
+            question: userText,
+            rag: { retrievalMode: 'partner_error', chunks: [] },
+            error: err.message,
+          });
+        }
       } else if (classification?.directReply && classification.shouldUseRag === false) {
         reply = classification.directReply;
         await saveChatTrace(pool, {

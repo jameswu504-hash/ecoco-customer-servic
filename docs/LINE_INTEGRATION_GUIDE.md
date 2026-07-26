@@ -19,6 +19,8 @@ LINE 使用者訊息
 
 這樣做的好處是 LINE、網站前台與後台維護可以共用同一套知識庫、回覆規則、風險控管、對話紀錄與知識缺口紀錄，不需要在 LINE 後台重建另一套 FAQ。
 
+群組訊息另有 B2B 分流：一對一聊天維持 B2C；已綁定群組只讀取 ECOCO 共用資料與該公司的私有資料；未綁定群組不進入 RAG。完整設計見 [B2B_LINE_PARTNER_FRAMEWORK.md](B2B_LINE_PARTNER_FRAMEWORK.md)。
+
 ## 2. Webhook URL
 
 Render 正式環境目前可使用：
@@ -75,6 +77,8 @@ LINE Developers 後台要把這個 URL 填到 Messaging API 的 Webhook URL。
 - 接收 LINE 文字訊息。
 - 驗證 LINE signature，避免偽造請求。
 - 依 LINE user/group/room 產生固定 session id。
+- LINE 群組以 `groupId` 建立 session，同群組不同成員會共用該群組上下文。
+- 已綁定群組進入 B2B 公司分支；未綁定群組只回覆綁定提示。
 - 讀取同一個 LINE session 的近期對話紀錄，避免每次都像第一次對話。
 - 使用目前的 PostgreSQL 知識庫、RAG 檢索與回覆政策。
 - 回覆前將 Markdown 轉成 LINE 較適合閱讀的純文字。
@@ -88,6 +92,7 @@ LINE Developers 後台要把這個 URL 填到 Messaging API 的 Webhook URL。
 - 主動推播或群發活動訊息。
 - LINE 使用者個人資料查詢。
 - 補點、退款、帳務異動等高風險操作。
+- 合作公司自行登入網頁；B2B 管理頁只提供 ECOCO 管理者使用。
 
 ## 7. 測試檢查表
 

@@ -26,6 +26,7 @@
 | [MAINTENANCE_GUIDE.md](MAINTENANCE_GUIDE.md) | 日常維護、知識缺口狀態與例行檢查 |
 | [LINE_ROLLOUT_CHECKLIST.md](LINE_ROLLOUT_CHECKLIST.md) | LINE@ 正式串接前的權限、資源、測試與決策清單 |
 | [LINE_INTEGRATION_GUIDE.md](LINE_INTEGRATION_GUIDE.md) | LINE Messaging API Webhook 技術串接方式 |
+| [B2B_LINE_PARTNER_FRAMEWORK.md](B2B_LINE_PARTNER_FRAMEWORK.md) | 單一 LINE OA 的 B2B 公司分支、群組綁定、模擬測試與資料隔離 |
 | [IOT_STATION_STATUS_HANDOFF_2026-07-24.md](IOT_STATION_STATUS_HANDOFF_2026-07-24.md) | IoT 站點資料同步架構、排程、驗證與排錯 |
 | [LIVE_IOT_MYSQL_INTEGRATION.md](LIVE_IOT_MYSQL_INTEGRATION.md) | Azure MySQL 到 Neon/PostgreSQL 的實作與欄位說明 |
 
@@ -71,6 +72,7 @@
 - API key、token、資料庫連線字串與 `.env` 不得提交。
 - 真實手機、Email、會員資料或可識別個資不得提交。
 - 高風險客服問題不得由 AI 承諾補點、退款、賠償或已完成處理。
+- B2B 合作資料只能放在 `partner_knowledge_sections`，不可混入全域 `knowledge_sections`。
 
 ## 文件維護規範
 

@@ -126,6 +126,18 @@ RAG 第一版使用的檢索片段表。這張表由 `knowledge_sections` 自動
 
 記錄後台管理動作。主要欄位為 `actor`、`action`、`target_type`、`target_id`、`details` 與 `timestamp`。
 
+### B2B 合作夥伴資料表
+
+| 資料表 | 用途 | 重要隔離欄位 |
+| --- | --- | --- |
+| `partner_companies` | 合作公司主檔，含 `slug`、名稱與啟用狀態 | `id` |
+| `partner_line_groups` | LINE 群組與公司綁定；只保存 `groupId` 的 SHA-256 與末四碼 | `company_id`, `group_key` |
+| `partner_binding_codes` | 24 小時有效的一次性群組綁定碼；只保存 code hash | `company_id` |
+| `partner_knowledge_sections` | 公司專屬合作資料，不得混入全域 `knowledge_sections` | `company_id` |
+| `partner_conversations` | B2B 群組與管理頁模擬測試的對話 | `company_id`, `line_group_id`, `session_id` |
+
+所有 B2B 私有資料與對話查詢都必須包含 `company_id`。停用公司或群組後，LINE webhook 不得再進入該公司的 RAG 分支。
+
 ### `internal_wiki_entries`
 
 只在 `APP_MODE=internal` 使用的內部 Wiki 資料，正式客服模式不掛載相關 API。

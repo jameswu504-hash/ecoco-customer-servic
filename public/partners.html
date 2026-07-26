@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ECOCO B2B 合作夥伴</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;800&family=Space+Mono&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="partners.css?v=20260727" />
+</head>
+<body>
+  <div class="login-overlay" id="loginOverlay">
+    <form class="login-panel" id="loginForm">
+      <img src="ecoco-mark.png" alt="ECOCO" />
+      <h1>B2B 管理登入</h1>
+      <label for="adminKeyInput">Admin Key</label>
+      <input id="adminKeyInput" type="password" autocomplete="current-password" required />
+      <button type="submit">登入</button>
+      <p class="form-error" id="loginError" role="alert"></p>
+    </form>
+  </div>
+
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <img src="ecoco-logo.png" alt="ECOCO" />
+        <div>
+          <strong>B2B 合作夥伴</strong>
+          <span>LINE GROUP OPS</span>
+        </div>
+      </div>
+
+      <div class="sidebar-heading">
+        <span>合作公司</span>
+        <button class="icon-button" id="openCreateCompanyBtn" type="button" title="建立合作公司" aria-label="建立合作公司">＋</button>
+      </div>
+      <div class="company-list" id="companyList">
+        <div class="loading-row">讀取中...</div>
+      </div>
+
+      <div class="sidebar-footer">
+        <a href="/dashboard.html">返回客服後台</a>
+        <a href="/">客服前台</a>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <span class="eyebrow">ECOCO PARTNER OPERATIONS</span>
+          <h1 id="pageTitle">B2B LINE 群組</h1>
+        </div>
+        <button class="secondary-button" id="refreshBtn" type="button">重新整理</button>
+      </header>
+
+      <section class="empty-selection" id="emptySelection">
+        <div class="empty-mark">B2B</div>
+        <h2>先建立或選擇合作公司</h2>
+        <p>公司建立後即可加入測試資料、模擬 LINE 問答，並產生真實群組的一次性綁定碼。</p>
+        <button id="emptyCreateCompanyBtn" type="button">建立第一家公司</button>
+      </section>
+
+      <div class="partner-workspace" id="partnerWorkspace" hidden>
+        <section class="company-header">
+          <div>
+            <div class="company-title-row">
+              <h2 id="companyName">合作公司</h2>
+              <span class="status-badge" id="companyStatus">啟用中</span>
+            </div>
+            <code id="companySlug">partner-code</code>
+          </div>
+          <button class="secondary-button" id="toggleCompanyStatusBtn" type="button">停用公司</button>
+        </section>
+
+        <section class="metrics-row">
+          <div class="metric">
+            <span>LINE 群組</span>
+            <strong id="groupCount">0</strong>
+          </div>
+          <div class="metric">
+            <span>專屬資料</span>
+            <strong id="knowledgeCount">0</strong>
+          </div>
+          <div class="metric">
+            <span>隔離狀態</span>
+            <strong class="isolation-ok">Tenant OK</strong>
+          </div>
+        </section>
+
+        <section class="workspace-section">
+          <div class="section-heading">
+            <div>
+              <span class="section-index">01</span>
+              <h3>LINE 群組綁定</h3>
+            </div>
+            <button id="generateBindingCodeBtn" type="button">產生綁定碼</button>
+          </div>
+          <div class="binding-result" id="bindingResult" hidden>
+            <div>
+              <span>一次性綁定碼</span>
+              <code id="bindingCode"></code>
+              <small id="bindingExpiry"></small>
+            </div>
+            <button class="icon-button copy-button" id="copyBindingCodeBtn" type="button" title="複製綁定碼" aria-label="複製綁定碼">⧉</button>
+          </div>
+          <div class="group-list" id="groupList"></div>
+        </section>
+
+        <section class="workspace-section">
+          <div class="section-heading">
+            <div>
+              <span class="section-index">02</span>
+              <h3>公司專屬資料</h3>
+            </div>
+          </div>
+          <form class="knowledge-form" id="knowledgeForm">
+            <label>
+              資料分類
+              <input id="knowledgeCategory" type="text" maxlength="160" placeholder="例如：門市回收合作規則" required />
+            </label>
+            <label>
+              資料內容
+              <textarea id="knowledgeContent" maxlength="20000" rows="5" placeholder="先放測試內容，之後可再灌入正式資料。" required></textarea>
+            </label>
+            <div class="form-actions">
+              <span class="form-error" id="knowledgeError" role="alert"></span>
+              <button type="submit">新增資料</button>
+            </div>
+          </form>
+          <div class="knowledge-list" id="knowledgeList"></div>
+        </section>
+
+        <section class="workspace-section test-section">
+          <div class="section-heading">
+            <div>
+              <span class="section-index">03</span>
+              <h3>LINE 分支測試</h3>
+            </div>
+            <span class="test-company-label" id="testCompanyLabel"></span>
+          </div>
+          <div class="test-chat" id="testChat">
+            <div class="system-message">此測試只會讀取 ECOCO 共用資料與目前公司的專屬資料。</div>
+          </div>
+          <form class="test-form" id="testForm">
+            <textarea id="testQuestion" rows="2" maxlength="2000" placeholder="輸入要模擬的 LINE 群組問題..." required></textarea>
+            <button id="sendTestBtn" type="submit">送出測試</button>
+          </form>
+          <p class="form-error" id="testError" role="alert"></p>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="createCompanyDialog">
+    <form class="dialog-form" id="createCompanyForm">
+      <div class="dialog-heading">
+        <h2>建立合作公司</h2>
+        <button class="icon-button" id="closeCreateCompanyBtn" type="button" title="關閉" aria-label="關閉">×</button>
+      </div>
+      <label>
+        公司名稱
+        <input id="newCompanyName" type="text" maxlength="160" placeholder="例如：小北百貨" required />
+      </label>
+      <label>
+        公司代碼
+        <input id="newCompanySlug" type="text" maxlength="80" placeholder="例如：showba" />
+      </label>
+      <p class="form-error" id="createCompanyError" role="alert"></p>
+      <div class="dialog-actions">
+        <button class="secondary-button" id="cancelCreateCompanyBtn" type="button">取消</button>
+        <button type="submit">建立公司</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="partners.js?v=20260727" defer></script>
+</body>
+</html>

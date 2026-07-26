@@ -14,7 +14,7 @@ npm run build:knowledge     # 從 data/ 組出 ecoco-knowledge-import.json
 npm run import:knowledge    # 把 ecoco-knowledge-import.json 匯入 PostgreSQL
 
 npm run lint                # 語法檢查（scripts/lint.mjs 自動掃描所有 .js/.mjs）
-npm test                    # 執行 tests/*.test.js（node --test，目前共 4 個測試檔）
+npm test                    # 執行 tests/*.test.js（node --test，目前共 5 個測試檔）
 npm run eval:validate       # 驗證 evals/golden-set.json 格式
 npm run eval                # 對線上服務跑 golden set（需設 ECOCO_BASE_URL、ADMIN_KEY）
 npm run scan:pii            # 掃描 repo 是否含個資
@@ -87,6 +87,15 @@ PGSSL=verify-full                # 雲端連線加密並驗證憑證；只有相
 - `/api/sessions` 已分頁，回傳 `{ total, limit, offset, sessions }`，其中 `sessions` 只含對話摘要與訊息數；單場訊息由 `/api/session-messages?session_id=` 懶載入。`/api/search` 維持舊行為，仍回傳含 `messages` 的完整搜尋結果。
 - `public/kb-parser.js` 是後台知識庫分題解析器，以 `### ` 行切割題目，並保證 `assembleKbContent(parseKbContent(x)) === x`。儲存流程仍以完整 `knowledge_sections.content` 字串為準，不改資料庫 schema。
 
+### B2B LINE 公司分支
+
+- 同一個 `/api/line/webhook` 服務 B2C 與 B2B；一對一訊息走 B2C，群組訊息先檢查 `partner_line_groups`。
+- 未綁定群組不得進入 B2C 或 B2B RAG。已綁定群組只能讀取 ECOCO 共用知識與目前 `company_id` 的 `partner_knowledge_sections`。
+- B2B 私有對話只寫入 `partner_conversations`。所有私有知識與歷史 SQL 都必須帶 `company_id`，不可用 prompt 取代後端隔離。
+- 合作公司資料不得寫入全域 `knowledge_sections`。
+- `/partners.html` 與 `/api/partners/*` 只供 ECOCO 管理者使用，全部由 `ADMIN_KEY` 保護；公司端只在 LINE 群組互動。
+- 詳見 `docs/B2B_LINE_PARTNER_FRAMEWORK.md`。
+
 ## 重要規則
 
 **修改前先說明：** 任何影響 AI 回覆行為、資料同步邏輯、部署設定或 Git 歷史的變更，必須先向使用者解釋，再執行。
@@ -101,6 +110,7 @@ PGSSL=verify-full                # 雲端連線加密並驗證憑證；只有相
 |---|---|
 | 客服前台 | `public/index.html` |
 | 後台儀表板 | 對外入口 `/dashboard.html`；實際 shell 為 `public/dashboard-v2.html`，共用 `public/dashboard.js` |
+| B2B 合作夥伴管理 | `public/partners.html`，入口 `/partners.html`，僅 ECOCO 管理者使用 |
 
 ## 部署
 
