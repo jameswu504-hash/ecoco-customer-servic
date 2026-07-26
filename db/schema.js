@@ -55,11 +55,22 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_conv_session  ON conversations(session_id)`,
   `CREATE INDEX IF NOT EXISTS idx_conv_session_ts ON conversations(session_id, timestamp)`,
   `CREATE INDEX IF NOT EXISTS idx_conv_session_message ON conversations(session_id, message_id)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_conv_session_role_message
+     ON conversations(session_id, role, message_id)
+     WHERE message_id <> ''`,
   `CREATE INDEX IF NOT EXISTS idx_conv_role     ON conversations(role)`,
   `CREATE INDEX IF NOT EXISTS idx_conv_timestamp ON conversations(timestamp)`,
   `CREATE INDEX IF NOT EXISTS idx_conv_role_timestamp ON conversations(role, timestamp)`,
   `CREATE INDEX IF NOT EXISTS idx_ratings_type  ON ratings(type)`,
   `CREATE INDEX IF NOT EXISTS idx_ratings_timestamp ON ratings(timestamp)`,
+  `DELETE FROM ratings duplicate
+     USING ratings keeper
+     WHERE duplicate.msg_id <> ''
+       AND duplicate.msg_id = keeper.msg_id
+       AND duplicate.id < keeper.id`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_ratings_msg_id
+     ON ratings(msg_id)
+     WHERE msg_id <> ''`,
   `CREATE INDEX IF NOT EXISTS idx_unanswered_ts ON unanswered_questions(timestamp)`,
   `CREATE INDEX IF NOT EXISTS idx_unanswered_status ON unanswered_questions(status)`,
   `CREATE INDEX IF NOT EXISTS idx_ks_sort       ON knowledge_sections(sort_order, id)`,
@@ -93,6 +104,16 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_chat_traces_session ON chat_traces(session_id, timestamp)`,
   `CREATE INDEX IF NOT EXISTS idx_chat_traces_channel ON chat_traces(channel, timestamp)`,
   `CREATE INDEX IF NOT EXISTS idx_chat_traces_question_category ON chat_traces(question_category, timestamp)`,
+  `CREATE TABLE IF NOT EXISTS line_webhook_events (
+      event_id     TEXT PRIMARY KEY,
+      status       TEXT NOT NULL DEFAULT 'processing',
+      attempts     INTEGER NOT NULL DEFAULT 1,
+      is_redelivery BOOLEAN NOT NULL DEFAULT FALSE,
+      last_error   TEXT NOT NULL DEFAULT '',
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+  `CREATE INDEX IF NOT EXISTS idx_line_webhook_events_updated ON line_webhook_events(updated_at)`,
   `CREATE TABLE IF NOT EXISTS admin_audit_logs (
       id          SERIAL PRIMARY KEY,
       actor       TEXT NOT NULL DEFAULT 'admin',
@@ -205,8 +226,34 @@ const SCHEMA = [
       updated_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (station_code, asset_id)
     )`,
-  `ALTER TABLE iot_station_statuses DROP CONSTRAINT IF EXISTS iot_station_statuses_pkey`,
-  `ALTER TABLE iot_station_statuses ADD PRIMARY KEY (station_code, asset_id)`,
+  `DO $$
+   DECLARE
+     primary_key_name TEXT;
+     primary_key_columns TEXT[];
+   BEGIN
+     SELECT
+       constraint_info.conname,
+       ARRAY_AGG(attribute_info.attname::TEXT ORDER BY key_info.ordinality)
+     INTO primary_key_name, primary_key_columns
+     FROM pg_constraint constraint_info
+     JOIN UNNEST(constraint_info.conkey) WITH ORDINALITY AS key_info(attnum, ordinality) ON TRUE
+     JOIN pg_attribute attribute_info
+       ON attribute_info.attrelid = constraint_info.conrelid
+      AND attribute_info.attnum = key_info.attnum
+     WHERE constraint_info.conrelid = 'iot_station_statuses'::regclass
+       AND constraint_info.contype = 'p'
+     GROUP BY constraint_info.conname;
+
+     IF primary_key_columns IS DISTINCT FROM ARRAY['station_code', 'asset_id']::TEXT[] THEN
+       IF primary_key_name IS NOT NULL THEN
+         EXECUTE FORMAT(
+           'ALTER TABLE iot_station_statuses DROP CONSTRAINT %I',
+           primary_key_name
+         );
+       END IF;
+       ALTER TABLE iot_station_statuses ADD PRIMARY KEY (station_code, asset_id);
+     END IF;
+   END $$`,
   `ALTER TABLE iot_station_statuses ADD COLUMN IF NOT EXISTS longitude TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE iot_station_statuses ADD COLUMN IF NOT EXISTS latitude TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE iot_station_statuses ADD COLUMN IF NOT EXISTS source_synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`,

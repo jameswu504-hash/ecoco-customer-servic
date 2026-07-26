@@ -39,9 +39,13 @@ function getPostgresConfig() {
 
 function getUploadConfig() {
   const url = process.env.ECOCO_IOT_SYNC_URL || '';
-  const adminKey = process.env.ADMIN_KEY || process.env.ECOCO_IOT_SYNC_ADMIN_KEY || '';
-  if (!url || !adminKey) return null;
-  return { url, adminKey };
+  const syncKey = process.env.IOT_SYNC_KEY
+    || process.env.ECOCO_IOT_SYNC_KEY
+    || process.env.ECOCO_IOT_SYNC_ADMIN_KEY
+    || process.env.ADMIN_KEY
+    || '';
+  if (!url || !syncKey) return null;
+  return { url, syncKey };
 }
 
 function assertMysqlConfig(config) {
@@ -262,7 +266,8 @@ async function upsertStationRows(pool, rows) {
   return written;
 }
 
-async function uploadStationRows({ url, adminKey, stationRows, syncedAt }) {
+async function uploadStationRows({ url, syncKey, adminKey, stationRows, syncedAt }) {
+  const credential = syncKey || adminKey || '';
   let written = 0;
   let received = 0;
   let lastPayload = {};
@@ -274,7 +279,7 @@ async function uploadStationRows({ url, adminKey, stationRows, syncedAt }) {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'x-admin-key': adminKey,
+        'x-iot-sync-key': credential,
       },
       body: JSON.stringify({
         syncedAt: syncedAt.toISOString(),

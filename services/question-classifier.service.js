@@ -22,7 +22,7 @@ const QUESTION_CATEGORIES = [
   {
     category: 'points',
     label: '點數 / 回收回饋',
-    keywords: ['點數', '點', '回饋', '沒收到', '未入帳', '補點', '兌換', '投遞紀錄', '序號', '集點'],
+    keywords: ['點數', '回饋', '沒收到', '未入帳', '補點', '兌換', '投遞紀錄', '序號', '集點'],
     ragScope: ['點數', '回饋', '兌換', '優惠券', '投遞'],
   },
   {
@@ -86,6 +86,35 @@ const HIGH_RISK_KEYWORDS = [
   '刪除個資',
 ];
 
+const INFORMATIONAL_POLICY_KEYWORDS = [
+  '規則',
+  '政策',
+  '流程',
+  '條件',
+  '期限',
+  '多久',
+  '說明',
+  '什麼情況',
+];
+
+const PERSONAL_CASE_KEYWORDS = [
+  '我要',
+  '我的',
+  '幫我',
+  '替我',
+  '被盜',
+  '外洩',
+  '報警',
+  '詐騙',
+  '沒有收到',
+  '未收到',
+];
+
+function isInformationalHighRiskQuestion(text) {
+  return hasAny(text, INFORMATIONAL_POLICY_KEYWORDS)
+    && !hasAny(text, PERSONAL_CASE_KEYWORDS);
+}
+
 function confidenceFor(text, category) {
   const hits = category.keywords.filter(keyword => text.includes(normalizeQuestionText(keyword))).length;
   if (hits >= 2) return 'high';
@@ -129,6 +158,19 @@ function classifyQuestion(question) {
   }
 
   if (hasAny(text, HIGH_RISK_KEYWORDS)) {
+    if (isInformationalHighRiskQuestion(text)) {
+      return {
+        category: 'high_risk_policy',
+        label: '高風險政策 / 一般說明',
+        confidence: 'high',
+        ragScope: ['客服', '顧客關係', '退款', '退費', '個資', '帳號'],
+        shouldUseRag: true,
+        shouldEscalate: false,
+        reason: 'matched informational high-risk policy question',
+        directReply: '',
+      };
+    }
+
     return {
       category: 'high_risk',
       label: '高風險 / 需人工確認',
@@ -186,5 +228,6 @@ function classifyQuestion(question) {
 module.exports = {
   QUESTION_CATEGORIES,
   classifyQuestion,
+  isInformationalHighRiskQuestion,
   normalizeQuestionText,
 };

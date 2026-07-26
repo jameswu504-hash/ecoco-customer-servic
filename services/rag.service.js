@@ -8,6 +8,12 @@ const {
 
 const KNOWLEDGE_CHUNK_LOCK_ID = 60229;
 
+function getBoundedNumber(value, fallback, minimum, maximum) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(Math.max(number, minimum), maximum);
+}
+
 function normalizeRiskLevel(value) {
   const risk = String(value || '').trim().toLowerCase();
   if (risk === 'high') return 'High';
@@ -154,22 +160,6 @@ function normalizeScopeTerms(scopeTerms = []) {
   )].slice(0, 12);
 }
 
-function buildScopeFilter(scopeTerms, startIndex) {
-  const terms = normalizeScopeTerms(scopeTerms);
-  if (terms.length === 0) return { clause: '', values: [], terms };
-
-  const parts = terms.map((_, idx) => {
-    const param = `$${startIndex + idx}`;
-    return `(category ILIKE ${param} ESCAPE '\\' OR title ILIKE ${param} ESCAPE '\\')`;
-  });
-
-  return {
-    clause: `(${parts.join(' OR ')})`,
-    values: terms.map(term => `%${escapeIlikePattern(term)}%`),
-    terms,
-  };
-}
-
 function scoreChunk(chunk, terms) {
   const category = String(chunk.category || '');
   const title = String(chunk.title || '');
@@ -183,11 +173,24 @@ function scoreChunk(chunk, terms) {
   return score;
 }
 
-function rankKnowledgeRows(rows, terms) {
+function scoreScope(chunk, scopeTerms) {
+  const category = String(chunk.category || '');
+  const title = String(chunk.title || '');
+  let score = 0;
+  for (const term of scopeTerms) {
+    if (category.includes(term)) score += 5;
+    if (title.includes(term)) score += 4;
+  }
+  return score;
+}
+
+function rankKnowledgeRows(rows, terms, scopeTerms = []) {
   return rows
     .map(row => ({
       ...row,
-      score: scoreChunk(row, terms) + (Number(row.semantic_score || 0) * 100),
+      score: scoreChunk(row, terms)
+        + scoreScope(row, scopeTerms)
+        + (Number(row.semantic_score || 0) * 100),
     }))
     .sort((a, b) => b.score - a.score || Number(a.sort_order || 0) - Number(b.sort_order || 0))
     .slice(0, MAX_RAG_CHUNKS);
@@ -257,11 +260,13 @@ function buildEmbeddingInput(row) {
   return normalizeText(`${row.category}\n${row.title}\n${row.content}`).slice(0, 6000);
 }
 
-function createRagService({ pool, env = process.env }) {
+function createRagService({ pool, env = process.env, fetchImpl = fetch }) {
   const embeddingModel = env.EMBEDDING_MODEL || 'text-embedding-3-small';
   const embeddingDimensions = Number(env.EMBEDDING_DIMENSIONS || 1536);
   const embeddingBatchSize = Number(env.EMBEDDING_BATCH_SIZE || 80);
   const embeddingTimeoutMs = Number(env.EMBEDDING_TIMEOUT_MS || 10000);
+  const embeddingMaxRetries = Math.floor(getBoundedNumber(env.EMBEDDING_MAX_RETRIES, 2, 0, 5));
+  const embeddingRetryBaseMs = getBoundedNumber(env.EMBEDDING_RETRY_BASE_MS, 250, 0, 10000);
   let pgVectorAvailable = false;
 
   function shouldUseSemanticSearch() {
@@ -287,33 +292,50 @@ function createRagService({ pool, env = process.env }) {
 
   async function embedTexts(inputs) {
     if (!env.OPENAI_API_KEY || inputs.length === 0) return [];
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), embeddingTimeoutMs);
 
-    try {
-      const response = await fetch('https://api.openai.com/v1/embeddings', {
-        method: 'POST',
-        signal: controller.signal,
-        headers: {
-          Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: embeddingModel,
-          input: inputs,
-        }),
-      });
+    for (let attempt = 0; attempt <= embeddingMaxRetries; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), embeddingTimeoutMs);
+      try {
+        const response = await fetchImpl('https://api.openai.com/v1/embeddings', {
+          method: 'POST',
+          signal: controller.signal,
+          headers: {
+            Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: embeddingModel,
+            input: inputs,
+          }),
+        });
 
-      if (!response.ok) {
-        const detail = await response.text();
-        throw new Error(`Embedding API failed: ${response.status} ${detail.slice(0, 200)}`);
+        if (!response.ok) {
+          const detail = await response.text();
+          const error = new Error(`Embedding API failed: ${response.status} ${detail.slice(0, 200)}`);
+          error.retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+          throw error;
+        }
+
+        const payload = await response.json();
+        return Array.isArray(payload.data) ? payload.data.map(item => item.embedding) : [];
+      } catch (err) {
+        const hasRetryableFlag = Boolean(err)
+          && typeof err === 'object'
+          && Object.hasOwn(err, 'retryable');
+        const canRetry = attempt < embeddingMaxRetries
+          && (err?.retryable || err?.name === 'AbortError' || !hasRetryableFlag);
+        if (!canRetry) throw err;
+        const delayMs = embeddingRetryBaseMs * (2 ** attempt);
+        if (delayMs > 0) {
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      } finally {
+        clearTimeout(timeout);
       }
-
-      const payload = await response.json();
-      return Array.isArray(payload.data) ? payload.data.map(item => item.embedding) : [];
-    } finally {
-      clearTimeout(timeout);
     }
+
+    return [];
   }
 
   async function attachEmbeddings(rows) {
@@ -484,23 +506,65 @@ function createRagService({ pool, env = process.env }) {
     }
   }
 
-  async function retrieveSemanticRows(question, scopeTerms = []) {
+  async function backfillMissingEmbeddings({ limit = 1000 } = {}) {
+    if (!shouldUseSemanticSearch()) {
+      return { enabled: false, selected: 0, updated: 0, model: embeddingModel };
+    }
+
+    const safeLimit = Math.min(Math.max(Number(limit) || 1000, 1), 10000);
+    const { rows } = await pool.query(
+      `SELECT id, category, title, content
+       FROM knowledge_chunks
+       WHERE embedding IS NULL
+          OR COALESCE(embedding_model, '') <> $1
+       ORDER BY id ASC
+       LIMIT $2`,
+      [embeddingModel, safeLimit]
+    );
+    const candidates = rows.map(row => ({
+      ...row,
+      embedding: null,
+      embeddingModel: '',
+    }));
+
+    await attachEmbeddings(candidates);
+    let updated = 0;
+    for (const row of candidates) {
+      if (!row.embedding) continue;
+      const result = await pool.query(
+        `UPDATE knowledge_chunks
+         SET embedding = $1::vector,
+             embedding_model = $2,
+             updated_at = $3
+         WHERE id = $4`,
+        [row.embedding, row.embeddingModel, new Date().toISOString(), row.id]
+      );
+      updated += result.rowCount || 0;
+    }
+
+    return {
+      enabled: true,
+      selected: candidates.length,
+      updated,
+      model: embeddingModel,
+    };
+  }
+
+  async function retrieveSemanticRows(question) {
     if (!shouldUseSemanticSearch()) return [];
     try {
       const [embedding] = await embedTexts([normalizeText(question).slice(0, 6000)]);
       if (!Array.isArray(embedding) || embedding.length === 0) return [];
 
       const vector = toVectorLiteral(embedding);
-      const scopeFilter = buildScopeFilter(scopeTerms, 2);
       const { rows } = await pool.query(
         `SELECT id, category, title, content, risk_level, sort_order,
                 1 - (embedding <=> $1::vector) AS semantic_score
          FROM knowledge_chunks
          WHERE embedding IS NOT NULL
-           ${scopeFilter.clause ? `AND ${scopeFilter.clause}` : ''}
          ORDER BY embedding <=> $1::vector
          LIMIT 60`,
-        [vector, ...scopeFilter.values]
+        [vector]
       );
       return rows;
     } catch (err) {
@@ -513,22 +577,20 @@ function createRagService({ pool, env = process.env }) {
     const terms = buildSearchTerms(question);
     const classification = options.classification || null;
     const scopeTerms = normalizeScopeTerms(options.ragScope || classification?.ragScope || []);
-    let rows = await retrieveSemanticRows(question, scopeTerms);
+    let rows = await retrieveSemanticRows(question);
     const semanticHitCount = rows.length;
     let keywordHitCount = 0;
 
     if (terms.length > 0) {
-      const clauses = terms.map((_, idx) => `search_text ILIKE $${idx + 1}`).join(' OR ');
-      const values = terms.map(term => `%${term}%`);
-      const scopeFilter = buildScopeFilter(scopeTerms, values.length + 1);
+      const clauses = terms.map((_, idx) => `search_text ILIKE $${idx + 1} ESCAPE '\\'`).join(' OR ');
+      const values = terms.map(term => `%${escapeIlikePattern(term)}%`);
       const result = await pool.query(
         `SELECT id, category, title, content, risk_level, sort_order
          FROM knowledge_chunks
          WHERE (${clauses})
-           ${scopeFilter.clause ? `AND ${scopeFilter.clause}` : ''}
          ORDER BY sort_order ASC
          LIMIT 120`,
-        [...values, ...scopeFilter.values]
+        values
       );
       keywordHitCount = result.rows.length;
       const byId = new Map(rows.map(row => [row.id, row]));
@@ -538,7 +600,7 @@ function createRagService({ pool, env = process.env }) {
       rows = [...byId.values()];
     }
 
-    const ranked = rankKnowledgeRows(rows, terms);
+    const ranked = rankKnowledgeRows(rows, terms, scopeTerms);
     const retrievalMode = semanticHitCount > 0 && keywordHitCount > 0
       ? 'hybrid'
       : semanticHitCount > 0
@@ -560,6 +622,8 @@ function createRagService({ pool, env = process.env }) {
   }
 
   return {
+    backfillMissingEmbeddings,
+    embedTexts,
     ensurePgVector,
     rebuildKnowledgeChunks,
     rebuildKnowledgeChunksForSection,
@@ -574,7 +638,6 @@ module.exports = {
   buildRuntimeGuardrails,
   buildSearchTerms,
   buildChineseStationTerms,
-  buildScopeFilter,
   createRagService,
   escapeIlikePattern,
   extractRiskLevel,

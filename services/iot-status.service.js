@@ -6,6 +6,7 @@ const stationQueryIntent = require('./station-query-intent.service');
 const DEFAULT_LIMIT = 5;
 const MAX_LIMIT = 8;
 const DEFAULT_CONNECT_TIMEOUT_MS = 10000;
+const DEFAULT_STATION_DATA_MAX_AGE_MS = 30 * 60 * 1000;
 const DEFAULT_SNAPSHOT_PATH = path.join(__dirname, '..', 'data', 'iot-station-snapshot.json');
 
 function normalizeText(value) {
@@ -33,6 +34,33 @@ function getIotMysqlConfig(env = process.env) {
     connectionLimit: Number(env.ECOCO_IOT_MYSQL_CONNECTION_LIMIT || 4),
     connectTimeoutMs: Number(env.ECOCO_IOT_MYSQL_CONNECT_TIMEOUT_MS || DEFAULT_CONNECT_TIMEOUT_MS),
     snapshotPath: env.ECOCO_IOT_STATION_SNAPSHOT_PATH || DEFAULT_SNAPSHOT_PATH,
+  };
+}
+
+function getStationDataMaxAgeMs(env = process.env) {
+  const value = Number(env.STATION_DATA_MAX_AGE_MS || DEFAULT_STATION_DATA_MAX_AGE_MS);
+  if (!Number.isFinite(value) || value < 60 * 1000) return DEFAULT_STATION_DATA_MAX_AGE_MS;
+  return Math.floor(value);
+}
+
+function getStationDataFreshness(value, env = process.env, now = Date.now()) {
+  const syncedAt = new Date(value);
+  const maxAgeMs = getStationDataMaxAgeMs(env);
+  if (Number.isNaN(syncedAt.getTime())) {
+    return {
+      checkedAt: null,
+      dataAgeMs: null,
+      maxAgeMs,
+      isStale: true,
+    };
+  }
+
+  const dataAgeMs = Math.max(0, Number(now) - syncedAt.getTime());
+  return {
+    checkedAt: syncedAt.toISOString(),
+    dataAgeMs,
+    maxAgeMs,
+    isStale: dataAgeMs > maxAgeMs,
   };
 }
 
@@ -156,7 +184,7 @@ function formatCapacity(count, max, remain, fullAt) {
   return parts.length ? parts.join(', ') : 'no capacity data';
 }
 
-function formatLiveStationContext(rows, checkedAt = new Date(), source = 'live MySQL') {
+function formatLiveStationContext(rows, checkedAt = new Date(), source = 'live MySQL', freshness = null) {
   if (!Array.isArray(rows) || rows.length === 0) return '';
   const isSnapshot = source === 'snapshot';
   const isPostgresSync = /postgres|neon/i.test(source);
@@ -169,6 +197,9 @@ function formatLiveStationContext(rows, checkedAt = new Date(), source = 'live M
       : isPostgresSync
         ? 'This context comes from the cloud PostgreSQL station table refreshed by the local MySQL sync job. Use source_synced_at to judge freshness, and do not call it real-time if the sync is stale.'
         : 'Use this live read-only MySQL context for station location, opening hours, machine status, bin capacity, alarms, and heartbeat. Prefer it over older RAG content when there is a conflict.',
+    freshness?.isStale
+      ? 'STALE DATA: You may use station names and addresses, but must not present machine status, connection status, alarms, or bin capacity as current.'
+      : '',
   ];
 
   rows.forEach((row, index) => {
@@ -254,7 +285,12 @@ function searchStationSnapshot(snapshot, terms, limit = DEFAULT_LIMIT) {
     .map(item => item.row);
 }
 
-function createIotStatusService({ env = process.env, mysqlFactory = mysql, pgPool = null } = {}) {
+function createIotStatusService({
+  env = process.env,
+  mysqlFactory = mysql,
+  pgPool = null,
+  now = () => Date.now(),
+} = {}) {
   const config = getIotMysqlConfig(env);
   let pool = null;
   let snapshot = null;
@@ -307,17 +343,20 @@ function createIotStatusService({ env = process.env, mysqlFactory = mysql, pgPoo
   function retrieveSnapshotStationContext(terms, { limit = DEFAULT_LIMIT, fallbackReason = '' } = {}) {
     const currentSnapshot = getSnapshot();
     const rows = searchStationSnapshot(currentSnapshot, terms, limit);
+    const freshness = getStationDataFreshness(currentSnapshot.generatedAt, env, now());
     return {
       retrievalMode: rows.length > 0 ? 'iot_snapshot' : 'iot_snapshot_miss',
       terms,
       rows,
+      ...freshness,
       snapshotGeneratedAt: currentSnapshot.generatedAt || '',
       fallbackReason,
       context: rows.length > 0
         ? formatLiveStationContext(
           rows,
           currentSnapshot.generatedAt ? new Date(currentSnapshot.generatedAt) : new Date(),
-          'snapshot'
+          'snapshot',
+          freshness
         )
         : '',
     };
@@ -408,13 +447,20 @@ function createIotStatusService({ env = process.env, mysqlFactory = mysql, pgPoo
       .filter(date => !Number.isNaN(date.getTime()));
     const checkedAt = syncedDates.length > 0
       ? new Date(Math.max(...syncedDates.map(date => date.getTime())))
-      : new Date();
+      : null;
+    const freshness = getStationDataFreshness(checkedAt, env, now());
 
     return {
       retrievalMode: safeRows.length > 0 ? 'postgres_iot' : 'postgres_iot_miss',
       terms,
       rows: safeRows,
-      context: formatLiveStationContext(safeRows, checkedAt, 'Neon PostgreSQL station sync'),
+      ...freshness,
+      context: formatLiveStationContext(
+        safeRows,
+        checkedAt || new Date(now()),
+        'Neon PostgreSQL station sync',
+        freshness
+      ),
     };
   }
 
@@ -527,6 +573,10 @@ function createIotStatusService({ env = process.env, mysqlFactory = mysql, pgPoo
       retrievalMode: safeRows.length > 0 ? 'mysql_iot' : 'mysql_iot_miss',
       terms,
       rows: safeRows,
+      checkedAt: new Date(now()).toISOString(),
+      dataAgeMs: 0,
+      maxAgeMs: getStationDataMaxAgeMs(env),
+      isStale: false,
       context: formatLiveStationContext(safeRows),
     };
   }
@@ -538,6 +588,7 @@ function createIotStatusService({ env = process.env, mysqlFactory = mysql, pgPoo
 
   return {
     end,
+    getFreshness: value => getStationDataFreshness(value, env, now()),
     isConfigured: () => isIotMysqlConfigured(env),
     retrieveLiveStationContext,
     retrieveSnapshotStationContext,
@@ -550,8 +601,11 @@ module.exports = {
   createIotStatusService,
   DEFAULT_CONNECT_TIMEOUT_MS,
   DEFAULT_SNAPSHOT_PATH,
+  DEFAULT_STATION_DATA_MAX_AGE_MS,
   formatLiveStationContext,
   getIotMysqlConfig,
+  getStationDataFreshness,
+  getStationDataMaxAgeMs,
   isIotMysqlConfigured,
   loadStationSnapshot,
   sanitizeConnectionError,

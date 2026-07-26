@@ -11,6 +11,7 @@ const helmet = require('helmet');
 const { getPostgresPoolConfig, getPostgresSslConfig } = require('./config/postgres-ssl');
 const { SCHEMA, migrateTimestampColumns } = require('./db/schema');
 const { requireAdminKey } = require('./middleware/admin-auth');
+const { requireIotSyncKey } = require('./middleware/iot-sync-auth');
 const { requireStaffKey } = require('./middleware/staff-auth');
 const { createChatRouter } = require('./routes/chat.routes');
 const { createDashboardRouter } = require('./routes/dashboard.routes');
@@ -72,8 +73,11 @@ app.use(express.static(path.join(__dirname, 'public')));
 const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-6';
 const PORT = process.env.PORT || 3000;
 const startedAt = new Date().toISOString();
+const RETENTION_CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
 let startupWarnings = [];
 let httpServer = null;
+let retentionCleanupTimer = null;
+let retentionCleanupRunning = false;
 
 function asyncHandler(handler) {
   return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
@@ -100,6 +104,24 @@ const ratingLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many ratings. Please try again later.' },
 });
+
+const adminLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: Math.max(Number(process.env.ADMIN_RATE_LIMIT_MAX || 30), 1),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many admin requests. Please try again later.' },
+});
+
+const iotSyncLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: Math.max(Number(process.env.IOT_SYNC_RATE_LIMIT_MAX || 120), 1),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many sync requests. Please try again later.' },
+});
+
+const adminGuard = [adminLimiter, requireAdminKey];
 
 function readJsonFile(relativePath) {
   const filePath = path.join(__dirname, relativePath);
@@ -132,6 +154,18 @@ function validateRuntimeConfig(env = process.env) {
 
   if (env.ADMIN_KEY && env.ADMIN_KEY.length < 16) {
     warnings.push('ADMIN_KEY is short; use a long random value for production.');
+  }
+
+  if (!env.IOT_SYNC_KEY) {
+    warnings.push('IOT_SYNC_KEY is not set; IoT uploads temporarily fall back to ADMIN_KEY.');
+  } else if (env.IOT_SYNC_KEY.length < 24) {
+    warnings.push('IOT_SYNC_KEY is short; use a long random value for production.');
+  }
+
+  if (!env.SESSION_SECRET) {
+    warnings.push('SESSION_SECRET is not set; web sessions temporarily use ADMIN_KEY for signing.');
+  } else if (env.SESSION_SECRET.length < 32) {
+    warnings.push('SESSION_SECRET is short; use at least 32 random characters for production.');
   }
 
   if (!env.CONVERSATION_RETENTION_DAYS || Number(env.CONVERSATION_RETENTION_DAYS) <= 0) {
@@ -372,11 +406,32 @@ async function buildHealthStatus({ includeDetails = false, includeIotCheck = fal
       health.knowledgeSectionCount = Number(rows[0].section_count);
       health.knowledgeContentChars = Number(rows[0].content_chars);
 
+      const embeddingStatus = await pool.query(
+        `SELECT
+           COUNT(*) AS chunk_count,
+           COUNT(*) FILTER (
+             WHERE NULLIF(to_jsonb(knowledge_chunks)->>'embedding', '') IS NOT NULL
+           ) AS embedded_count
+         FROM knowledge_chunks`
+      );
+      const chunkCount = Number(embeddingStatus.rows[0].chunk_count);
+      const embeddedCount = Number(embeddingStatus.rows[0].embedded_count);
+      health.knowledgeChunkCount = chunkCount;
+      health.embeddingChunkCount = embeddedCount;
+      health.missingEmbeddingChunkCount = Math.max(chunkCount - embeddedCount, 0);
+      health.embeddingCoveragePercent = chunkCount > 0
+        ? Math.round((embeddedCount / chunkCount) * 10000) / 100
+        : 0;
+
       const stationStatus = await pool.query(
         'SELECT COUNT(*) AS station_count, MAX(source_synced_at) AS last_synced_at FROM iot_station_statuses'
       );
+      const stationFreshness = iotStatusService.getFreshness(stationStatus.rows[0].last_synced_at);
       health.iotStationStatusCount = Number(stationStatus.rows[0].station_count);
       health.iotStationLastSyncedAt = stationStatus.rows[0].last_synced_at || null;
+      health.iotStationDataStale = stationFreshness.isStale;
+      health.iotStationDataAgeMs = stationFreshness.dataAgeMs;
+      health.iotStationDataMaxAgeMs = stationFreshness.maxAgeMs;
     }
   } catch (err) {
     health.status = 'degraded';
@@ -392,13 +447,13 @@ app.get('/healthz', async (req, res) => {
   res.status(health.status === 'ok' ? 200 : 503).json(health);
 });
 
-app.get('/api/system/status', requireAdminKey, async (req, res) => {
+app.get('/api/system/status', adminGuard, async (req, res) => {
   const includeIotCheck = ['1', 'true', 'yes'].includes(String(req.query.check_iot || '').toLowerCase());
   const health = await buildHealthStatus({ includeDetails: true, includeIotCheck });
   res.status(health.status === 'ok' ? 200 : 503).json(health);
 });
 
-app.post('/api/iot/station-statuses/sync', requireAdminKey, asyncHandler(async (req, res) => {
+app.post('/api/iot/station-statuses/sync', iotSyncLimiter, requireIotSyncKey, asyncHandler(async (req, res) => {
   const { dedupeStationRows, toPostgresRow, upsertStationRows } = require('./scripts/sync-iot-stations-to-postgres');
   const stations = Array.isArray(req.body?.stations) ? req.body.stations : [];
   if (stations.length === 0) {
@@ -434,7 +489,7 @@ app.post('/api/iot/station-statuses/sync', requireAdminKey, asyncHandler(async (
   });
 }));
 
-app.get('/api/iot/station-statuses/search', requireAdminKey, asyncHandler(async (req, res) => {
+app.get('/api/iot/station-statuses/search', adminGuard, asyncHandler(async (req, res) => {
   const q = String(req.query.q || '').trim();
   if (q.length < 2) {
     res.status(400).json({ error: 'q must be at least 2 characters' });
@@ -481,7 +536,7 @@ app.use('/api', createChatRouter({
   client,
   chatLimiter,
   ratingLimiter,
-  requireAdminKey,
+  requireAdminKey: adminGuard,
   retrieveKnowledgeForQuestion: ragService.retrieveKnowledgeForQuestion,
   buildRuntimeGuardrails: ragService.buildRuntimeGuardrails,
   buildSystemPrompt: promptService.buildSystemPrompt,
@@ -504,15 +559,15 @@ app.use('/api', createLineRouter({
 }));
 app.use('/api/partners', createPartnersRouter({
   partnerService,
-  requireAdminKey,
+  requireAdminKey: adminGuard,
   pool,
 }));
-app.use('/api', createDashboardRouter({ pool, requireAdminKey }));
-app.use('/api/reports', createReportsRouter({ pool, requireAdminKey, readJsonFile }));
-app.use('/api/unanswered', createUnansweredRouter({ pool, requireAdminKey }));
+app.use('/api', createDashboardRouter({ pool, requireAdminKey: adminGuard }));
+app.use('/api/reports', createReportsRouter({ pool, requireAdminKey: adminGuard, readJsonFile }));
+app.use('/api/unanswered', createUnansweredRouter({ pool, requireAdminKey: adminGuard }));
 app.use('/api/knowledge', createKnowledgeRouter({
   pool,
-  requireAdminKey,
+  requireAdminKey: adminGuard,
   readJsonFile,
   getKnowledgeAutoSyncMode,
   rebuildKnowledgeChunksForSection: ragService.rebuildKnowledgeChunksForSection,
@@ -533,6 +588,26 @@ app.use((err, req, res, next) => {
   });
 });
 
+async function runRetentionCleanup() {
+  if (retentionCleanupRunning) return;
+  retentionCleanupRunning = true;
+  try {
+    await purgeExpiredConversationData(pool, process.env);
+  } catch (err) {
+    console.error('Scheduled conversation retention cleanup failed:', err.message);
+  } finally {
+    retentionCleanupRunning = false;
+  }
+}
+
+function scheduleRetentionCleanup() {
+  if (retentionCleanupTimer) clearInterval(retentionCleanupTimer);
+  retentionCleanupTimer = setInterval(() => {
+    runRetentionCleanup();
+  }, RETENTION_CLEANUP_INTERVAL_MS);
+  retentionCleanupTimer.unref?.();
+}
+
 async function start() {
   try {
     const config = validateRuntimeConfig(process.env);
@@ -545,7 +620,8 @@ async function start() {
     await initDb(ragService);
     const syncChanged = await syncKnowledgeFromImportFile();
     await ensureKnowledgeChunksReady(syncChanged);
-    await purgeExpiredConversationData(pool, process.env);
+    await runRetentionCleanup();
+    scheduleRetentionCleanup();
     httpServer = app.listen(PORT, () => {
       console.log(`ECOCO customer service server started: http://localhost:${PORT}`);
     });
@@ -558,6 +634,10 @@ async function start() {
 
 async function shutdown(signal) {
   console.log(`${signal} received; shutting down gracefully.`);
+  if (retentionCleanupTimer) {
+    clearInterval(retentionCleanupTimer);
+    retentionCleanupTimer = null;
+  }
   if (httpServer) {
     await new Promise(resolve => httpServer.close(resolve));
   }

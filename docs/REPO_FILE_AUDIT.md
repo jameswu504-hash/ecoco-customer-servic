@@ -8,7 +8,7 @@
 | --- | --- |
 | `server.js` | Express 啟動、環境檢查、PostgreSQL、健康檢查、route 掛載與關閉流程 |
 | `db/schema.js` | 線上資料表、索引與相容性 migration |
-| `middleware/` | 管理員與 staff API 驗證 |
+| `middleware/` | 管理員、IoT upload-only 與 staff API 驗證 |
 | `routes/` | 網站聊天、LINE、後台、知識庫、報表、知識缺口與 internal API |
 | `services/` | RAG、prompt、站點查詢、隱私遮罩、trace、報表與內部 Wiki 邏輯 |
 
@@ -48,12 +48,14 @@
 | AI 評測與分析 | `run-evals.mjs`、`ai-analysis.mjs`、`suggest-synonyms.mjs` |
 | 安全與品質 | `lint.mjs`、`scan-pii.js`、`anonymize-pii.js` |
 | IoT 同步 | `sync-iot-stations-to-postgres.js`、`export-iot-station-snapshot.js` |
+| Embedding 修復 | `backfill-knowledge-embeddings.js` |
+| Windows 隱藏排程 | `tools/iot-sync/run-hidden.vbs`、`run-once.ps1`、`install-scheduled-task.ps1` |
 
-IoT 正式資料流為：本機或 VPN 環境以唯讀帳號查 Azure MySQL，再經 Render 管理 API 寫入 Neon/PostgreSQL。Render 客服查詢雲端副本，不需要直接穿越 Azure firewall。
+IoT 正式資料流為：本機或 VPN 環境以唯讀帳號查 Azure MySQL，再以 `IOT_SYNC_KEY` 經 Render 同步 API 寫入 Neon/PostgreSQL。Render 客服查詢雲端副本，不需要直接穿越 Azure firewall。
 
 ## 五、測試與 CI
 
-`npm test` 執行 `tests/*.test.js`，涵蓋 smoke、IoT、dashboard routes 與知識 parser。`.github/workflows/` 負責 CI、備份與例行分析；修改程式後至少執行：
+`npm test` 執行 `tests/*.test.js`（目前 5 個測試檔），涵蓋 smoke、IoT、B2B、dashboard routes 與知識 parser。`.github/workflows/` 負責 CI、dependency audit、備份與例行分析；修改程式後至少執行：
 
 ```bash
 npm run lint
@@ -73,7 +75,7 @@ git diff --check
 | 路徑 | 原因 |
 | --- | --- |
 | `.env`、`.env.*`（範例檔除外） | API key、token、資料庫密碼 |
-| `.local-iot-sync/` | Windows 排程 launcher、加密同步設定與 logs |
+| `.local-iot-sync/` | Windows 排程的本機設定、secrets 與 logs；無機密 runner template 已放在 `tools/iot-sync/` |
 | `node_modules/` | 可由 lockfile 還原 |
 | 暫存匯出、備份與真實個資 | 資安與版本庫污染風險 |
 

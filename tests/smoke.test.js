@@ -6,17 +6,21 @@ const path = require('node:path');
 
 const { requireAdminKey } = require('../middleware/admin-auth');
 const {
+  createMessageWithTimeout,
+  createSignedSessionCookieValue,
   createChatRouter,
   detectKnowledgeGap,
   FRIENDLY_AI_ERROR_REPLY,
   getClientSessionId,
   getLatestUserMessage,
   getSafeSessionId,
+  getWebChatTimeoutMs,
   loadExchangeByMessageId,
   normalizeModelMessages,
   parseKnowledgeGapMeta,
   stripKnowledgeGapMarker,
   validateHistory,
+  WEB_SESSION_COOKIE_NAME,
 } = require('../routes/chat.routes');
 const { cleanKnowledgeInput } = require('../routes/knowledge.routes');
 const { requireStaffKey } = require('../middleware/staff-auth');
@@ -29,6 +33,7 @@ const {
 } = require('../routes/dashboard.routes');
 const {
   buildAiReply,
+  claimLineWebhookEvent,
   cleanupLineRateBuckets,
   getLineConfig,
   getLineReplyTimeoutMs,
@@ -54,7 +59,6 @@ const {
   buildRuntimeGuardrails,
   buildChineseStationTerms,
   buildSearchTerms,
-  buildScopeFilter,
   createRagService,
   normalizeScopeTerms,
   rankKnowledgeRows,
@@ -111,6 +115,28 @@ test('runtime guardrails still trigger for explicit high-risk user intent', () =
   });
 
   assert.match(guardrail, /高風險客服回覆限制/);
+});
+
+test('web chat timeout is bounded and aborts a stalled AI request', async () => {
+  assert.equal(getWebChatTimeoutMs({ WEB_CHAT_TIMEOUT_MS: '999999' }), 55000);
+  assert.equal(getWebChatTimeoutMs({ WEB_CHAT_TIMEOUT_MS: 'invalid' }), 45000);
+
+  let aborted = false;
+  const fakeClient = {
+    messages: {
+      create: (payload, options) => new Promise(() => {
+        options.signal.addEventListener('abort', () => {
+          aborted = true;
+        });
+      }),
+    },
+  };
+
+  await assert.rejects(
+    createMessageWithTimeout(fakeClient, { messages: [] }, 100),
+    error => error.code === 'WEB_CHAT_TIMEOUT'
+  );
+  assert.equal(aborted, true);
 });
 
 test('knowledge gap marker is recorded', () => {
@@ -196,6 +222,8 @@ test('question classifier maps common customer questions to stable routing categ
   const points = classifyQuestion('我的回收點數沒有入帳，可以補點嗎？');
   const app = classifyQuestion('APP 無法登入，OTP 驗證碼一直收不到');
   const manual = classifyQuestion('我要客服幫我查我的帳號退款');
+  const incidentalPoint = classifyQuestion('這個站點有點遠');
+  const refundPolicy = classifyQuestion('退款規則與申請條件是什麼？');
 
   assert.equal(points.category, 'points');
   assert.equal(points.shouldUseRag, true);
@@ -205,16 +233,14 @@ test('question classifier maps common customer questions to stable routing categ
   assert.equal(manual.shouldUseRag, false);
   assert.equal(manual.shouldEscalate, true);
   assert.match(manual.directReply, /客服人員/);
+  assert.notEqual(incidentalPoint.category, 'points');
+  assert.equal(refundPolicy.category, 'high_risk_policy');
+  assert.equal(refundPolicy.shouldUseRag, true);
+  assert.equal(refundPolicy.shouldEscalate, false);
 });
 
-test('RAG scope filters only category and title instead of broad content matches', () => {
-  const filter = buildScopeFilter(['APP_100%', '點數'], 3);
-
+test('RAG scope terms are normalized without becoming SQL filters', () => {
   assert.deepEqual(normalizeScopeTerms(['APP', 'APP', ' 點數 ']), ['APP', '點數']);
-  assert.match(filter.clause, /category ILIKE \$3/);
-  assert.match(filter.clause, /title ILIKE \$3/);
-  assert.equal(filter.clause.includes('search_text'), false);
-  assert.deepEqual(filter.values, ['%APP\\_100\\%%', '%點數%']);
 });
 
 test('multiple and incomplete meta blocks are stripped from user replies', () => {
@@ -332,29 +358,32 @@ test('/api/chat integration returns an AI reply and stores masked conversation r
   const server = app.listen(0);
   await new Promise(resolve => server.once('listening', resolve));
   let chatResponseBody;
+  let sessionCookie;
   try {
     const { port } = server.address();
     const response = await fetch(`http://127.0.0.1:${port}/api/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-session-id': 'session_integration123',
       },
       body: JSON.stringify({ message: integrationMessage }),
     });
     const body = await response.json();
     chatResponseBody = body;
+    sessionCookie = response.headers.get('set-cookie');
 
     assert.equal(response.status, 200);
     assert.equal(body.reply, '請到 App 的點數歷程查看。');
     assert.match(body.messageId, /^[0-9a-f-]{36}$/);
+    assert.match(sessionCookie, /HttpOnly/);
+    assert.match(sessionCookie, /SameSite=Strict/);
   } finally {
     await new Promise(resolve => server.close(resolve));
   }
 
   const conversationInsert = queries.find(item => /INSERT INTO conversations/i.test(item.sql));
   assert.ok(conversationInsert);
-  assert.equal(conversationInsert.params[0], 'session_integration123');
+  assert.match(conversationInsert.params[0], /^session_[0-9a-f]{32}$/);
   assert.equal(conversationInsert.params[2].includes(phone), false);
   assert.match(conversationInsert.params[2], /\[phone\]/);
   assert.match(conversationInsert.sql, /message_id/);
@@ -432,13 +461,18 @@ test('server-side model history is normalized before sending to Claude', () => {
   ]);
 });
 
-test('unsafe client session id is replaced by server-generated id', () => {
-  const safeSessionId = ['session_abc', '1234', '56789'].join('');
-  const safe = getSafeSessionId({ 'x-session-id': safeSessionId });
-  const unsafe = getSafeSessionId({ 'x-session-id': '<script>alert(1)</script>' });
+test('web sessions accept only server-signed HttpOnly cookie values', () => {
+  const env = { SESSION_SECRET: 'test-session-secret-with-at-least-32-characters' };
+  const sessionId = getSafeSessionId({}, env);
+  const signed = createSignedSessionCookieValue(sessionId, env);
+  const headers = { cookie: `${WEB_SESSION_COOKIE_NAME}=${encodeURIComponent(signed)}` };
 
-  assert.equal(safe, safeSessionId);
-  assert.match(unsafe, /^server_[0-9a-f-]{36}$/i);
+  assert.match(sessionId, /^session_[0-9a-f]{32}$/);
+  assert.equal(getClientSessionId(headers, env), sessionId);
+  assert.equal(getClientSessionId({ 'x-session-id': sessionId }, env), null);
+  assert.equal(getClientSessionId({
+    cookie: `${WEB_SESSION_COOKIE_NAME}=${encodeURIComponent(`${signed}tampered`)}`,
+  }, env), null);
 });
 
 test('admin middleware rejects missing admin key', () => {
@@ -556,7 +590,39 @@ test('RAG returns no context when keyword and semantic search both miss', async 
   assert.equal(result.retrievalMode, 'none');
 });
 
-test('RAG retrieval applies question classification scope to keyword search', async () => {
+test('embedding requests retry transient failures but not indefinitely', async () => {
+  let attempts = 0;
+  const rag = createRagService({
+    pool: { query: async () => ({ rows: [] }) },
+    env: {
+      OPENAI_API_KEY: 'test-key',
+      EMBEDDING_MAX_RETRIES: '2',
+      EMBEDDING_RETRY_BASE_MS: '0',
+      EMBEDDING_TIMEOUT_MS: '1000',
+    },
+    fetchImpl: async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return {
+          ok: false,
+          status: 429,
+          text: async () => 'rate limited',
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ data: [{ embedding: [0.1, 0.2] }] }),
+      };
+    },
+  });
+
+  const embeddings = await rag.embedTexts(['test']);
+
+  assert.equal(attempts, 2);
+  assert.deepEqual(embeddings, [[0.1, 0.2]]);
+});
+
+test('RAG classification scope boosts ranking without hard-filtering SQL', async () => {
   const queries = [];
   const pool = {
     async query(sql, params = []) {
@@ -572,10 +638,10 @@ test('RAG retrieval applies question classification scope to keyword search', as
   assert.equal(result.questionClassification.category, 'app_account');
   assert.deepEqual(result.scopeTerms.slice(0, 2), ['APP', '帳號']);
   assert.ok(keywordQuery);
-  assert.match(keywordQuery.sql, /category ILIKE/);
-  assert.match(keywordQuery.sql, /title ILIKE/);
+  assert.doesNotMatch(keywordQuery.sql, /category ILIKE/);
+  assert.doesNotMatch(keywordQuery.sql, /title ILIKE/);
   assert.ok(keywordQuery.sql.includes('search_text ILIKE'));
-  assert.ok(keywordQuery.params.some(param => param === '%APP%'));
+  assert.ok(keywordQuery.params.some(param => param.includes('APP')));
 });
 
 test('chat trace summaries include retrieved chunk ids and scores without full content', () => {
@@ -624,6 +690,8 @@ test('server exposes a health check route', () => {
   const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 
   assert.match(server, /\/healthz/);
+  assert.match(server, /missingEmbeddingChunkCount/);
+  assert.match(server, /embeddingCoveragePercent/);
 });
 
 test('workflow scripts referenced by GitHub Actions exist', () => {
@@ -675,13 +743,20 @@ test('negative feedback is routed to unanswered questions for maintenance', () =
   assert.match(chatRoute, /type === 'negative'/);
   assert.match(chatRoute, /INSERT INTO unanswered_questions/);
   assert.match(chatRoute, /使用者點選「需改善」/);
-  assert.match(indexJs, /"x-session-id": SESSION_ID/);
+  assert.doesNotMatch(indexJs, /x-session-id/);
 });
 
-test('rating session id is strict and invalid headers do not create orphan sessions', () => {
-  assert.equal(getClientSessionId({}), null);
-  assert.equal(getClientSessionId({ 'x-session-id': 'bad!!' }), null);
-  assert.equal(getClientSessionId({ 'x-session-id': 'session_abcdefgh' }), 'session_abcdefgh');
+test('rating session id requires a valid signed cookie', () => {
+  const env = { SESSION_SECRET: 'test-session-secret-with-at-least-32-characters' };
+  const sessionId = 'session_abcdefgh';
+  const signed = createSignedSessionCookieValue(sessionId, env);
+
+  assert.equal(getClientSessionId({}, env), null);
+  assert.equal(getClientSessionId({ 'x-session-id': sessionId }, env), null);
+  assert.equal(
+    getClientSessionId({ cookie: `${WEB_SESSION_COOKIE_NAME}=${encodeURIComponent(signed)}` }, env),
+    sessionId
+  );
 });
 
 test('rating question and reply are looked up by session and message id', async () => {
@@ -708,6 +783,9 @@ test('rating question and reply are looked up by session and message id', async 
 
 test('/api/rating binds feedback to the selected response instead of the latest exchange', async () => {
   const queries = [];
+  const sessionEnv = { SESSION_SECRET: 'test-session-secret-with-at-least-32-characters' };
+  const sessionId = 'session_rating123';
+  const sessionCookie = `${WEB_SESSION_COOKIE_NAME}=${encodeURIComponent(createSignedSessionCookieValue(sessionId, sessionEnv))}`;
   const fakePool = {
     async query(sql, params = []) {
       queries.push({ sql, params });
@@ -734,6 +812,7 @@ test('/api/rating binds feedback to the selected response instead of the latest 
     buildRuntimeGuardrails: () => '',
     buildSystemPrompt: () => '',
     defaultAnthropicModel: 'test-model',
+    sessionEnv,
   }));
 
   const server = app.listen(0);
@@ -744,7 +823,7 @@ test('/api/rating binds feedback to the selected response instead of the latest 
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-session-id': 'session_rating123',
+        Cookie: sessionCookie,
       },
       body: JSON.stringify({ msgId: 'selected-message-id', type: 'positive' }),
     });
@@ -756,7 +835,7 @@ test('/api/rating binds feedback to the selected response instead of the latest 
 
   const lookup = queries.find(item => /FROM conversations/.test(item.sql));
   const insert = queries.find(item => /INSERT INTO ratings/.test(item.sql));
-  assert.deepEqual(lookup.params, ['session_rating123', 'selected-message-id']);
+  assert.deepEqual(lookup.params, [sessionId, 'selected-message-id']);
   assert.deepEqual(insert.params.slice(0, 2), ['selected-message-id', 'positive']);
   assert.deepEqual(insert.params.slice(3), ['selected question', 'selected reply']);
 });
@@ -827,6 +906,10 @@ test('schema includes report and dashboard performance indexes', () => {
   assert.match(schema, /idx_ratings_timestamp/);
   assert.match(schema, /CREATE TABLE IF NOT EXISTS chat_traces/);
   assert.match(schema, /CREATE TABLE IF NOT EXISTS admin_audit_logs/);
+  assert.match(schema, /CREATE TABLE IF NOT EXISTS line_webhook_events/);
+  assert.match(schema, /uq_ratings_msg_id/);
+  assert.match(schema, /uq_conv_session_role_message/);
+  assert.doesNotMatch(schema, /DROP CONSTRAINT IF EXISTS iot_station_statuses_pkey/);
 });
 
 test('knowledge chunks are not blindly rebuilt on every startup', () => {
@@ -881,8 +964,8 @@ test('admin IoT routes use async error handling', () => {
   const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 
   assert.match(server, /function asyncHandler/);
-  assert.match(server, /app\.post\('\/api\/iot\/station-statuses\/sync', requireAdminKey, asyncHandler/);
-  assert.match(server, /app\.get\('\/api\/iot\/station-statuses\/search', requireAdminKey, asyncHandler/);
+  assert.match(server, /app\.post\('\/api\/iot\/station-statuses\/sync', iotSyncLimiter, requireIotSyncKey, asyncHandler/);
+  assert.match(server, /app\.get\('\/api\/iot\/station-statuses\/search', adminGuard, asyncHandler/);
   assert.match(server, /app\.use\(\(err, req, res, next\) =>/);
 });
 
@@ -917,7 +1000,7 @@ test('internal mode requires a staff key and customer mode does not', () => {
 test('public health check does not expose internal runtime details by default', () => {
   const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
 
-  assert.match(server, /app\.get\('\/api\/system\/status', requireAdminKey/);
+  assert.match(server, /app\.get\('\/api\/system\/status', adminGuard/);
   assert.match(server, /includeDetails = false/);
   assert.match(server, /X-Robots-Tag/);
 });
@@ -1018,6 +1101,28 @@ test('LINE webhook reuses server-side conversation history', () => {
   assert.match(lineRoute, /normalizeModelMessages/);
   assert.match(lineRoute, /buildLineModelMessages/);
   assert.match(lineRoute, /messages: modelMessages/);
+});
+
+test('LINE webhook events are claimed once and completed events are skipped', async () => {
+  const calls = [];
+  const pool = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      return { rows: calls.length === 1 ? [{ event_id: params[0] }] : [] };
+    },
+  };
+  const event = {
+    webhookEventId: 'evt-123',
+    deliveryContext: { isRedelivery: true },
+  };
+
+  const first = await claimLineWebhookEvent(pool, event);
+  const duplicate = await claimLineWebhookEvent(pool, event);
+
+  assert.deepEqual(first, { claimed: true, eventId: 'evt-123' });
+  assert.deepEqual(duplicate, { claimed: false, eventId: 'evt-123' });
+  assert.match(calls[0].sql, /ON CONFLICT \(event_id\)/);
+  assert.deepEqual(calls[0].params, ['evt-123', true]);
 });
 
 test('LINE webhook rate limits a single sender before API calls', () => {
@@ -1248,8 +1353,12 @@ test('section chunk refresh shifts following sort orders when chunk count change
 test('admin notes are truncated before database writes', () => {
   const longNote = 'x'.repeat(MAX_ADMIN_NOTE_CHARS + 50);
   const normalized = normalizeAdminNote(`  ${longNote}  `);
+  const unansweredRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'unanswered.routes.js'), 'utf8');
 
   assert.equal(normalized.length, MAX_ADMIN_NOTE_CHARS);
+  assert.match(unansweredRoute, /unanswered\.update/);
+  assert.match(unansweredRoute, /unanswered\.delete/);
+  assert.match(unansweredRoute, /saveAdminAudit/);
 });
 
 test('knowledge cache is not kept as a server-wide prompt fallback', () => {

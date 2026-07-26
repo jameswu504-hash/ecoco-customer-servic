@@ -1,4 +1,5 @@
 const express = require('express');
+const { saveAdminAudit } = require('../services/trace.service');
 
 const MAX_ADMIN_NOTE_CHARS = 1000;
 
@@ -43,6 +44,12 @@ function createUnansweredRouter({ pool, requireAdminKey }) {
         [status, note, new Date().toISOString(), id]
       );
       if (result.rowCount === 0) return res.status(404).json({ error: '找不到這筆知識缺口' });
+      await saveAdminAudit(pool, {
+        action: 'unanswered.update',
+        targetType: 'unanswered_question',
+        targetId: String(id),
+        details: { status, noteLength: note.length },
+      });
       res.json({ success: true });
     } catch (dbErr) {
       console.error('DB unanswered update error:', dbErr.message);
@@ -57,6 +64,11 @@ function createUnansweredRouter({ pool, requireAdminKey }) {
     try {
       const result = await pool.query('DELETE FROM unanswered_questions WHERE id = $1', [id]);
       if (result.rowCount === 0) return res.status(404).json({ error: '找不到這筆知識缺口' });
+      await saveAdminAudit(pool, {
+        action: 'unanswered.delete',
+        targetType: 'unanswered_question',
+        targetId: String(id),
+      });
       res.json({ success: true });
     } catch (dbErr) {
       console.error('DB unanswered delete error:', dbErr.message);

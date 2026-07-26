@@ -76,6 +76,7 @@ LINE Developers 後台要把這個 URL 填到 Messaging API 的 Webhook URL。
 
 - 接收 LINE 文字訊息。
 - 驗證 LINE signature，避免偽造請求。
+- 以 `webhookEventId` 寫入 `line_webhook_events`，防止 LINE redelivery 重複呼叫 AI 或重複寫入對話。
 - 依 LINE user/group/room 產生固定 session id。
 - LINE 群組以 `groupId` 建立 session，同群組不同成員會共用該群組上下文。
 - 已綁定群組進入 B2B 公司分支；未綁定群組只回覆綁定提示。
@@ -107,6 +108,7 @@ LINE Developers 後台要把這個 URL 填到 Messaging API 的 Webhook URL。
 - 使用 LINE 傳「點數沒有入帳」時，AI 會保守回答並要求必要資訊。
 - 使用 LINE 傳 AI 無法確認的問題時，後台能看到知識缺口或負評紀錄。
 - LINE 後台沒有另一套自動回覆造成重複回覆。
+- 重送相同 `webhookEventId` 時，Render 不會產生第二筆對話或第二次 AI 回覆。
 
 ## 8. 成本說明
 

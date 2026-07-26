@@ -1,8 +1,3 @@
-const SESSION_ID = "session_" + (
-  (window.crypto && typeof window.crypto.randomUUID === "function")
-    ? window.crypto.randomUUID().replace(/-/g, "")
-    : `${Date.now()}_${Math.random().toString(36).slice(2, 12)}`
-);
     let chatHistory = [];
 
     document.getElementById("initTime").textContent = getTime();
@@ -172,8 +167,7 @@ const SESSION_ID = "session_" + (
         const response = await fetch("/api/rating", {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
-            "x-session-id": SESSION_ID
+            "Content-Type": "application/json"
           },
           body: JSON.stringify({ msgId, type })
         });
@@ -202,8 +196,7 @@ const SESSION_ID = "session_" + (
         const response = await fetch("/api/chat", {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
-            "x-session-id": SESSION_ID
+            "Content-Type": "application/json"
           },
           body: JSON.stringify({ message: text })
         });

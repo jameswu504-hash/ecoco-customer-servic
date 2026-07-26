@@ -85,9 +85,12 @@ flowchart LR
 | `ANTHROPIC_API_KEY` | 是 | Claude 回覆生成 |
 | `ANTHROPIC_MODEL` | 選填 | 覆蓋預設 Claude 模型 |
 | `ADMIN_KEY` | 是 | 後台與管理 API 存取 |
+| `SESSION_SECRET` | 建議 | 簽署前台 `HttpOnly` session cookie；至少 32 個隨機字元 |
+| `IOT_SYNC_KEY` | 建議 | 本機 IoT 同步專用 key，不與完整 `ADMIN_KEY` 共用 |
 | `OPENAI_API_KEY` | 選填 | embedding / pgvector 語意檢索 |
 | `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS` | 選填 | embedding 模型與向量維度 |
 | `EMBEDDING_BATCH_SIZE` / `EMBEDDING_TIMEOUT_MS` | 選填 | embedding 批次量與 timeout |
+| `EMBEDDING_MAX_RETRIES` / `EMBEDDING_RETRY_BASE_MS` | 選填 | embedding 暫時性錯誤的有限重試 |
 | `PGSSL` | 選填 | 預設 `verify-full`，加密並驗證憑證；`require` 只加密；本機可信環境才用 `disable` |
 | `APP_MODE` | 建議 | 正式客服使用 `customer`；`internal` 才啟用內部 Wiki API |
 | `STAFF_KEY` | internal 模式需要 | 內部 Wiki API 權限，不得與 `ADMIN_KEY` 共用 |
@@ -97,7 +100,8 @@ flowchart LR
 | `LINE_CHANNEL_SECRET` | LINE 上線需要 | 驗證 LINE Webhook |
 | `LINE_CHANNEL_ACCESS_TOKEN` | LINE 上線需要 | 呼叫 LINE Reply API |
 | `ECOCO_IOT_MYSQL_*` | 本機同步需要 | 本機/VPN 連唯讀 Azure MySQL；不要設定在 Render，完整清單見 `.env.example` |
-| `ECOCO_IOT_SYNC_URL` / `ECOCO_IOT_SYNC_ADMIN_KEY` | 本機同步需要 | 將站點快照上傳 Render 管理 API；可由本機加密設定提供 |
+| `ECOCO_IOT_SYNC_URL` / `IOT_SYNC_KEY` | 本機同步需要 | 將站點快照上傳 Render 同步 API；可由本機安全設定提供 |
+| `STATION_DATA_MAX_AGE_MS` | 選填 | 站點資料可當成即時狀態的最長時間，預設 30 分鐘 |
 
 ## 本機開發
 
@@ -206,7 +210,8 @@ APP_MODE=customer
 - 對話紀錄可能包含個資，寫入前會進行基本遮罩。
 - `scan:pii` 用於檢查 repo 中是否仍有手機、email、token 等敏感資料。
 - `/healthz` 只回基本狀態；詳細系統資訊需使用 Admin Key 查 `/api/system/status`。
-- 後台 API 使用 `x-admin-key` 驗證。
+- 後台 API 使用有速率限制的 `x-admin-key` 驗證；IoT 上傳使用 `x-iot-sync-key`。
+- 客服前台 session 由伺服器簽發 `HttpOnly; SameSite=Strict` cookie，不接受瀏覽器自訂 `x-session-id`。
 - LINE Webhook 需驗證 `X-Line-Signature`。
 
 ## 上線判斷

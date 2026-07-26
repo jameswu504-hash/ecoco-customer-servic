@@ -126,6 +126,10 @@ RAG 第一版使用的檢索片段表。這張表由 `knowledge_sections` 自動
 
 記錄後台管理動作。主要欄位為 `actor`、`action`、`target_type`、`target_id`、`details` 與 `timestamp`。
 
+### `line_webhook_events`
+
+LINE webhook 的 durable idempotency 紀錄。`event_id` 是主鍵；`status`、`attempts`、`is_redelivery`、`last_error` 與時間欄位用來防止同一事件重複呼叫 AI 或重複寫入對話。失敗或停滯超過五分鐘的事件可由 LINE redelivery 再領取。
+
 ### B2B 合作夥伴資料表
 
 | 資料表 | 用途 | 重要隔離欄位 |
@@ -203,11 +207,16 @@ RAG 第一版使用的檢索片段表。這張表由 `knowledge_sections` 自動
 | `DATABASE_URL` | PostgreSQL 連線字串 |
 | `PGSSL` | PostgreSQL SSL 設定 |
 | `ADMIN_KEY` | 後台管理 key |
+| `SESSION_SECRET` | 簽署客服前台 `HttpOnly` session cookie |
+| `IOT_SYNC_KEY` | 本機同步專用 upload key，不得與 `ADMIN_KEY` 共用 |
 | `APP_MODE` / `STAFF_KEY` | 正式客服或內部 Wiki 模式，以及 staff-only API key |
 | `OPENAI_API_KEY` | pgvector embedding API key；未設定時改用關鍵字檢索 |
 | `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS` | embedding 模型與維度 |
 | `EMBEDDING_BATCH_SIZE` / `EMBEDDING_TIMEOUT_MS` | embedding 批次與 timeout |
+| `EMBEDDING_MAX_RETRIES` / `EMBEDDING_RETRY_BASE_MS` | embedding 暫時性失敗重試上限與退避基準 |
 | `ECOCO_IOT_MYSQL_*` | 本機/VPN 唯讀 MySQL 同步設定，不需要放在 Render |
+| `STATION_DATA_MAX_AGE_MS` | 站點資料可視為目前狀態的最長時間 |
+| `WEB_CHAT_TIMEOUT_MS` | 網頁 Claude request 的硬逾時 |
 | `KNOWLEDGE_AUTO_SYNC` | 啟動時是否同步知識 JSON；預設 `disable`，日常只用後台 PostgreSQL。`insert_only` 只新增缺少分類，`upsert` 會覆寫同名分類，`replace` 會重建 |
 | `PORT` | 本機或平台使用的 port |
 
@@ -252,7 +261,7 @@ Related scripts and endpoints:
 
 | Item | Purpose |
 | --- | --- |
-| `npm run iot:sync` | Local sync from readonly MySQL into Neon via Render admin upload |
-| `POST /api/iot/station-statuses/sync` | Admin-only upload endpoint used by the local sync job |
+| `npm run iot:sync` | Local sync from readonly MySQL into Neon via Render IoT upload |
+| `POST /api/iot/station-statuses/sync` | Upload-only endpoint protected by `x-iot-sync-key` |
 | `GET /api/iot/station-statuses/search` | Admin-only verification endpoint |
-| `/api/system/status` | Shows `iotStationStatusCount` and `iotStationLastSyncedAt` |
+| `/api/system/status` | Shows station freshness plus embedding coverage diagnostics |

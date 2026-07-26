@@ -7,6 +7,11 @@ const KNOWLEDGE_GAP_MACHINE_MARKER = '[KNOWLEDGE_GAP]';
 const KNOWLEDGE_GAP_META_PATTERN = /<meta>\s*({[\s\S]*?})\s*<\/meta>/i;
 const KNOWLEDGE_GAP_META_STRIP_PATTERN = /<meta>\s*{[\s\S]*?}\s*<\/meta>/gi;
 const KNOWLEDGE_GAP_META_INCOMPLETE_PATTERN = /<meta>(?![\s\S]*<\/meta>)[\s\S]*$/i;
+const DEFAULT_WEB_CHAT_TIMEOUT_MS = 45 * 1000;
+const MAX_WEB_CHAT_TIMEOUT_MS = 55 * 1000;
+const WEB_SESSION_COOKIE_NAME = 'ecoco_session';
+const WEB_SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+const EPHEMERAL_SESSION_SECRET = crypto.randomBytes(32).toString('base64url');
 const FRIENDLY_AI_ERROR_REPLY = '抱歉，AI 客服暫時連線不穩。請稍後再試，或透過客服表單補充問題：https://ecoco.tw/kWqgW';
 const KNOWLEDGE_GAP_MARKERS = [
   '沒有確切資料',
@@ -14,6 +19,34 @@ const KNOWLEDGE_GAP_MARKERS = [
   '建議您透過客服表單',
   '需要人工補充或確認',
 ];
+
+function getWebChatTimeoutMs(env = process.env) {
+  const configured = Number(env.WEB_CHAT_TIMEOUT_MS || DEFAULT_WEB_CHAT_TIMEOUT_MS);
+  if (!Number.isFinite(configured) || configured <= 0) return DEFAULT_WEB_CHAT_TIMEOUT_MS;
+  return Math.min(Math.max(Math.floor(configured), 100), MAX_WEB_CHAT_TIMEOUT_MS);
+}
+
+async function createMessageWithTimeout(client, payload, timeoutMs = getWebChatTimeoutMs()) {
+  const controller = new AbortController();
+  let timer;
+  const timeout = new Promise((resolve, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      const error = new Error(`Web chat AI request timed out after ${timeoutMs}ms`);
+      error.code = 'WEB_CHAT_TIMEOUT';
+      reject(error);
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([
+      client.messages.create(payload, { signal: controller.signal }),
+      timeout,
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function parseKnowledgeGapMeta(reply) {
   if (typeof reply !== 'string') return null;
@@ -173,19 +206,80 @@ async function loadServerConversationHistory(pool, sessionId, limit = 12) {
   return normalizeModelMessages(rows.reverse());
 }
 
-function getSafeSessionId(headers = {}) {
-  const raw = String(headers['x-session-id'] || '').trim();
-  if (/^session_[A-Za-z0-9_-]{8,80}$/.test(raw)) return raw;
-  if (raw) {
-    console.warn('Invalid x-session-id header; generated a new server session.');
-  }
-  return `server_${crypto.randomUUID()}`;
+function getSessionSecret(env = process.env) {
+  return String(env.SESSION_SECRET || env.ADMIN_KEY || EPHEMERAL_SESSION_SECRET);
 }
 
-function getClientSessionId(headers = {}) {
-  const raw = String(headers['x-session-id'] || '').trim();
-  if (/^session_[A-Za-z0-9_-]{8,80}$/.test(raw)) return raw;
-  return null;
+function signSessionId(sessionId, env = process.env) {
+  return crypto
+    .createHmac('sha256', getSessionSecret(env))
+    .update(sessionId)
+    .digest('base64url');
+}
+
+function createSignedSessionCookieValue(sessionId, env = process.env) {
+  return `${sessionId}.${signSessionId(sessionId, env)}`;
+}
+
+function getCookieValue(headers = {}, name = WEB_SESSION_COOKIE_NAME) {
+  const rawCookie = String(headers.cookie || '');
+  for (const part of rawCookie.split(';')) {
+    const separator = part.indexOf('=');
+    if (separator < 0) continue;
+    if (part.slice(0, separator).trim() !== name) continue;
+    try {
+      return decodeURIComponent(part.slice(separator + 1).trim());
+    } catch {
+      return '';
+    }
+  }
+  return '';
+}
+
+function getClientSessionId(headers = {}, env = process.env) {
+  const token = getCookieValue(headers);
+  const separator = token.lastIndexOf('.');
+  if (separator < 1) return null;
+
+  const sessionId = token.slice(0, separator);
+  const signature = token.slice(separator + 1);
+  if (!/^session_[A-Za-z0-9_-]{8,80}$/.test(sessionId)) return null;
+
+  const expected = signSessionId(sessionId, env);
+  const providedBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  if (providedBuffer.length !== expectedBuffer.length) return null;
+  if (!crypto.timingSafeEqual(providedBuffer, expectedBuffer)) return null;
+
+  return sessionId;
+}
+
+function getSafeSessionId(headers = {}, env = process.env) {
+  return getClientSessionId(headers, env)
+    || `session_${crypto.randomUUID().replaceAll('-', '')}`;
+}
+
+function setWebSessionCookie(res, sessionId, headers = {}, env = process.env) {
+  const secure = env.NODE_ENV === 'production'
+    || String(headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase() === 'https';
+  const parts = [
+    `${WEB_SESSION_COOKIE_NAME}=${encodeURIComponent(createSignedSessionCookieValue(sessionId, env))}`,
+    'Path=/',
+    `Max-Age=${WEB_SESSION_MAX_AGE_SECONDS}`,
+    'HttpOnly',
+    'SameSite=Strict',
+  ];
+  if (secure) parts.push('Secure');
+  res.setHeader('Set-Cookie', parts.join('; '));
+}
+
+function resolveWebSession(req, res, env = process.env) {
+  const existing = getClientSessionId(req.headers, env);
+  if (existing) return existing;
+
+  const sessionId = getSafeSessionId({}, env);
+  setWebSessionCookie(res, sessionId, req.headers, env);
+  return sessionId;
 }
 
 async function loadExchangeByMessageId(pool, sessionId, messageId) {
@@ -306,6 +400,23 @@ function buildLiveStationStatusReply(liveStationContext = null) {
   }
 
   const displayedRows = uniqueRows.slice(0, 3);
+  if (liveStationContext?.isStale === true) {
+    const lines = [
+      '可可粉，站點資料目前沒有在預期時間內更新，所以我暫時不能確認最新的機台狀態或回收槽容量。',
+      '',
+      '目前可以確認的站點位置：',
+    ];
+    displayedRows.forEach((row, index) => {
+      const name = row.stationName || row.stationCode || `站點 ${index + 1}`;
+      lines.push(
+        displayedRows.length > 1 ? `${index + 1}. ${name}` : name,
+        `地址：${row.address || '未知'}`
+      );
+    });
+    lines.push('', '建議出發前先查看 ECOCO App；若現場有異常，也可以透過客服表單回報，我們會協助確認。');
+    return lines.join('\n');
+  }
+
   const lines = displayedRows.length > 1
     ? ['可可粉，幫你找到幾個可能適合的 ECOCO 站點囉：']
     : ['可可粉，幫你查到這個站點目前的狀況囉：'];
@@ -355,11 +466,13 @@ function createChatRouter({
   defaultAnthropicModel,
   classifyQuestion,
   retrieveLiveStationContext = null,
+  webChatTimeoutMs = getWebChatTimeoutMs(),
+  sessionEnv = process.env,
 }) {
   const router = express.Router();
 
   router.post('/chat', chatLimiter, async (req, res) => {
-    const sessionId = getSafeSessionId(req.headers);
+    const sessionId = resolveWebSession(req, res, sessionEnv);
     const { message: userMsg, error } = getLatestUserMessage(req.body || {});
     if (error) return res.status(400).json({ error });
     const messageId = crypto.randomUUID();
@@ -446,14 +559,14 @@ function createChatRouter({
         return res.json({ reply: stationStatusReply, messageId });
       }
       const runtimeGuardrails = buildRuntimeGuardrails(userMsg.content, rag);
-      const response = await client.messages.create({
+      const response = await createMessageWithTimeout(client, {
         model: process.env.ANTHROPIC_MODEL || defaultAnthropicModel,
         max_tokens: 1024,
         system: buildSystemPromptBlocks
           ? buildSystemPromptBlocks(rag.context, runtimeGuardrails)
           : [{ type: 'text', text: buildSystemPrompt(rag.context, runtimeGuardrails) }],
         messages: modelMessages,
-      });
+      }, webChatTimeoutMs);
 
       const rawReply = response.content.find(b => b.type === 'text')?.text
         ?? '目前無法產生回覆，請稍後再試或聯絡客服。';
@@ -512,7 +625,7 @@ function createChatRouter({
 
     try {
       const ts = new Date().toISOString();
-      const sessionId = getClientSessionId(req.headers);
+      const sessionId = getClientSessionId(req.headers, sessionEnv);
       const exchange = await loadExchangeByMessageId(pool, sessionId, String(msgId).substring(0, 120));
       const storedQuestion = maskSensitiveText(exchange.question).substring(0, 300);
       const storedReply = maskSensitiveText(exchange.reply).substring(0, 300);
@@ -522,7 +635,13 @@ function createChatRouter({
       }
 
       await pool.query(
-        'INSERT INTO ratings (msg_id, type, timestamp, question, reply) VALUES ($1, $2, $3, $4, $5)',
+        `INSERT INTO ratings (msg_id, type, timestamp, question, reply)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (msg_id) WHERE msg_id <> '' DO UPDATE SET
+           type = EXCLUDED.type,
+           timestamp = EXCLUDED.timestamp,
+           question = EXCLUDED.question,
+           reply = EXCLUDED.reply`,
         [
           String(msgId).substring(0, 120),
           type,
@@ -590,21 +709,29 @@ function createChatRouter({
 }
 
 module.exports = {
+  DEFAULT_WEB_CHAT_TIMEOUT_MS,
   KNOWLEDGE_GAP_MACHINE_MARKER,
   KNOWLEDGE_GAP_MARKERS,
+  MAX_WEB_CHAT_TIMEOUT_MS,
+  WEB_SESSION_COOKIE_NAME,
   attachLiveStationContext,
   buildLiveStationStatusReply,
   shouldUseDeterministicStationReply,
+  createMessageWithTimeout,
+  createSignedSessionCookieValue,
   createChatRouter,
   detectKnowledgeGap,
   FRIENDLY_AI_ERROR_REPLY,
   getClientSessionId,
   getLatestUserMessage,
   getSafeSessionId,
+  getWebChatTimeoutMs,
   loadExchangeByMessageId,
   loadServerConversationHistory,
   normalizeModelMessages,
   parseKnowledgeGapMeta,
+  resolveWebSession,
+  setWebSessionCookie,
   storeChatExchange,
   stripKnowledgeGapMarker,
   validateHistory,

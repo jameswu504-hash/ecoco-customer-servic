@@ -259,16 +259,67 @@ async function buildAiReply({
   return replyText;
 }
 
-async function storeLineConversation({ pool, sessionId, question, reply, classification = null }) {
+function getLineWebhookEventId(event = {}) {
+  return String(event.webhookEventId || '').trim().slice(0, 180);
+}
+
+async function claimLineWebhookEvent(pool, event = {}) {
+  const eventId = getLineWebhookEventId(event);
+  if (!eventId) return { claimed: true, eventId: '' };
+
+  const { rows } = await pool.query(
+    `INSERT INTO line_webhook_events
+       (event_id, status, attempts, is_redelivery, last_error, created_at, updated_at)
+     VALUES ($1, 'processing', 1, $2, '', NOW(), NOW())
+     ON CONFLICT (event_id) DO UPDATE SET
+       status = 'processing',
+       attempts = line_webhook_events.attempts + 1,
+       is_redelivery = line_webhook_events.is_redelivery OR EXCLUDED.is_redelivery,
+       last_error = '',
+       updated_at = NOW()
+     WHERE line_webhook_events.status = 'failed'
+        OR line_webhook_events.updated_at < NOW() - INTERVAL '5 minutes'
+     RETURNING event_id`,
+    [eventId, Boolean(event.deliveryContext?.isRedelivery)]
+  );
+
+  return { claimed: rows.length > 0, eventId };
+}
+
+async function completeLineWebhookEvent(pool, eventId, error = null) {
+  if (!eventId) return;
+  await pool.query(
+    `UPDATE line_webhook_events
+     SET status = $2,
+         last_error = $3,
+         updated_at = NOW()
+     WHERE event_id = $1`,
+    [
+      eventId,
+      error ? 'failed' : 'completed',
+      error ? String(error.message || error).slice(0, 500) : '',
+    ]
+  );
+}
+
+async function storeLineConversation({
+  pool,
+  sessionId,
+  question,
+  reply,
+  classification = null,
+  messageId = '',
+}) {
   const ts = new Date().toISOString();
   const gap = detectKnowledgeGap(reply);
   const storedQuestion = maskSensitiveText(question);
   const storedReply = maskSensitiveText(stripKnowledgeGapMarker(reply));
 
   await pool.query(
-    `INSERT INTO conversations (session_id, role, content, timestamp)
-     VALUES ($1, $2, $3, $4), ($1, $5, $6, $4)`,
-    [sessionId, 'user', storedQuestion, ts, 'assistant', storedReply]
+    `INSERT INTO conversations (session_id, role, content, timestamp, message_id)
+     VALUES ($1, $2, $3, $4, $7), ($1, $5, $6, $4, $7)
+     ON CONFLICT (session_id, role, message_id) WHERE message_id <> '' DO NOTHING`,
+    [sessionId, 'user', storedQuestion, ts, 'assistant', storedReply, messageId]
   );
 
   if (gap.isGap || classification?.shouldEscalate) {
@@ -318,9 +369,19 @@ function createLineRouter({
       const userText = String(event.message.text || '').trim().slice(0, LINE_MAX_INPUT_CHARS);
       if (!userText) continue;
 
+      let webhookClaim;
+      try {
+        webhookClaim = await claimLineWebhookEvent(pool, event);
+      } catch (err) {
+        console.error('LINE webhook event claim error:', err.message);
+        continue;
+      }
+      if (!webhookClaim.claimed) continue;
+
       const sessionId = buildLineSessionId(event);
       let reply = LINE_FALLBACK_REPLY;
       let shouldStoreConversation = true;
+      let webhookProcessingError = null;
       const isPartnerGroup = event.source?.type === 'group' && partnerService;
       const classification = !isPartnerGroup && typeof classifyQuestion === 'function'
         ? classifyQuestion(userText)
@@ -475,14 +536,29 @@ function createLineRouter({
         });
       } catch (err) {
         console.error('LINE Reply API error:', err.message);
+        webhookProcessingError = err;
       }
 
       if (shouldStoreConversation) {
         try {
-          await storeLineConversation({ pool, sessionId, question: userText, reply, classification });
+          await storeLineConversation({
+            pool,
+            sessionId,
+            question: userText,
+            reply,
+            classification,
+            messageId: webhookClaim.eventId,
+          });
         } catch (err) {
           console.error('LINE conversation write error:', err.message);
+          webhookProcessingError ||= err;
         }
+      }
+
+      try {
+        await completeLineWebhookEvent(pool, webhookClaim.eventId, webhookProcessingError);
+      } catch (err) {
+        console.error('LINE webhook event completion error:', err.message);
       }
     }
   });
@@ -505,9 +581,12 @@ module.exports = {
   buildAiReply,
   buildLineModelMessages,
   buildLineSessionId,
+  claimLineWebhookEvent,
   cleanupLineRateBuckets,
+  completeLineWebhookEvent,
   createLineRouter,
   getLineConfig,
+  getLineWebhookEventId,
   getLineRateLimitMax,
   getLineReplyTimeoutMs,
   getLineTimeoutReply,

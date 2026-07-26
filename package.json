@@ -20,6 +20,7 @@
     "eval": "node scripts/run-evals.mjs",
     "eval:validate": "node scripts/run-evals.mjs --validate-only",
     "knowledge:drift": "node scripts/check-knowledge-drift.mjs",
+    "knowledge:backfill-embeddings": "node scripts/backfill-knowledge-embeddings.js",
     "iot:snapshot": "node scripts/export-iot-station-snapshot.js",
     "iot:sync": "node scripts/sync-iot-stations-to-postgres.js",
     "suggest:synonyms": "node scripts/suggest-synonyms.mjs"

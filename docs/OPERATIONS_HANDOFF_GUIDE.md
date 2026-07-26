@@ -268,7 +268,7 @@ npm.cmd run scan:pii
 Current station/machine status is not served by Render connecting directly to Azure MySQL. The operational path is:
 
 ```text
-local Windows sync machine -> Azure MySQL readonly -> Render admin sync API -> Neon/PostgreSQL -> LINE/web replies
+local Windows sync machine -> Azure MySQL readonly -> Render IoT sync API -> Neon/PostgreSQL -> LINE/web replies
 ```
 
 Current local scheduled task:
@@ -276,15 +276,17 @@ Current local scheduled task:
 ```text
 Task Scheduler: ECOCO IoT Station Sync
 Interval: every 5 minutes
+Hidden launcher: tools/iot-sync/run-hidden.vbs
+Runner: tools/iot-sync/run-once.ps1
 Logs: .local-iot-sync/logs/iot-sync-*.log
 ```
 
 Operational checks:
 
 1. Render deploy should be Live.
-2. `/api/system/status` should show `database=ok`, `iotStationStatusCount > 0`, and recent `iotStationLastSyncedAt`.
+2. `/api/system/status` should show `database=ok`, `iotStationStatusCount > 0`, recent `iotStationLastSyncedAt`, and `iotStationDataStale=false`.
 3. `/api/iot/station-statuses/search?q=es0140&limit=10` should find 小北百貨台南西門店站.
 4. Customer replies should be friendly and line-broken, and should not show data sync timestamps.
-5. If sync is stale, check Task Scheduler and `.local-iot-sync/logs` on the local sync machine.
+5. If sync is stale, compare `iotStationDataAgeMs` with `iotStationDataMaxAgeMs`, then check Task Scheduler and `.local-iot-sync/logs` on the local sync machine.
 
 See also: `docs/IOT_STATION_STATUS_HANDOFF_2026-07-24.md` and `docs/LIVE_IOT_MYSQL_INTEGRATION.md`.

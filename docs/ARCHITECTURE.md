@@ -27,6 +27,7 @@ Express 足以支撐目前客服前台、後台、LINE webhook、報表與知識
 知識庫正式來源以 PostgreSQL 為主，`knowledge_sections` 保存客服可維護的分類內容，`knowledge_chunks` 保存檢索片段。這樣可以讓客服後台修改後立即成為 AI 回覆依據，不需要每次都改程式碼。
 
 系統優先使用 pgvector / embedding 做語意檢索；若 OpenAI embedding 不可用，會降級為關鍵字檢索，讓服務仍可回答基本問題。
+問題分類的 `ragScope` 只影響排序加權，不是 SQL 硬篩選，避免分類錯誤時完全排除正確知識。
 
 ### Claude 回覆生成
 
@@ -39,9 +40,11 @@ Claude 負責將 RAG 找到的公司知識轉成客服可讀的回覆。Prompt �
 ## 目前重要邊界
 
 - LINE rate limit bucket 目前存在單一 Node.js 記憶體內。單一 Render instance 可用；若未來水平擴展多 instance，需改用 Redis 或 PostgreSQL。
+- LINE webhook event 以 PostgreSQL `line_webhook_events` 防止 redelivery 重複處理；這與記憶體 rate limit 是不同機制。
 - `knowledge.js` 只作為空資料庫初始 seed fallback；正式回覆不直接讀這份檔案。
 - 內部 Wiki 仍屬未來功能，正式客服落地主線不依賴它。
 - 對話紀錄會做基本遮罩後保存；這偏向隱私保護，但可能讓多輪客服情境中部分個資線索無法被模型完整沿用。
+- 網站對話以伺服器簽署的 `HttpOnly` cookie 綁定，LINE 對話則以雜湊後的來源 ID 建立 session。
 
 ## 維護重點
 
@@ -49,3 +52,4 @@ Claude 負責將 RAG 找到的公司知識轉成客服可讀的回覆。Prompt �
 - 知識庫以後台與 PostgreSQL 為主，Git JSON 匯出只作交接與備份。
 - 修改客服回覆邏輯後需跑 `npm run lint`、`npm test`，並確認 GitHub Actions 通過。
 - LINE webhook 若超過 reply token 時效，系統會回覆保守訊息並記錄 trace；如需主動追補訊息，需另評估 push message 成本與權限。
+- 依 `CONVERSATION_RETENTION_DAYS` 在啟動時與每 24 小時清理過期原始資料；聚合報表不應依賴永久保留個人對話。

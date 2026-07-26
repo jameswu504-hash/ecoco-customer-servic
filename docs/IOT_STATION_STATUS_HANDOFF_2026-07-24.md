@@ -12,6 +12,7 @@ Confirmed production state:
 - Local Windows Task Scheduler runs the sync every 5 minutes.
 - LINE/web station replies use the synced Neon data.
 - Customer replies do not show data sync timestamps.
+- Data older than `STATION_DATA_MAX_AGE_MS` is not reported as current status or capacity.
 
 ## Production Architecture
 
@@ -31,7 +32,7 @@ Sync path:
 Trusted local Windows machine
   -> readonly Azure MySQL
   -> npm run iot:sync
-  -> Render admin sync API
+  -> Render IoT sync API
   -> Neon/PostgreSQL iot_station_statuses
 ```
 
@@ -44,19 +45,19 @@ Current local setup:
 ```text
 Task Scheduler name: ECOCO IoT Station Sync
 Interval: every 5 minutes
-Task action: wscript.exe //B //Nologo .local-iot-sync/run-hidden.vbs
-Hidden launcher: .local-iot-sync/run-hidden.vbs
-PowerShell script: .local-iot-sync/run-once.ps1
+Task action: wscript.exe //B //Nologo tools/iot-sync/run-hidden.vbs
+Hidden launcher: tools/iot-sync/run-hidden.vbs
+PowerShell script: tools/iot-sync/run-once.ps1
 Logs: .local-iot-sync/logs/iot-sync-*.log
 ```
 
 The local runner uses:
 
 - `MCP_CONFIG_PATH` for readonly Azure MySQL credentials.
-- `ECOCO_IOT_SYNC_URL` for the Render admin sync endpoint.
-- encrypted local `ADMIN_KEY` storage scoped to the current Windows user.
+- `ECOCO_IOT_SYNC_URL` for the Render sync endpoint.
+- `IOT_SYNC_KEY` for upload-only access; it must be different from `ADMIN_KEY`.
 
-Do not commit `.local-iot-sync/`. It is local runtime state and may contain encrypted secrets/logs.
+The versioned templates live in `tools/iot-sync/`. Do not commit `.local-iot-sync/`; it is local runtime state and may contain secrets/logs.
 
 ## Data Model
 
@@ -136,6 +137,8 @@ Do not show customer-facing freshness metadata, including:
 
 Freshness fields are admin-only diagnostics.
 
+If `source_synced_at` is older than `STATION_DATA_MAX_AGE_MS` (default 30 minutes), the customer reply may still identify the station and address, but must say that the latest machine status and capacity cannot currently be confirmed. It must not present stale values as current.
+
 ## Admin Verification
 
 System status:
@@ -150,6 +153,8 @@ Check:
 - `database = ok`
 - `iotStationStatusCount > 0`
 - `iotStationLastSyncedAt` is recent
+- `iotStationDataStale = false`
+- `iotStationDataAgeMs < iotStationDataMaxAgeMs`
 
 Station search:
 
@@ -172,11 +177,12 @@ Production chat smoke test:
 POST /api/chat
 Content-Type: application/json
 
-{"message":"es0140 station status","sessionId":"smoke-iot-es0140"}
+{"message":"es0140 station status"}
 ```
 
 Expected:
 
+- the server sets or reuses its signed session cookie
 - response is formatted with line breaks
 - response contains station address, machine status, connection status, and bin capacities
 - response does not contain raw sync timestamps
@@ -188,9 +194,10 @@ If customer station answers do not use IoT data:
 1. Check whether the question contains a station name or code such as `es0140`.
 2. Check `/api/iot/station-statuses/search?q=<station>` with admin key.
 3. Check `/api/system/status` for `iotStationStatusCount` and `iotStationLastSyncedAt`.
-4. Check Task Scheduler task `ECOCO IoT Station Sync`.
-5. Check `.local-iot-sync/logs/iot-sync-*.log` on the sync machine.
-6. Run `npm run iot:sync` manually from a machine that can reach Azure MySQL.
+4. Confirm `iotStationDataStale` and compare `iotStationDataAgeMs` with `iotStationDataMaxAgeMs`.
+5. Check Task Scheduler task `ECOCO IoT Station Sync`.
+6. Check `.local-iot-sync/logs/iot-sync-*.log` on the sync machine.
+7. Run `npm run iot:sync` manually from a machine that can reach Azure MySQL.
 
 If Render logs show `Live station context lookup error: connect ETIMEDOUT`, first check whether Neon still has fresh station rows. Render direct MySQL timeout is not the main production path.
 

@@ -27,11 +27,16 @@ Service -> Environment -> Environment Variables
 | `DATABASE_URL` | 必填 | PostgreSQL 連線字串 | 服務無法啟動或無法讀寫資料 |
 | `ANTHROPIC_API_KEY` | 必填 | Claude API key，用來產生客服回覆 | AI 無法回答 |
 | `ADMIN_KEY` | 必填 | 後台與管理 API 的通行 key | 後台 API 會被拒絕 |
+| `SESSION_SECRET` | 建議 | 簽署前台 `HttpOnly` session cookie，至少 32 個隨機字元 | 暫時以 `ADMIN_KEY` 簽署並產生啟動警告 |
+| `IOT_SYNC_KEY` | 建議 | 本機 IoT 同步專用 key | 暫時接受 `ADMIN_KEY` 相容模式並產生啟動警告 |
 | `OPENAI_API_KEY` | 建議 | OpenAI embedding key，用來啟用 pgvector 語意檢索 | 系統仍可用，但只會 fallback 到關鍵字檢索 |
 | `ANTHROPIC_MODEL` | 選填 | Claude 模型，預設由程式指定 | 未設定時使用預設模型 |
 | `EMBEDDING_MODEL` | 選填 | 預設 `text-embedding-3-small` | 未設定時使用預設 embedding 模型 |
 | `EMBEDDING_DIMENSIONS` | 選填 | 預設 `1536` | 不建議任意改，需和 embedding 模型維度一致 |
 | `EMBEDDING_TIMEOUT_MS` | 選填 | 預設 `10000` | embedding API 太久會 timeout，系統 fallback 關鍵字檢索 |
+| `EMBEDDING_MAX_RETRIES` | 選填 | 預設 `2`，只重試 `408`、`429`、`5xx` 與網路錯誤 | 暫時性錯誤較容易留下缺漏向量 |
+| `WEB_CHAT_TIMEOUT_MS` | 選填 | 網頁 AI 回覆預設 `45000`，上限 `55000` | 使用預設值 |
+| `STATION_DATA_MAX_AGE_MS` | 選填 | 站點狀態時效門檻，預設 30 分鐘 | 使用預設值 |
 | `KNOWLEDGE_AUTO_SYNC` | 選填 | 控制 Git JSON 是否在啟動時同步到 DB | 設錯可能覆蓋後台編輯 |
 | `REBUILD_KNOWLEDGE_CHUNKS_ON_START` | 選填 | 設為 `always` 時，啟動時強制重建 RAG chunks | 只在換 embedding key、修復 chunks 或大改知識庫時使用 |
 | `CONVERSATION_RETENTION_DAYS` | 選填 | 對話資料保存天數，`0` 代表不自動清除 | 未設定時對話會持續保存 |
@@ -92,6 +97,9 @@ x-admin-key: <ADMIN_KEY>
 | `semanticRagEnabled` | 僅管理 API 顯示，代表是否同時具備 pgvector 與 `OPENAI_API_KEY` |
 | `knowledgeSectionCount` | 僅管理 API 顯示，目前啟用中的知識庫分類數 |
 | `knowledgeContentChars` | 僅管理 API 顯示，目前啟用中的知識庫內容字數 |
+| `knowledgeChunkCount` | RAG chunk 總數 |
+| `embeddingChunkCount` / `missingEmbeddingChunkCount` | 已有與缺少 embedding 的 chunk 數 |
+| `embeddingCoveragePercent` | embedding 完整率 |
 | `knowledgeAutoSyncMode` | 僅管理 API 顯示，啟動時知識庫同步模式 |
 
 ## 5. 知識庫同步原則
@@ -115,9 +123,14 @@ KNOWLEDGE_AUTO_SYNC=disable
 ## 6. 新增 OpenAI Embedding Key 後要檢查什麼
 
 1. Render 新增 `OPENAI_API_KEY`。
-2. 暫時新增 `REBUILD_KNOWLEDGE_CHUNKS_ON_START=always`。
-3. 手動 Redeploy。
-4. 看 Render Logs 是否出現：
+2. 若 chunks 已存在，只補缺漏向量：
+
+```powershell
+npm.cmd run knowledge:backfill-embeddings
+```
+
+3. 只有需要完整重切 chunks 時，才暫時設定 `REBUILD_KNOWLEDGE_CHUNKS_ON_START=always` 並 Redeploy。
+4. 看 logs 是否出現：
 
 ```text
 pgvector enabled for semantic RAG search
@@ -130,7 +143,7 @@ Knowledge chunks rebuilt: ... chunks
 "semanticRagEnabled": true
 ```
 
-6. 確認 chunks 已重建後，移除 `REBUILD_KNOWLEDGE_CHUNKS_ON_START=always`，避免之後每次重啟都重新產生成本。
+6. 確認 `missingEmbeddingChunkCount = 0` 或 coverage 符合預期。若曾設定 `REBUILD_KNOWLEDGE_CHUNKS_ON_START=always`，完成後立即移除，避免之後每次重啟都重新產生成本。
 
 如果是 `false`，常見原因：
 
@@ -141,6 +154,8 @@ Knowledge chunks rebuilt: ... chunks
 ## 7. 安全注意事項
 
 - 不要把 `.env`、API key、Render 環境變數截圖貼到 GitHub 或文件。
+- `IOT_SYNC_KEY` 必須與 `ADMIN_KEY` 不同；同步機不應持有完整後台權限。
+- `SESSION_SECRET` 必須獨立、隨機且至少 32 個字元。
 - GitHub repo 若曾公開，請先改 Private。
 - `data/*.json` 必須先跑個資掃描；每週備份改由 GitHub Actions artifact 保存，不再把 `backups/*.json` commit 進 repo。
 - 匯入或輸出知識庫前，應確認手機與 email 已匿名化。
@@ -208,7 +223,7 @@ npm.cmd run scan:pii
 Production station status flow:
 
 ```text
-trusted local machine -> readonly Azure MySQL -> Render admin sync API -> Neon/PostgreSQL -> LINE/web bot
+trusted local machine -> readonly Azure MySQL -> Render IoT sync API -> Neon/PostgreSQL -> LINE/web bot
 ```
 
 Render does not need to connect directly to Azure MySQL for normal station replies. A direct MySQL `ETIMEDOUT` in Render logs is an optional fallback failure, not the main production path, as long as the Neon station table is synced.
@@ -227,6 +242,8 @@ Important fields:
 | `database` | `ok` |
 | `iotStationStatusCount` | greater than `0`; current synced production value is around `701` |
 | `iotStationLastSyncedAt` | recent timestamp; should refresh every 5 minutes while the local sync machine is running |
+| `iotStationDataStale` | `false` |
+| `iotStationDataAgeMs` | less than `iotStationDataMaxAgeMs` |
 
 Admin-only station lookup:
 
@@ -235,12 +252,13 @@ GET /api/iot/station-statuses/search?q=es0140&limit=10
 x-admin-key: <ADMIN_KEY>
 ```
 
-Customer-visible station replies should be line-broken and friendly. They must not show `source_synced_at` or "資料同步時間"; freshness is for admin verification only.
+Customer-visible station replies should be line-broken and friendly. They must not show `source_synced_at` or "資料同步時間". If data is stale, the reply must not expose status or capacity as current.
 
 If station replies say no data:
 
 1. Check `/api/system/status` and confirm `iotStationStatusCount > 0`.
 2. Search the station through `/api/iot/station-statuses/search`.
 3. On the sync machine, check Windows Task Scheduler task `ECOCO IoT Station Sync`.
-4. Check `.local-iot-sync/logs/iot-sync-*.log` on the sync machine.
-5. Run one manual sync with `npm run iot:sync` from a network that can reach Azure MySQL.
+4. Confirm it launches `tools/iot-sync/run-hidden.vbs`, which does not open a console window.
+5. Check `.local-iot-sync/logs/iot-sync-*.log` on the sync machine.
+6. Run one manual sync with `npm run iot:sync` from a network that can reach Azure MySQL.

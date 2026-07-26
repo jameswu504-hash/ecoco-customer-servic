@@ -60,6 +60,15 @@ test('nearby landmark questions extract searchable location aliases', () => {
   assert.equal(terms.includes('成大附近有'), false);
 });
 
+test('bare east district queries are not forced into Tainan', () => {
+  const bareTerms = buildStationSearchTerms('東區附近有機台嗎');
+  const tainanTerms = buildStationSearchTerms('台南東區附近有機台嗎');
+
+  assert.ok(bareTerms.includes('東區'));
+  assert.equal(bareTerms.includes('台南東區'), false);
+  assert.ok(tainanTerms.includes('台南東區'));
+});
+
 test('nearby recycling questions are routed to live station lookup', () => {
   for (const question of ['成大附近哪裡可以回收', '成功大學附近有 ECOCO 嗎']) {
     const classification = classifyQuestion(question);
@@ -206,6 +215,7 @@ test('station lookup prefers PostgreSQL sync rows before MySQL fallback', async 
     },
     mysqlFactory,
     pgPool,
+    now: () => new Date('2026-07-24T03:20:00Z').getTime(),
   });
 
   const result = await service.retrieveLiveStationContext('es0140 status', {
@@ -213,6 +223,7 @@ test('station lookup prefers PostgreSQL sync rows before MySQL fallback', async 
   });
 
   assert.equal(result.retrievalMode, 'postgres_iot');
+  assert.equal(result.isStale, false);
   assert.equal(result.rows[0].stationCode, 'es0140');
   assert.match(result.context, /Source: Neon PostgreSQL station sync/);
   assert.match(result.context, /source_synced_at/);
@@ -247,6 +258,7 @@ test('nearby landmark lookup can match PostgreSQL address and district fields', 
   const service = createIotStatusService({
     env: {},
     pgPool,
+    now: () => new Date('2026-07-24T03:20:00Z').getTime(),
   });
 
   const result = await service.retrieveLiveStationContext('成大附近有機台嗎', {
@@ -351,7 +363,7 @@ test('IoT sync script uploads station rows in admin-protected batches', async ()
     assert.equal(JSON.parse(calls[0].options.body).pruneOlderThanSyncedAt, false);
     assert.equal(JSON.parse(calls[1].options.body).pruneOlderThanSyncedAt, false);
     assert.equal(JSON.parse(calls[2].options.body).pruneOlderThanSyncedAt, true);
-    assert.equal(calls[0].options.headers['x-admin-key'], 'admin-secret');
+    assert.equal(calls[0].options.headers['x-iot-sync-key'], 'admin-secret');
     assert.equal(result.written, 41);
   } finally {
     global.fetch = originalFetch;
@@ -442,6 +454,7 @@ test('IoT snapshot is used when live MySQL is unreachable', async () => {
     });
 
     assert.equal(result.retrievalMode, 'iot_snapshot');
+    assert.equal(result.isStale, true);
     assert.equal(result.fallbackReason, 'ETIMEDOUT');
     assert.equal(result.rows[0].stationCode, 'es0140');
     assert.match(result.context, /Source: snapshot/);
@@ -577,4 +590,23 @@ test('station status reply does not mark unknown capacity as full', () => {
 
   assert.match(reply, /第 1 槽：目前還沒有容量數字/);
   assert.doesNotMatch(reply, /第 1 槽：.*已滿/);
+});
+
+test('stale station data never exposes status or capacity as current', () => {
+  const reply = buildLiveStationStatusReply({
+    isStale: true,
+    rows: [{
+      stationCode: 'es0400',
+      stationName: '過期資料測試站',
+      address: '台南市測試區',
+      machineStatus: 'up',
+      lastConnectionStatus: 'online',
+      bin1RemainCapacity: 0,
+    }],
+  });
+
+  assert.match(reply, /不能確認最新的機台狀態或回收槽容量/);
+  assert.match(reply, /過期資料測試站/);
+  assert.match(reply, /台南市測試區/);
+  assert.doesNotMatch(reply, /機台：正常|連線：正常|剩餘 0|已滿|資料同步時間/);
 });

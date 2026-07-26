@@ -39,7 +39,14 @@ async function purgeExpiredConversationData(pool, env = process.env) {
   const retentionDays = getRetentionDays(env);
   if (!retentionDays) {
     console.log('Conversation retention cleanup skipped: CONVERSATION_RETENTION_DAYS is not set');
-    return { enabled: false, deletedConversations: 0, deletedRatings: 0, deletedGaps: 0 };
+    return {
+      enabled: false,
+      deletedConversations: 0,
+      deletedPartnerConversations: 0,
+      deletedLineWebhookEvents: 0,
+      deletedRatings: 0,
+      deletedGaps: 0,
+    };
   }
 
   const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
@@ -47,6 +54,8 @@ async function purgeExpiredConversationData(pool, env = process.env) {
   try {
     await db.query('BEGIN');
     const conversations = await db.query('DELETE FROM conversations WHERE timestamp < $1', [cutoff]);
+    const partnerConversations = await db.query('DELETE FROM partner_conversations WHERE timestamp < $1', [cutoff]);
+    const lineWebhookEvents = await db.query('DELETE FROM line_webhook_events WHERE updated_at < $1', [cutoff]);
     const ratings = await db.query('DELETE FROM ratings WHERE timestamp < $1', [cutoff]);
     const gaps = await db.query("DELETE FROM unanswered_questions WHERE timestamp < $1 AND COALESCE(status, 'pending') <> 'pending'", [cutoff]);
     await db.query('COMMIT');
@@ -54,10 +63,12 @@ async function purgeExpiredConversationData(pool, env = process.env) {
     const result = {
       enabled: true,
       deletedConversations: conversations.rowCount,
+      deletedPartnerConversations: partnerConversations.rowCount,
+      deletedLineWebhookEvents: lineWebhookEvents.rowCount,
       deletedRatings: ratings.rowCount,
       deletedGaps: gaps.rowCount,
     };
-    console.log(`Conversation retention cleanup complete: days=${retentionDays} conversations=${result.deletedConversations} ratings=${result.deletedRatings} gaps=${result.deletedGaps}`);
+    console.log(`Conversation retention cleanup complete: days=${retentionDays} conversations=${result.deletedConversations} partnerConversations=${result.deletedPartnerConversations} lineWebhookEvents=${result.deletedLineWebhookEvents} ratings=${result.deletedRatings} gaps=${result.deletedGaps}`);
     return result;
   } catch (err) {
     await db.query('ROLLBACK');

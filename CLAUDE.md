@@ -12,6 +12,8 @@ npm run audit:knowledge     # 掃描 data/ 知識庫，找出重複與衝突
 npm run apply:knowledge-audit  # 將稽核結果套用（把重複項標為 archived，不刪除）
 npm run build:knowledge     # 從 data/ 組出 ecoco-knowledge-import.json
 npm run import:knowledge    # 把 ecoco-knowledge-import.json 匯入 PostgreSQL
+npm run knowledge:backfill-embeddings  # 只補 knowledge_chunks 缺少或模型不符的 embedding
+npm run iot:sync            # 從唯讀 MySQL 同步站點狀態到 Render/Neon
 
 npm run lint                # 語法檢查（scripts/lint.mjs 自動掃描所有 .js/.mjs）
 npm test                    # 執行 tests/*.test.js（node --test，目前共 5 個測試檔）
@@ -27,6 +29,8 @@ npm run scan:pii            # 掃描 repo 是否含個資
 ```
 ANTHROPIC_API_KEY=...
 ADMIN_KEY=...
+SESSION_SECRET=...                   # 至少 32 個隨機字元；簽署前台 HttpOnly cookie
+IOT_SYNC_KEY=...                     # 本機 IoT upload-only key，不得與 ADMIN_KEY 共用
 DATABASE_URL=postgresql://...
 KNOWLEDGE_AUTO_SYNC=disable       # 日常維護只用後台 PostgreSQL；大改版才匯出 JSON 回 Git
 PGSSL=verify-full                # 雲端連線加密並驗證憑證；只有相容性需求才降為 require
@@ -40,8 +44,10 @@ PGSSL=verify-full                # 雲端連線加密並驗證憑證；只有相
 
 | 層 | 檔案 | 說明 |
 |---|---|---|
-| Git JSON（版本控制層） | `data/ecoco-ai-customer-service-database.json` | 主要編輯來源，含版本、衝突追蹤、878 筆紀錄 |
-| PostgreSQL（執行層） | `knowledge_sections` + `knowledge_chunks` | 伺服器實際讀取的資料 |
+| PostgreSQL（線上權威層） | `knowledge_sections` | 後台日常編輯與伺服器實際讀取的正式內容 |
+| PostgreSQL（衍生檢索層） | `knowledge_chunks` | 由 sections 切分與 embedding 產生，不可手動編輯 |
+| Git JSON（版本紀錄層） | `data/ecoco-knowledge-import.json` | 大改版、交接或備份時由 PostgreSQL 匯出、人工確認後提交 |
+| 整理底稿 | `data/ecoco-ai-customer-service-database.json` | 來源整合、衝突追蹤與稽核用途，不會自動覆蓋線上 DB |
 
 **日常更新流程：** 在後台新增、修改、封存或恢復知識，資料直接寫入 PostgreSQL。  
 **正式版本流程：** 大改版、交接或備份前，從後台下載 JSON，人工確認後覆蓋 `data/ecoco-knowledge-import.json`，再 commit / push。  
@@ -53,13 +59,13 @@ PGSSL=verify-full                # 雲端連線加密並驗證憑證；只有相
 2. `initDb()` — 逐一執行 SCHEMA 建表（雲端 Postgres 不接受多語句，故分開執行），並跑 timestamp 欄位遷移與 pgvector 初始化
 3. `KNOWLEDGE_AUTO_SYNC` 決定是否從 Git JSON 同步進 PostgreSQL
 4. `ensureKnowledgeChunksReady()` — chunks 為空或同步有變更時重建 `knowledge_chunks`
-5. `purgeExpiredConversationData()` — 依 `CONVERSATION_RETENTION_DAYS` 清除過期對話
+5. `purgeExpiredConversationData()` — 啟動時清理一次，之後每 24 小時依 `CONVERSATION_RETENTION_DAYS` 清除過期 B2C/B2B 對話、評分、已結案缺口與 LINE event 紀錄
 6. 開始接請求
 
 ### RAG 流程
 
 `/api/chat` 收到問題後：
-1. 檢索 `knowledge_chunks`：主要走 pgvector 語意檢索（需 `vector` extension + `OPENAI_API_KEY`），關鍵字／同義詞 `ILIKE` 檢索作為備援或混合來源，排序後取前 8 筆片段（`MAX_RAG_CHUNKS`）
+1. 檢索 `knowledge_chunks`：主要走 pgvector 語意檢索（需 `vector` extension + `OPENAI_API_KEY`），關鍵字／同義詞 `ILIKE` 檢索作為備援或混合來源，排序後取前 8 筆片段（`MAX_RAG_CHUNKS`）。分類器的 `ragScope` 只做排序加權，不得作 SQL 硬過濾。
 2. 靜態 system prompt 標記 `cache_control: ephemeral` 啟用 prompt caching；RAG 片段放在動態區塊
 3. 呼叫 Claude（預設 `claude-sonnet-4-6`，可用 `ANTHROPIC_MODEL` 環境變數覆蓋，`max_tokens: 1024`）
 
@@ -80,7 +86,9 @@ PGSSL=verify-full                # 雲端連線加密並驗證憑證；只有相
 
 ### Admin 保護
 
-`requireAdminKey` 用 `crypto.timingSafeEqual` 比較，防計時攻擊。後台所有 `/api/knowledge/*`、`/api/stats`、`/api/sessions`、`/api/unanswered` 等均需帶 `x-admin-key` header。
+`requireAdminKey` 用 `crypto.timingSafeEqual` 比較，防計時攻擊。後台所有 `/api/knowledge/*`、`/api/stats`、`/api/sessions`、`/api/unanswered` 等均需帶 `x-admin-key` header，並經 admin rate limit。`POST /api/iot/station-statuses/sync` 改用專用 `x-iot-sync-key`；設定 `IOT_SYNC_KEY` 後不得再接受 `ADMIN_KEY`。
+
+客服前台 session 由伺服器簽發 `HttpOnly; SameSite=Strict` signed cookie。不得重新接受任意 `x-session-id`，否則會恢復跨 session 歷史讀取風險。
 
 ### Dashboard API 與知識編輯
 
@@ -90,6 +98,7 @@ PGSSL=verify-full                # 雲端連線加密並驗證憑證；只有相
 ### B2B LINE 公司分支
 
 - 同一個 `/api/line/webhook` 服務 B2C 與 B2B；一對一訊息走 B2C，群組訊息先檢查 `partner_line_groups`。
+- `line_webhook_events` 以 LINE `webhookEventId` 防重送；對話 `message_id` 與評分也有資料庫唯一約束。
 - 未綁定群組不得進入 B2C 或 B2B RAG。已綁定群組只能讀取 ECOCO 共用知識與目前 `company_id` 的 `partner_knowledge_sections`。
 - B2B 私有對話只寫入 `partner_conversations`。所有私有知識與歷史 SQL 都必須帶 `company_id`，不可用 prompt 取代後端隔離。
 - 合作公司資料不得寫入全域 `knowledge_sections`。
@@ -100,7 +109,7 @@ PGSSL=verify-full                # 雲端連線加密並驗證憑證；只有相
 
 **修改前先說明：** 任何影響 AI 回覆行為、資料同步邏輯、部署設定或 Git 歷史的變更，必須先向使用者解釋，再執行。
 
-**高風險類別（response-policies）：** 點數、兌換券、機台錯誤、帳號、客訴等類別有保守回答規則。觸發條件是 chunks 被標記為 high-risk 或使用者明確提到補償意圖，不是「點數」「帳號」等字詞本身出現就觸發。
+**高風險類別（response-policies）：** 點數、兌換券、機台錯誤、帳號、客訴等類別有保守回答規則。已標記 high-risk 的 chunks 或明確個案／補償意圖會啟用限制；「退款規則／流程／條件」等一般政策問法仍先查 RAG，但不得承諾個案結果。不要因「點數」「帳號」或單一「點」字本身直接轉人工。
 
 **知識庫稽核：** 重複項標記 `"status": "archived"` 而非刪除，保留原始紀錄供比對。
 

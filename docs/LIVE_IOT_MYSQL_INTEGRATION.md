@@ -36,7 +36,7 @@ Customer-visible station replies currently include:
 - bin 1 capacity
 - bin 2 capacity
 
-Customer-visible station replies do not show `source_synced_at` or "data sync time". Freshness remains available through admin status/search endpoints.
+Customer-visible station replies do not show `source_synced_at` or "data sync time". Freshness remains available through admin status/search endpoints. When data exceeds `STATION_DATA_MAX_AGE_MS` (default 30 minutes), the reply identifies the station but does not present stale status or capacity as current.
 
 ## Local Sync Flow
 
@@ -44,7 +44,7 @@ Customer-visible station replies do not show `source_synced_at` or "data sync ti
 Trusted local machine
   -> readonly Azure MySQL
   -> npm run iot:sync
-  -> Render admin sync API or direct PostgreSQL/Neon
+  -> Render IoT sync API or direct PostgreSQL/Neon
   -> PostgreSQL/Neon iot_station_statuses
   -> Render bot reads the synced rows
 ```
@@ -71,11 +71,11 @@ Reason: some stations have more than one machine/asset. MySQL may also return du
 
 ## Local Environment Variables
 
-Recommended mode: upload through the Render admin sync API. This keeps the Neon `DATABASE_URL` only on Render.
+Recommended mode: upload through the Render IoT sync API. This keeps the Neon `DATABASE_URL` only on Render and gives the sync machine upload-only credentials.
 
 ```powershell
 $env:ECOCO_IOT_SYNC_URL = "https://ecoco-customer-servic.onrender.com/api/iot/station-statuses/sync"
-$env:ADMIN_KEY = "<Render ADMIN_KEY>"
+$env:IOT_SYNC_KEY = "<Render IOT_SYNC_KEY>"
 
 $env:ECOCO_IOT_MYSQL_HOST = "<mysql host>"
 $env:ECOCO_IOT_MYSQL_PORT = "3306"
@@ -92,7 +92,7 @@ If the MySQL credentials are in an MCP JSON file, use:
 ```powershell
 $env:MCP_CONFIG_PATH = "C:\Users\ACER\Downloads\mcp (1).json"
 $env:ECOCO_IOT_SYNC_URL = "https://ecoco-customer-servic.onrender.com/api/iot/station-statuses/sync"
-$env:ADMIN_KEY = "<Render ADMIN_KEY>"
+$env:IOT_SYNC_KEY = "<Render IOT_SYNC_KEY>"
 
 npm run iot:sync
 ```
@@ -105,7 +105,7 @@ $env:PGSSL = "verify-full"
 npm run iot:sync
 ```
 
-Do not commit real database credentials or admin keys.
+Do not commit real database credentials or keys. `IOT_SYNC_KEY` must not equal `ADMIN_KEY`.
 
 ## Run Every 5 Minutes
 
@@ -125,11 +125,12 @@ Current local Windows setup uses Task Scheduler:
 ```text
 Task name: ECOCO IoT Station Sync
 Interval: every 5 minutes
-Runner: .local-iot-sync/run-once.ps1
+Hidden launcher: tools/iot-sync/run-hidden.vbs
+Runner: tools/iot-sync/run-once.ps1
 Logs: .local-iot-sync/logs/iot-sync-*.log
 ```
 
-`.local-iot-sync/` is a local runtime folder and is excluded from Git/PII scans. The encrypted admin-key file is Windows-user scoped and should not be copied to another machine as a credential handoff.
+`tools/iot-sync/` contains the versioned, secret-free runner templates. `.local-iot-sync/` is a local runtime folder and is excluded from Git/PII scans; it must not be copied as a credential handoff.
 
 ## Render Environment Variables
 
@@ -139,7 +140,8 @@ Render still needs:
 DATABASE_URL=<Neon PostgreSQL connection string>
 PGSSL=verify-full
 ANTHROPIC_API_KEY=<key>
-ADMIN_KEY=<key>
+ADMIN_KEY=<admin-key>
+IOT_SYNC_KEY=<dedicated-upload-key>
 LINE_CHANNEL_SECRET=<key>
 LINE_CHANNEL_ACCESS_TOKEN=<key>
 ```
