@@ -83,7 +83,7 @@ flowchart LR
 | `OPENAI_API_KEY` | 選填 | embedding / pgvector 語意檢索 |
 | `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS` | 選填 | embedding 模型與向量維度 |
 | `EMBEDDING_BATCH_SIZE` / `EMBEDDING_TIMEOUT_MS` | 選填 | embedding 批次量與 timeout |
-| `PGSSL` | 選填 | `require` 加密但不驗證憑證；`verify-full` 驗證憑證；本機可信環境才用 `disable` |
+| `PGSSL` | 選填 | 預設 `verify-full`，加密並驗證憑證；`require` 只加密；本機可信環境才用 `disable` |
 | `APP_MODE` | 建議 | 正式客服使用 `customer`；`internal` 才啟用內部 Wiki API |
 | `STAFF_KEY` | internal 模式需要 | 內部 Wiki API 權限，不得與 `ADMIN_KEY` 共用 |
 | `CONVERSATION_RETENTION_DAYS` | 建議 | 對話紀錄保存天數，建議 `180` |

@@ -859,6 +859,7 @@ test('PostgreSQL SSL modes distinguish encryption from certificate verification'
   assert.equal(getPostgresSslConfig({ PGSSL: 'disable' }), false);
   assert.deepEqual(getPostgresSslConfig({ PGSSL: 'require' }), { rejectUnauthorized: false });
   assert.deepEqual(getPostgresSslConfig({ PGSSL: 'verify-full' }), { rejectUnauthorized: true });
+  assert.deepEqual(getPostgresSslConfig({}), { rejectUnauthorized: true });
   assert.match(
     validateRuntimeConfig({ ...baseEnv, PGSSL: 'require' }).warnings.join('\n'),
     /does not verify the server certificate/

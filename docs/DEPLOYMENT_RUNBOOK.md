@@ -35,7 +35,7 @@ Service -> Environment -> Environment Variables
 | `KNOWLEDGE_AUTO_SYNC` | 選填 | 控制 Git JSON 是否在啟動時同步到 DB | 設錯可能覆蓋後台編輯 |
 | `REBUILD_KNOWLEDGE_CHUNKS_ON_START` | 選填 | 設為 `always` 時，啟動時強制重建 RAG chunks | 只在換 embedding key、修復 chunks 或大改知識庫時使用 |
 | `CONVERSATION_RETENTION_DAYS` | 選填 | 對話資料保存天數，`0` 代表不自動清除 | 未設定時對話會持續保存 |
-| `PGSSL` | 選填 | 雲端 DB 通常用 `require`；需驗證憑證時用 `verify-full` | `require` 只加密不驗證憑證；`disable` 僅限本機可信環境 |
+| `PGSSL` | 選填 | 雲端預設 `verify-full`，加密並驗證憑證 | `require` 只加密不驗證憑證；`disable` 僅限本機可信環境 |
 
 ## 3. Claude API 與 OpenAI API 的差別
 

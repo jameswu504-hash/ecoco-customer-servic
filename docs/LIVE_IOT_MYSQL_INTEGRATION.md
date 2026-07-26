@@ -101,7 +101,7 @@ Direct PostgreSQL mode is also supported for servers that are allowed to hold th
 
 ```powershell
 $env:DATABASE_URL = "<Neon PostgreSQL connection string>"
-$env:PGSSL = "require"
+$env:PGSSL = "verify-full"
 npm run iot:sync
 ```
 
@@ -137,7 +137,7 @@ Render still needs:
 
 ```text
 DATABASE_URL=<Neon PostgreSQL connection string>
-PGSSL=require
+PGSSL=verify-full
 ANTHROPIC_API_KEY=<key>
 ADMIN_KEY=<key>
 LINE_CHANNEL_SECRET=<key>

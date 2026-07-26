@@ -151,11 +151,11 @@ function validateRuntimeConfig(env = process.env) {
     errors.push('STAFF_KEY is required when APP_MODE=internal');
   }
 
-  const pgSslMode = String(env.PGSSL || 'require').trim().toLowerCase();
+  const pgSslMode = String(env.PGSSL || 'verify-full').trim().toLowerCase();
   if (pgSslMode && !['disable', 'require', 'verify-full', 'verify_ca', 'verify-ca'].includes(pgSslMode)) {
     warnings.push(`PGSSL=${env.PGSSL} is not recognized; using encrypted SSL without certificate verification.`);
   }
-  if (!pgSslMode || pgSslMode === 'require') {
+  if (pgSslMode === 'require') {
     warnings.push('PGSSL=require encrypts the PostgreSQL connection but does not verify the server certificate. Use PGSSL=verify-full when the provider certificate chain is trusted.');
   }
 
