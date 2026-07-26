@@ -846,7 +846,7 @@ test('runtime config fails fast when required production secrets are missing', (
 });
 
 test('PostgreSQL SSL modes distinguish encryption from certificate verification', () => {
-  const { getPostgresSslConfig, validateRuntimeConfig } = require('../server');
+  const { getPostgresPoolConfig, getPostgresSslConfig, validateRuntimeConfig } = require('../server');
   const importScript = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'import-knowledge-json.js'), 'utf8');
   const syncScript = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'sync-iot-stations-to-postgres.js'), 'utf8');
   const snapshotScript = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'export-iot-station-snapshot.js'), 'utf8');
@@ -860,12 +860,19 @@ test('PostgreSQL SSL modes distinguish encryption from certificate verification'
   assert.deepEqual(getPostgresSslConfig({ PGSSL: 'require' }), { rejectUnauthorized: false });
   assert.deepEqual(getPostgresSslConfig({ PGSSL: 'verify-full' }), { rejectUnauthorized: true });
   assert.deepEqual(getPostgresSslConfig({}), { rejectUnauthorized: true });
+  const poolConfig = getPostgresPoolConfig({
+    DATABASE_URL: 'postgresql://user:pass@example.com/db?sslmode=require&channel_binding=require',
+    PGSSL: 'verify-full',
+  });
+  assert.deepEqual(poolConfig.ssl, { rejectUnauthorized: true });
+  assert.equal(new URL(poolConfig.connectionString).searchParams.has('sslmode'), false);
+  assert.equal(new URL(poolConfig.connectionString).searchParams.get('channel_binding'), 'require');
   assert.match(
     validateRuntimeConfig({ ...baseEnv, PGSSL: 'require' }).warnings.join('\n'),
     /does not verify the server certificate/
   );
-  assert.match(importScript, /getPostgresSslConfig/);
-  assert.match(syncScript, /getPostgresSslConfig/);
+  assert.match(importScript, /getPostgresPoolConfig/);
+  assert.match(syncScript, /getPostgresPoolConfig/);
   assert.match(syncScript, /ECOCO_IOT_MYSQL_SSL_REJECT_UNAUTHORIZED \|\| 'true'/);
   assert.match(snapshotScript, /ECOCO_IOT_MYSQL_SSL_REJECT_UNAUTHORIZED \|\| 'true'/);
 });

@@ -37,6 +37,8 @@ Service -> Environment -> Environment Variables
 | `CONVERSATION_RETENTION_DAYS` | 選填 | 對話資料保存天數，`0` 代表不自動清除 | 未設定時對話會持續保存 |
 | `PGSSL` | 選填 | 雲端預設 `verify-full`，加密並驗證憑證 | `require` 只加密不驗證憑證；`disable` 僅限本機可信環境 |
 
+應用程式會移除 `DATABASE_URL` 內的 `sslmode`、憑證路徑等 SSL query，再由 `PGSSL` 統一決定 TLS 行為，避免連線字串覆蓋安全設定。`channel_binding` 等非 SSL 參數會保留。
+
 ## 3. Claude API 與 OpenAI API 的差別
 
 | Key | 用途 | 是否可互相取代 |

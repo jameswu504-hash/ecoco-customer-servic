@@ -4,7 +4,7 @@ const fs = require('fs');
 const mysql = require('mysql2/promise');
 const { Pool } = require('pg');
 
-const { getPostgresSslConfig } = require('../config/postgres-ssl');
+const { getPostgresPoolConfig } = require('../config/postgres-ssl');
 const { SCHEMA } = require('../db/schema');
 
 const TABLE_NAME = 'iot_station_statuses';
@@ -34,10 +34,7 @@ function getPostgresConfig() {
     throw new Error('Missing DATABASE_URL. Set it to the Neon/PostgreSQL connection string before syncing IoT stations.');
   }
 
-  return {
-    connectionString: process.env.DATABASE_URL,
-    ssl: getPostgresSslConfig(process.env),
-  };
+  return getPostgresPoolConfig(process.env);
 }
 
 function getUploadConfig() {

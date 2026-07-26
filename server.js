@@ -8,7 +8,7 @@ const { Pool } = require('pg');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 
-const { getPostgresSslConfig } = require('./config/postgres-ssl');
+const { getPostgresPoolConfig, getPostgresSslConfig } = require('./config/postgres-ssl');
 const { SCHEMA, migrateTimestampColumns } = require('./db/schema');
 const { requireAdminKey } = require('./middleware/admin-auth');
 const { requireStaffKey } = require('./middleware/staff-auth');
@@ -78,10 +78,7 @@ function asyncHandler(handler) {
 }
 
 const client = new Anthropic();
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: getPostgresSslConfig(process.env),
-});
+const pool = new Pool(getPostgresPoolConfig(process.env));
 pool.on('error', err => {
   console.error('PG pool error:', err.message);
 });
@@ -579,6 +576,7 @@ module.exports = {
   syncKnowledgeFromImportFile,
   buildHealthStatus,
   asyncHandler,
+  getPostgresPoolConfig,
   getPostgresSslConfig,
   shutdown,
   validateRuntimeConfig,
