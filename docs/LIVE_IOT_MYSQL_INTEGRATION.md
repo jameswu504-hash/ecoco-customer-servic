@@ -136,6 +136,8 @@ The station query parser recognizes Taiwan city/county plus district queries suc
 `台北市大安區`, removes conversational wrappers such as `我在` and `這裡`, and searches
 both `台` and `臺` spelling variants. A successful PostgreSQL query with no matching
 station returns a clear no-match reply and does not retry direct MySQL from Render.
+City shorthand such as `台中` is normalized before search, and station-count questions
+are answered from a distinct `station_code` count rather than an LLM estimate.
 
 ## Render Environment Variables
 

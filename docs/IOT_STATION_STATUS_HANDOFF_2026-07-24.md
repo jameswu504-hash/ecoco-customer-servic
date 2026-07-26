@@ -112,6 +112,9 @@ Both `services/question-classifier.service.js` and `services/iot-status.service.
 Location questions may use a full station name, station code, landmark alias, or Taiwan
 administrative area such as `台北市大安區`. Administrative areas are normalized into
 clean search terms, including `台` / `臺` variants, before querying PostgreSQL.
+Common city shorthand such as `台中`, `台北`, `高雄`, and `新北` is normalized to the
+corresponding city name. Questions asking how many stations exist use
+`COUNT(DISTINCT station_code)` so multiple assets at one station are not double-counted.
 
 When PostgreSQL is reachable but returns no matching row, the bot gives an explicit
 "no station found in the synced data" reply. It does not fall through to direct MySQL

@@ -96,6 +96,10 @@ function buildStationSearchTerms(question) {
   return stationQueryIntent.buildStationSearchTerms(question);
 }
 
+function isStationCountQuestion(question) {
+  return stationQueryIntent.isStationCountQuestion(question);
+}
+
 function sanitizeRow(row = {}) {
   return {
     stationId: row.station_id,
@@ -362,7 +366,7 @@ function createIotStatusService({
     };
   }
 
-  async function retrievePostgresStationContext(terms, { limit = DEFAULT_LIMIT } = {}) {
+  async function retrievePostgresStationContext(terms, { limit = DEFAULT_LIMIT, includeCount = false } = {}) {
     if (!pgPool || !Array.isArray(terms) || terms.length === 0) {
       return { retrievalMode: 'postgres_iot_disabled', terms, rows: [], context: '' };
     }
@@ -385,6 +389,17 @@ function createIotStatusService({
         values.push(`%${escapePostgresLike(term)}%`);
         clauses.push(`COALESCE(${field}, '') ILIKE $${values.length} ESCAPE '\\'`);
       }
+    }
+
+    let matchedStationCount = null;
+    if (includeCount) {
+      const countResult = await pgPool.query(
+        `SELECT COUNT(DISTINCT station_code) AS station_count
+         FROM iot_station_statuses
+         WHERE ${clauses.join(' OR ')}`,
+        values
+      );
+      matchedStationCount = Number(countResult.rows[0]?.station_count || 0);
     }
 
     values.push(terms.map(term => String(term)));
@@ -462,6 +477,7 @@ function createIotStatusService({
       retrievalMode: safeRows.length > 0 ? 'postgres_iot' : 'postgres_iot_miss',
       terms,
       rows: safeRows,
+      matchedStationCount,
       ...freshness,
       context: formatLiveStationContext(
         safeRows,
@@ -473,19 +489,27 @@ function createIotStatusService({
   }
 
   async function retrieveLiveStationContext(question, { classification = null, limit = DEFAULT_LIMIT } = {}) {
+    const queryIntent = {
+      asksCount: isStationCountQuestion(question),
+    };
+    const withQueryIntent = result => ({ ...result, queryIntent });
+
     if (!shouldUseLiveStationContext(question, classification)) {
-      return { retrievalMode: 'none', terms: [], rows: [], context: '' };
+      return withQueryIntent({ retrievalMode: 'none', terms: [], rows: [], context: '' });
     }
 
     const terms = buildStationSearchTerms(question);
     if (terms.length === 0) {
-      return { retrievalMode: 'mysql_iot_no_terms', terms, rows: [], context: '' };
+      return withQueryIntent({ retrievalMode: 'mysql_iot_no_terms', terms, rows: [], context: '' });
     }
 
     if (pgPool) {
       try {
-        const postgresResult = await retrievePostgresStationContext(terms, { limit });
-        return postgresResult;
+        const postgresResult = await retrievePostgresStationContext(terms, {
+          limit,
+          includeCount: queryIntent.asksCount,
+        });
+        return withQueryIntent(postgresResult);
       } catch (err) {
         console.warn(`PostgreSQL IoT station lookup error: ${err.message}`);
       }
@@ -493,10 +517,10 @@ function createIotStatusService({
 
     const currentPool = getPool();
     if (!currentPool) {
-      return retrieveSnapshotStationContext(terms, {
+      return withQueryIntent(retrieveSnapshotStationContext(terms, {
         limit,
         fallbackReason: 'mysql_iot_disabled',
-      });
+      }));
     }
 
     const cappedLimit = Math.min(Math.max(Number(limit) || DEFAULT_LIMIT, 1), MAX_LIMIT);
@@ -572,12 +596,12 @@ function createIotStatusService({
         limit,
         fallbackReason: err?.code || err?.message || 'mysql_iot_error',
       });
-      if (fallback.context) return fallback;
+      if (fallback.context) return withQueryIntent(fallback);
       throw err;
     }
 
     const safeRows = rows.map(sanitizeRow);
-    return {
+    return withQueryIntent({
       retrievalMode: safeRows.length > 0 ? 'mysql_iot' : 'mysql_iot_miss',
       terms,
       rows: safeRows,
@@ -586,7 +610,7 @@ function createIotStatusService({
       maxAgeMs: getStationDataMaxAgeMs(env),
       isStale: false,
       context: formatLiveStationContext(safeRows),
-    };
+    });
   }
 
   async function end() {
@@ -614,6 +638,7 @@ module.exports = {
   getIotMysqlConfig,
   getStationDataFreshness,
   getStationDataMaxAgeMs,
+  isStationCountQuestion,
   isIotMysqlConfigured,
   loadStationSnapshot,
   sanitizeConnectionError,

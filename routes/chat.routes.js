@@ -414,6 +414,36 @@ function buildLiveStationStatusReply(liveStationContext = null) {
   }
 
   const displayedRows = uniqueRows.slice(0, 3);
+  const matchedStationCount = Number(liveStationContext?.matchedStationCount);
+  if (liveStationContext?.queryIntent?.asksCount && Number.isFinite(matchedStationCount)) {
+    const terms = Array.isArray(liveStationContext?.terms) ? liveStationContext.terms : [];
+    const location = terms[0] || '\u9019\u500b\u5730\u5340';
+    const lines = [
+      '\u53ef\u53ef\u7c89\uff0c\u6211\u6709\u5e6b\u4f60\u67e5\u8a62 ECOCO \u7ad9\u9ede\u8cc7\u6599\u3002',
+      '',
+      `\u4f9d\u76ee\u524d\u540c\u6b65\u5230\u7684\u7ad9\u9ede\u8cc7\u6599\uff0c\u300c${location}\u300d\u5171\u6709 ${matchedStationCount} \u500b ECOCO \u7ad9\u9ede\u3002`,
+    ];
+
+    if (displayedRows.length > 0) {
+      lines.push('', '\u5176\u4e2d\u5305\u542b\uff1a');
+      displayedRows.forEach((row, index) => {
+        const name = row.stationName || row.stationCode || `\u7ad9\u9ede ${index + 1}`;
+        lines.push(
+          `${index + 1}. ${name}`,
+          `\u5730\u5740\uff1a${row.address || '\u672a\u63d0\u4f9b'}`
+        );
+      });
+    }
+
+    if (liveStationContext?.isStale === true) {
+      lines.push(
+        '',
+        '\u7ad9\u9ede\u8cc7\u6599\u76ee\u524d\u6c92\u6709\u5728\u9810\u671f\u6642\u9593\u5167\u66f4\u65b0\uff0c\u6578\u91cf\u53ef\u80fd\u4e0d\u662f\u6700\u65b0\u72c0\u614b\u3002'
+      );
+    }
+    return lines.join('\n');
+  }
+
   if (liveStationContext?.isStale === true) {
     const lines = [
       '可可粉，站點資料目前沒有在預期時間內更新，所以我暫時不能確認最新的機台狀態或回收槽容量。',

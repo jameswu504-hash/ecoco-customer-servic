@@ -128,6 +128,22 @@ const LIVE_STATUS_WORDS = [
   'asset',
 ];
 
+const STATION_COUNT_WORDS = [
+  '\u7e3d\u5171\u6709\u591a\u5c11\u500b',
+  '\u7e3d\u5171\u6709\u5e7e\u500b',
+  '\u5171\u6709\u591a\u5c11\u500b',
+  '\u5171\u6709\u5e7e\u500b',
+  '\u6709\u591a\u5c11\u500b',
+  '\u6709\u5e7e\u500b',
+  '\u591a\u5c11\u500b',
+  '\u5e7e\u500b',
+  '\u591a\u5c11',
+  '\u5e7e',
+  '\u6578\u91cf',
+  '\u603b\u6570',
+  '\u7e3d\u6578',
+];
+
 const COMMON_QUERY_WORDS = [
   '\u8acb\u554f',
   '\u8bf7\u95ee',
@@ -194,6 +210,7 @@ const COMMON_QUERY_WORDS = [
   '\u55ce',
   '\u5462',
   '\u7684',
+  ...STATION_COUNT_WORDS,
   '\u6709\u6c92\u6709',
   '\u6709\u6ca1\u6709',
   '\u6709\u55ce',
@@ -250,6 +267,28 @@ const CITY_PREFIXES = [
 ];
 
 const ADMINISTRATIVE_AREA_PATTERN = /((?:[\u81fa\u53f0]\u5317\u5e02|\u65b0\u5317\u5e02|\u6843\u5712\u5e02|[\u81fa\u53f0]\u4e2d\u5e02|[\u81fa\u53f0]\u5357\u5e02|\u9ad8\u96c4\u5e02|\u57fa\u9686\u5e02|\u65b0\u7af9\u5e02|\u5609\u7fa9\u5e02|\u65b0\u7af9\u7e23|\u82d7\u6817\u7e23|\u5f70\u5316\u7e23|\u5357\u6295\u7e23|\u96f2\u6797\u7e23|\u5609\u7fa9\u7e23|\u5c4f\u6771\u7e23|\u5b9c\u862d\u7e23|\u82b1\u84ee\u7e23|[\u81fa\u53f0]\u6771\u7e23|\u6f8e\u6e56\u7e23|\u91d1\u9580\u7e23|\u9023\u6c5f\u7e23))([\u4e00-\u9fff]{1,4}(?:\u5340|\u9109|\u93ae|\u5e02))?/g;
+const CITY_SHORTHAND_ALIASES = [
+  { match: ['\u53f0\u5317', '\u81fa\u5317'], terms: ['\u53f0\u5317\u5e02', '\u81fa\u5317\u5e02'] },
+  { match: ['\u65b0\u5317'], terms: ['\u65b0\u5317\u5e02'] },
+  { match: ['\u6843\u5712'], terms: ['\u6843\u5712\u5e02'] },
+  { match: ['\u53f0\u4e2d', '\u81fa\u4e2d'], terms: ['\u53f0\u4e2d\u5e02', '\u81fa\u4e2d\u5e02'] },
+  { match: ['\u53f0\u5357', '\u81fa\u5357'], terms: ['\u53f0\u5357\u5e02', '\u81fa\u5357\u5e02'] },
+  { match: ['\u9ad8\u96c4'], terms: ['\u9ad8\u96c4\u5e02'] },
+  { match: ['\u57fa\u9686'], terms: ['\u57fa\u9686\u5e02'] },
+  { match: ['\u65b0\u7af9'], terms: ['\u65b0\u7af9\u5e02', '\u65b0\u7af9\u7e23'] },
+  { match: ['\u5609\u7fa9'], terms: ['\u5609\u7fa9\u5e02', '\u5609\u7fa9\u7e23'] },
+  { match: ['\u82d7\u6817'], terms: ['\u82d7\u6817\u7e23'] },
+  { match: ['\u5f70\u5316'], terms: ['\u5f70\u5316\u7e23'] },
+  { match: ['\u5357\u6295'], terms: ['\u5357\u6295\u7e23'] },
+  { match: ['\u96f2\u6797'], terms: ['\u96f2\u6797\u7e23'] },
+  { match: ['\u5c4f\u6771'], terms: ['\u5c4f\u6771\u7e23'] },
+  { match: ['\u5b9c\u862d'], terms: ['\u5b9c\u862d\u7e23'] },
+  { match: ['\u82b1\u84ee'], terms: ['\u82b1\u84ee\u7e23'] },
+  { match: ['\u53f0\u6771', '\u81fa\u6771'], terms: ['\u53f0\u6771\u7e23', '\u81fa\u6771\u7e23'] },
+  { match: ['\u6f8e\u6e56'], terms: ['\u6f8e\u6e56\u7e23'] },
+  { match: ['\u91d1\u9580'], terms: ['\u91d1\u9580\u7e23'] },
+  { match: ['\u9023\u6c5f'], terms: ['\u9023\u6c5f\u7e23'] },
+];
 
 function getTaiwanLocationVariants(value) {
   const variants = new Set([String(value || '')]);
@@ -278,6 +317,13 @@ function getAdministrativeAreaTerms(text) {
     if (district) terms.push(district);
     else getTaiwanLocationVariants(city).forEach(term => terms.push(term));
   }
+  if (terms.length === 0) {
+    for (const alias of CITY_SHORTHAND_ALIASES) {
+      if (alias.match.some(term => String(text || '').includes(term))) {
+        terms.push(...alias.terms);
+      }
+    }
+  }
   return [...new Set(terms)];
 }
 
@@ -301,16 +347,23 @@ function isStationDataQuestion(question) {
   const hasLiveStatus = hasAny(text, LIVE_STATUS_WORDS);
   const hasNearby = hasAny(text, NEARBY_WORDS);
   const asksLocation = hasAny(text, LOCATION_ASK_WORDS);
+  const asksCount = isStationCountQuestion(text);
   const hasKnownLocation = getLocationAliasTerms(text).length > 0
     || getAdministrativeAreaTerms(text).length > 0;
   const hasLikelyEntity = hasLikelyStationEntity(text);
 
-  if (hasStationResource && (hasLiveStatus || hasNearby || asksLocation || hasKnownLocation)) return true;
+  if (hasStationResource && (hasLiveStatus || hasNearby || asksLocation || asksCount || hasKnownLocation)) return true;
   if (hasLiveStatus && hasLikelyEntity) return true;
   if (hasKnownLocation && (hasNearby || asksLocation) && (hasStationResource || hasRecyclePlace)) return true;
   if ((hasNearby || asksLocation) && hasRecyclePlace && hasKnownLocation) return true;
 
   return false;
+}
+
+function isStationCountQuestion(question) {
+  const text = normalizeStationQueryText(question);
+  return hasAny(text, STATION_COUNT_WORDS)
+    && hasAny(text, STATION_RESOURCE_WORDS);
 }
 
 function hasLikelyStationEntity(text) {
@@ -375,6 +428,7 @@ module.exports = {
   getLocationAliasTerms,
   hasLikelyStationEntity,
   isStationDataQuestion,
+  isStationCountQuestion,
   normalizeStationQueryText,
   stripCommonStationWords,
 };

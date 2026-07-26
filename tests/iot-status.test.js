@@ -13,6 +13,7 @@ const { classifyQuestion } = require('../services/question-classifier.service');
 const {
   buildStationSearchTerms,
   createIotStatusService,
+  isStationCountQuestion,
   isIotMysqlConfigured,
   sanitizeConnectionError,
   shouldUseLiveStationContext,
@@ -81,6 +82,26 @@ test('district location questions produce clean searchable terms', () => {
   assert.ok(terms.includes('\u5927\u5b89\u5340'));
   assert.equal(terms.includes('\u6211\u5728\u53f0\u5317\u5e02\u5927\u5b89\u5340'), false);
   assert.equal(terms.includes('\u9019\u88e1'), false);
+});
+
+test('city shorthand and station count questions use normalized location terms', () => {
+  const cases = [
+    ['\u53f0\u4e2d\u6709\u5e7e\u500b\u7ad9', ['\u53f0\u4e2d\u5e02', '\u81fa\u4e2d\u5e02'], true],
+    ['\u53f0\u5317\u6709\u5e7e\u7ad9', ['\u53f0\u5317\u5e02', '\u81fa\u5317\u5e02'], true],
+    ['\u9ad8\u96c4\u7ad9\u9ede\u6578\u91cf', ['\u9ad8\u96c4\u5e02'], true],
+    ['\u65b0\u5317\u5e02\u6709\u591a\u5c11\u500b\u7ad9\u9ede', ['\u65b0\u5317\u5e02'], true],
+    ['\u53f0\u4e2d\u54ea\u88e1\u6709\u6a5f\u53f0', ['\u53f0\u4e2d\u5e02', '\u81fa\u4e2d\u5e02'], false],
+  ];
+
+  for (const [question, expectedTerms, asksCount] of cases) {
+    const classification = classifyQuestion(question);
+    const terms = buildStationSearchTerms(question);
+
+    assert.equal(classification.category, 'station_machine', question);
+    assert.equal(shouldUseLiveStationContext(question, classification), true, question);
+    assert.equal(isStationCountQuestion(question), asksCount, question);
+    expectedTerms.forEach(term => assert.ok(terms.includes(term), `${question}: ${term}`));
+  }
 });
 
 test('nearby recycling questions are routed to live station lookup', () => {
@@ -326,6 +347,42 @@ test('successful PostgreSQL station miss does not fall through to direct MySQL',
   assert.equal(pgQueryCount, 2);
 });
 
+test('PostgreSQL station count queries return distinct station totals', async () => {
+  const queries = [];
+  const pgPool = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (/COUNT\(DISTINCT station_code\)/.test(sql)) {
+        return { rows: [{ station_count: '42' }] };
+      }
+      return {
+        rows: [{
+          station_code: 'es1000',
+          station_name: 'Taichung Station',
+          address: '\u81fa\u4e2d\u5e02\u897f\u5c6f\u5340\u6e2c\u8a66\u8def1\u865f',
+          machine_status: 'up',
+          source_synced_at: new Date('2026-07-27T03:10:00Z'),
+        }],
+      };
+    },
+  };
+  const service = createIotStatusService({
+    env: {},
+    pgPool,
+    now: () => new Date('2026-07-27T03:20:00Z').getTime(),
+  });
+
+  const result = await service.retrieveLiveStationContext('\u53f0\u4e2d\u6709\u5e7e\u500b\u7ad9', {
+    classification: { category: 'station_machine' },
+  });
+
+  assert.equal(result.retrievalMode, 'postgres_iot');
+  assert.equal(result.queryIntent.asksCount, true);
+  assert.equal(result.matchedStationCount, 42);
+  assert.ok(result.terms.includes('\u81fa\u4e2d\u5e02'));
+  assert.equal(queries.length, 2);
+});
+
 test('IoT sync script normalizes MySQL station rows for PostgreSQL upsert', () => {
   const syncedAt = new Date('2026-07-24T03:10:00Z');
   const row = toPostgresRow({
@@ -568,6 +625,26 @@ test('successful station miss returns an explicit customer-service reply', async
   assert.match(reply, /\u53f0\u5317\u5e02\u5927\u5b89\u5340/);
   assert.match(reply, /\u6c92\u6709\u67e5\u5230\u7ad9\u9ede/);
   assert.doesNotMatch(reply, /\d{4}-\d{2}-\d{2}T/);
+});
+
+test('station count reply reports the database total in customer-service format', () => {
+  const reply = buildLiveStationStatusReply({
+    retrievalMode: 'postgres_iot',
+    terms: ['\u53f0\u4e2d\u5e02', '\u81fa\u4e2d\u5e02'],
+    queryIntent: { asksCount: true },
+    matchedStationCount: 42,
+    rows: [{
+      stationCode: 'es1000',
+      stationName: '\u6e2c\u8a66\u7ad9\u9ede',
+      address: '\u81fa\u4e2d\u5e02\u897f\u5c6f\u5340\u6e2c\u8a66\u8def1\u865f',
+      machineStatus: 'up',
+    }],
+  });
+
+  assert.match(reply, /\u53f0\u4e2d\u5e02/);
+  assert.match(reply, /42 \u500b ECOCO \u7ad9\u9ede/);
+  assert.match(reply, /\u6e2c\u8a66\u7ad9\u9ede/);
+  assert.doesNotMatch(reply, /\u56de\u6536\u69fd 1/);
 });
 
 test('station status reply is deterministic when live station rows are found', () => {
