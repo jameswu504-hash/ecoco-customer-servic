@@ -69,6 +69,20 @@ test('bare east district queries are not forced into Tainan', () => {
   assert.ok(tainanTerms.includes('台南東區'));
 });
 
+test('district location questions produce clean searchable terms', () => {
+  const question = '\u6211\u5728\u53f0\u5317\u5e02\u5927\u5b89\u5340\uff0c\u9019\u88e1\u6709\u6a5f\u53f0\u55ce\uff1f';
+  const classification = classifyQuestion(question);
+  const terms = buildStationSearchTerms(question);
+
+  assert.equal(classification.category, 'station_machine');
+  assert.equal(shouldUseLiveStationContext(question, classification), true);
+  assert.ok(terms.includes('\u53f0\u5317\u5e02\u5927\u5b89\u5340'));
+  assert.ok(terms.includes('\u81fa\u5317\u5e02\u5927\u5b89\u5340'));
+  assert.ok(terms.includes('\u5927\u5b89\u5340'));
+  assert.equal(terms.includes('\u6211\u5728\u53f0\u5317\u5e02\u5927\u5b89\u5340'), false);
+  assert.equal(terms.includes('\u9019\u88e1'), false);
+});
+
 test('nearby recycling questions are routed to live station lookup', () => {
   for (const question of ['成大附近哪裡可以回收', '成功大學附近有 ECOCO 嗎']) {
     const classification = classifyQuestion(question);
@@ -269,6 +283,47 @@ test('nearby landmark lookup can match PostgreSQL address and district fields', 
   assert.equal(result.rows[0].stationCode, 'es0200');
   assert.ok(pgQueries[0].params.some(param => String(param).includes('成功大學')));
   assert.ok(pgQueries[0].params.some(param => String(param).includes('大學路')));
+});
+
+test('successful PostgreSQL station miss does not fall through to direct MySQL', async () => {
+  let pgQueryCount = 0;
+  let mysqlPoolCreated = false;
+  const pgPool = {
+    async query(sql) {
+      pgQueryCount += 1;
+      if (/MAX\(source_synced_at\)/.test(sql)) {
+        return { rows: [{ last_synced_at: new Date('2026-07-24T03:10:00Z') }] };
+      }
+      return { rows: [] };
+    },
+  };
+  const service = createIotStatusService({
+    env: {
+      ECOCO_IOT_MYSQL_HOST: 'mysql.example.invalid',
+      ECOCO_IOT_MYSQL_USER: 'readonly',
+      ECOCO_IOT_MYSQL_PASSWORD: 'secret',
+      ECOCO_IOT_MYSQL_DATABASE: 'ecoco',
+    },
+    mysqlFactory: {
+      createPool() {
+        mysqlPoolCreated = true;
+        throw new Error('direct MySQL should not be used after a successful PostgreSQL miss');
+      },
+    },
+    pgPool,
+    now: () => new Date('2026-07-27T03:20:00Z').getTime(),
+  });
+
+  const result = await service.retrieveLiveStationContext(
+    '\u6211\u5728\u53f0\u5317\u5e02\u5927\u5b89\u5340\uff0c\u9019\u88e1\u6709\u6a5f\u53f0\u55ce\uff1f',
+    { classification: { category: 'station_machine' } }
+  );
+
+  assert.equal(result.retrievalMode, 'postgres_iot_miss');
+  assert.equal(result.rows.length, 0);
+  assert.equal(result.isStale, true);
+  assert.equal(mysqlPoolCreated, false);
+  assert.equal(pgQueryCount, 2);
 });
 
 test('IoT sync script normalizes MySQL station rows for PostgreSQL upsert', () => {
@@ -486,6 +541,33 @@ test('live station context is attached to the RAG prompt only for station questi
   assert.equal(merged.retrievalMode, 'keyword+mysql_iot');
   assert.match(merged.context, /RAG FAQ context/);
   assert.match(merged.context, /Live station context/);
+});
+
+test('successful station miss returns an explicit customer-service reply', async () => {
+  const question = '\u6211\u5728\u53f0\u5317\u5e02\u5927\u5b89\u5340\uff0c\u9019\u88e1\u6709\u6a5f\u53f0\u55ce\uff1f';
+  const classification = { category: 'station_machine' };
+  const merged = await attachLiveStationContext({
+    rag: { retrievalMode: 'keyword', context: 'RAG FAQ context', chunks: [] },
+    question,
+    classification,
+    retrieveLiveStationContext: async () => ({
+      retrievalMode: 'postgres_iot_miss',
+      terms: ['\u53f0\u5317\u5e02\u5927\u5b89\u5340', '\u81fa\u5317\u5e02\u5927\u5b89\u5340', '\u5927\u5b89\u5340'],
+      rows: [],
+      isStale: true,
+      context: '',
+    }),
+  });
+
+  assert.equal(merged.liveStationContext.retrievalMode, 'postgres_iot_miss');
+  assert.equal(
+    shouldUseDeterministicStationReply(question, classification, merged.liveStationContext),
+    true
+  );
+  const reply = buildLiveStationStatusReply(merged.liveStationContext);
+  assert.match(reply, /\u53f0\u5317\u5e02\u5927\u5b89\u5340/);
+  assert.match(reply, /\u6c92\u6709\u67e5\u5230\u7ad9\u9ede/);
+  assert.doesNotMatch(reply, /\d{4}-\d{2}-\d{2}T/);
 });
 
 test('station status reply is deterministic when live station rows are found', () => {

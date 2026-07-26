@@ -347,7 +347,10 @@ async function attachLiveStationContext({
 
   try {
     const live = await retrieveLiveStationContext(question, { classification });
-    if (!live.context) return rag;
+    const hasTrustedMiss = live.retrievalMode === 'postgres_iot_miss'
+      && Array.isArray(live.terms)
+      && live.terms.length > 0;
+    if (!live.context && !hasTrustedMiss) return rag;
     const retrievalModes = [rag.retrievalMode, live.retrievalMode]
       .filter(mode => mode && mode !== 'none');
     return {
@@ -387,7 +390,18 @@ function formatCapacity(slotName, count, max, remain) {
 
 function buildLiveStationStatusReply(liveStationContext = null) {
   const rows = Array.isArray(liveStationContext?.rows) ? liveStationContext.rows : [];
-  if (rows.length === 0) return '';
+  if (rows.length === 0) {
+    if (liveStationContext?.retrievalMode !== 'postgres_iot_miss') return '';
+    const terms = Array.isArray(liveStationContext?.terms) ? liveStationContext.terms : [];
+    const location = terms[0] || '\u9019\u500b\u5730\u5340';
+    return [
+      '\u53ef\u53ef\u7c89\uff0c\u6211\u6709\u5e6b\u4f60\u67e5\u8a62 ECOCO \u7ad9\u9ede\u8cc7\u6599\u3002',
+      '',
+      `\u76ee\u524d\u5728\u300c${location}\u300d\u6c92\u6709\u67e5\u5230\u7ad9\u9ede\u3002`,
+      '',
+      '\u4f60\u53ef\u4ee5\u518d\u544a\u8a34\u6211\u9644\u8fd1\u7684\u6377\u904b\u7ad9\u3001\u8def\u540d\u6216\u5730\u6a19\uff0c\u6211\u518d\u5e6b\u4f60\u67e5\u67e5\u770b\u3002',
+    ].join('\n');
+  }
 
   const uniqueRows = [];
   const seenStations = new Set();
@@ -443,8 +457,12 @@ function buildLiveStationStatusReply(liveStationContext = null) {
 
 function shouldUseDeterministicStationReply(question, classification = null, liveStationContext = null) {
   const rows = Array.isArray(liveStationContext?.rows) ? liveStationContext.rows : [];
-  if (rows.length === 0) return false;
   if (classification?.category !== 'station_machine') return false;
+  if (rows.length === 0) {
+    return liveStationContext?.retrievalMode === 'postgres_iot_miss'
+      && Array.isArray(liveStationContext?.terms)
+      && liveStationContext.terms.length > 0;
+  }
 
   const text = String(question || '').normalize('NFKC').replace(/\s+/g, '').toLowerCase();
   const asksItemRule = /(可以投|能不能投|可不可以投|可以回收|能回收|收不收|能不能收)/.test(text)

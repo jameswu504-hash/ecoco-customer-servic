@@ -132,6 +132,11 @@ Logs: .local-iot-sync/logs/iot-sync-*.log
 
 `tools/iot-sync/` contains the versioned, secret-free runner templates. `.local-iot-sync/` is a local runtime folder and is excluded from Git/PII scans; it must not be copied as a credential handoff.
 
+The station query parser recognizes Taiwan city/county plus district queries such as
+`台北市大安區`, removes conversational wrappers such as `我在` and `這裡`, and searches
+both `台` and `臺` spelling variants. A successful PostgreSQL query with no matching
+station returns a clear no-match reply and does not retry direct MySQL from Render.
+
 ## Render Environment Variables
 
 Render still needs:

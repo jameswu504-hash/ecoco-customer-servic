@@ -109,6 +109,14 @@ services/station-query-intent.service.js
 
 Both `services/question-classifier.service.js` and `services/iot-status.service.js` should use this shared module so LINE and web chat do not drift apart.
 
+Location questions may use a full station name, station code, landmark alias, or Taiwan
+administrative area such as `台北市大安區`. Administrative areas are normalized into
+clean search terms, including `台` / `臺` variants, before querying PostgreSQL.
+
+When PostgreSQL is reachable but returns no matching row, the bot gives an explicit
+"no station found in the synced data" reply. It does not fall through to direct MySQL
+or expose a raw synchronization timestamp to the customer.
+
 Required customer-facing structure:
 
 ```text
@@ -198,6 +206,11 @@ If customer station answers do not use IoT data:
 5. Check Task Scheduler task `ECOCO IoT Station Sync`.
 6. Check `.local-iot-sync/logs/iot-sync-*.log` on the sync machine.
 7. Run `npm run iot:sync` manually from a machine that can reach Azure MySQL.
+
+For Windows Task Scheduler, `LastTaskResult = 0` means the run succeeded. A value of
+`1` means the runner failed; inspect the newest log. If DNS resolves but TCP port 3306
+cannot connect, the failure is in the VPN/network/firewall path to MySQL rather than
+Render or Neon.
 
 If Render logs show `Live station context lookup error: connect ETIMEDOUT`, first check whether Neon still has fresh station rows. Render direct MySQL timeout is not the main production path.
 

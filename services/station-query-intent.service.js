@@ -26,6 +26,11 @@ const NEARBY_WORDS = [
   '\u54ea\u908a',
   '\u54ea\u91cc',
   '\u5728\u54ea',
+  '\u9019\u88e1',
+  '\u9019\u88cf',
+  '\u9019\u908a',
+  '\u8fd9\u91cc',
+  '\u8fd9\u8fb9',
 ];
 
 const LOCATION_ASK_WORDS = [
@@ -193,6 +198,17 @@ const COMMON_QUERY_WORDS = [
   '\u6709\u6ca1\u6709',
   '\u6709\u55ce',
   '\u6709',
+  '\u6211\u5728',
+  '\u4eba\u5728',
+  '\u4f4d\u65bc',
+  '\u4f4d\u4e8e',
+  '\u9019\u88e1',
+  '\u9019\u88cf',
+  '\u9019\u908a',
+  '\u8fd9\u91cc',
+  '\u8fd9\u8fb9',
+  '\u6b64\u8655',
+  '\u6b64\u5904',
 ];
 
 const LANDMARK_ALIASES = [
@@ -233,6 +249,38 @@ const CITY_PREFIXES = [
   '\u9023\u6c5f',
 ];
 
+const ADMINISTRATIVE_AREA_PATTERN = /((?:[\u81fa\u53f0]\u5317\u5e02|\u65b0\u5317\u5e02|\u6843\u5712\u5e02|[\u81fa\u53f0]\u4e2d\u5e02|[\u81fa\u53f0]\u5357\u5e02|\u9ad8\u96c4\u5e02|\u57fa\u9686\u5e02|\u65b0\u7af9\u5e02|\u5609\u7fa9\u5e02|\u65b0\u7af9\u7e23|\u82d7\u6817\u7e23|\u5f70\u5316\u7e23|\u5357\u6295\u7e23|\u96f2\u6797\u7e23|\u5609\u7fa9\u7e23|\u5c4f\u6771\u7e23|\u5b9c\u862d\u7e23|\u82b1\u84ee\u7e23|[\u81fa\u53f0]\u6771\u7e23|\u6f8e\u6e56\u7e23|\u91d1\u9580\u7e23|\u9023\u6c5f\u7e23))([\u4e00-\u9fff]{1,4}(?:\u5340|\u9109|\u93ae|\u5e02))?/g;
+
+function getTaiwanLocationVariants(value) {
+  const variants = new Set([String(value || '')]);
+  const replacements = [
+    ['\u53f0\u5317', '\u81fa\u5317'],
+    ['\u53f0\u4e2d', '\u81fa\u4e2d'],
+    ['\u53f0\u5357', '\u81fa\u5357'],
+    ['\u53f0\u6771', '\u81fa\u6771'],
+  ];
+
+  for (const [plain, traditional] of replacements) {
+    for (const term of [...variants]) {
+      if (term.includes(plain)) variants.add(term.replaceAll(plain, traditional));
+      if (term.includes(traditional)) variants.add(term.replaceAll(traditional, plain));
+    }
+  }
+  return [...variants].filter(Boolean);
+}
+
+function getAdministrativeAreaTerms(text) {
+  const terms = [];
+  for (const match of String(text || '').matchAll(ADMINISTRATIVE_AREA_PATTERN)) {
+    const city = match[1] || '';
+    const district = match[2] || '';
+    getTaiwanLocationVariants(`${city}${district}`).forEach(term => terms.push(term));
+    if (district) terms.push(district);
+    else getTaiwanLocationVariants(city).forEach(term => terms.push(term));
+  }
+  return [...new Set(terms)];
+}
+
 function getLocationAliasTerms(text) {
   const terms = [];
   for (const alias of LANDMARK_ALIASES) {
@@ -253,7 +301,8 @@ function isStationDataQuestion(question) {
   const hasLiveStatus = hasAny(text, LIVE_STATUS_WORDS);
   const hasNearby = hasAny(text, NEARBY_WORDS);
   const asksLocation = hasAny(text, LOCATION_ASK_WORDS);
-  const hasKnownLocation = getLocationAliasTerms(text).length > 0;
+  const hasKnownLocation = getLocationAliasTerms(text).length > 0
+    || getAdministrativeAreaTerms(text).length > 0;
   const hasLikelyEntity = hasLikelyStationEntity(text);
 
   if (hasStationResource && (hasLiveStatus || hasNearby || asksLocation || hasKnownLocation)) return true;
@@ -265,7 +314,7 @@ function isStationDataQuestion(question) {
 }
 
 function hasLikelyStationEntity(text) {
-  if (getLocationAliasTerms(text).length > 0) return true;
+  if (getLocationAliasTerms(text).length > 0 || getAdministrativeAreaTerms(text).length > 0) return true;
   if (/[\u4e00-\u9fffA-Za-z0-9]{2,40}\u7ad9/.test(text)) return true;
 
   let candidate = stripCommonStationWords(text);
@@ -296,6 +345,7 @@ function buildStationSearchTerms(question) {
   for (const match of text.matchAll(/es\d{3,6}(?:_[a-z0-9]+)?/gi)) addTerm(terms, match[0]);
   for (const match of text.matchAll(/\b\d{8,22}\b/g)) addTerm(terms, match[0]);
   getLocationAliasTerms(text).forEach(term => addTerm(terms, term));
+  getAdministrativeAreaTerms(text).forEach(term => addTerm(terms, term));
 
   for (const match of text.matchAll(/[\u4e00-\u9fffA-Za-z0-9]{2,40}\u7ad9/g)) {
     const stationName = match[0];
@@ -321,6 +371,7 @@ function buildStationSearchTerms(question) {
 
 module.exports = {
   buildStationSearchTerms,
+  getAdministrativeAreaTerms,
   getLocationAliasTerms,
   hasLikelyStationEntity,
   isStationDataQuestion,

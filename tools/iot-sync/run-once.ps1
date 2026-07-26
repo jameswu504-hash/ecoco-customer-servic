@@ -19,11 +19,16 @@ try {
   "[$(Get-Date -Format o)] Starting ECOCO IoT sync." | Add-Content -LiteralPath $logPath
   Push-Location $repoRoot
   try {
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     & npm.cmd run iot:sync *>> $logPath
-    if ($LASTEXITCODE -ne 0) {
-      throw "npm run iot:sync exited with code $LASTEXITCODE"
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousErrorActionPreference
+    if ($exitCode -ne 0) {
+      throw "npm run iot:sync exited with code $exitCode"
     }
   } finally {
+    $ErrorActionPreference = 'Stop'
     Pop-Location
   }
   "[$(Get-Date -Format o)] ECOCO IoT sync completed." | Add-Content -LiteralPath $logPath

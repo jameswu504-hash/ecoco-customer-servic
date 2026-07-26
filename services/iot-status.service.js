@@ -445,9 +445,17 @@ function createIotStatusService({
     const syncedDates = safeRows
       .map(row => new Date(row.sourceSyncedAt))
       .filter(date => !Number.isNaN(date.getTime()));
-    const checkedAt = syncedDates.length > 0
+    let checkedAt = syncedDates.length > 0
       ? new Date(Math.max(...syncedDates.map(date => date.getTime())))
       : null;
+    if (!checkedAt) {
+      const syncStatus = await pgPool.query(
+        'SELECT MAX(source_synced_at) AS last_synced_at FROM iot_station_statuses'
+      );
+      const lastSyncedAt = syncStatus.rows[0]?.last_synced_at;
+      const parsed = lastSyncedAt ? new Date(lastSyncedAt) : null;
+      checkedAt = parsed && !Number.isNaN(parsed.getTime()) ? parsed : null;
+    }
     const freshness = getStationDataFreshness(checkedAt, env, now());
 
     return {
@@ -477,7 +485,7 @@ function createIotStatusService({
     if (pgPool) {
       try {
         const postgresResult = await retrievePostgresStationContext(terms, { limit });
-        if (postgresResult.rows.length > 0) return postgresResult;
+        return postgresResult;
       } catch (err) {
         console.warn(`PostgreSQL IoT station lookup error: ${err.message}`);
       }
