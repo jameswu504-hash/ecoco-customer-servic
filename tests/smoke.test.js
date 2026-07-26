@@ -608,7 +608,7 @@ test('chat trace summaries include safe question classification fields', () => {
 });
 
 test('dashboard keeps dynamic click handlers usable', () => {
-  const dashboard = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard.html'), 'utf8');
+  const dashboard = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard-v2.html'), 'utf8');
 
   assert.equal(dashboard.includes('protectDashboardHtmlAssignments'), false);
   assert.equal(dashboard.includes('DOMPurify.sanitize'), false);
@@ -926,7 +926,7 @@ test('server handles database pool errors and Render shutdown signals', () => {
 test('CSP blocks inline JavaScript and inline style execution', () => {
   const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
   const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
-  const dashboardHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard.html'), 'utf8');
+  const dashboardHtml = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard-v2.html'), 'utf8');
   const inlineHandlerPattern = /\son(?:click|change|input|keydown|submit)\s*=|\.onclick\s*=/i;
   const inlineScriptPattern = /<script(?![^>]*\bsrc=)[^>]*>/i;
   const inlineStylePattern = /\sstyle\s*=/i;
