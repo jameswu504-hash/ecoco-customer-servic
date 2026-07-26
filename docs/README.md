@@ -16,6 +16,7 @@
 
 | 文件 | 說明 |
 | --- | --- |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | 系統架構、資料流與主要技術選型 |
 | [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) | 專案整體定位、主要功能與角色分工 |
 | [CUSTOMER_ROLLOUT_GUIDE.md](CUSTOMER_ROLLOUT_GUIDE.md) | 客服、主管與營運討論落地時使用的正式指南 |
 | [CUSTOMER_SUPPORT_GUIDE.md](CUSTOMER_SUPPORT_GUIDE.md) | 客服與營運人員的後台操作 SOP |
@@ -45,7 +46,7 @@
 | 文件 | 說明 |
 | --- | --- |
 | [security-keys.md](security-keys.md) | API key、token、`.env` 與 Render 環境變數的安全原則 |
-| [PII_HISTORY_CLEANUP_PLAN.md](archive/PII_HISTORY_CLEANUP_PLAN.md) | 個資外洩止血與 Git 歷史清除方案 |
+| [PII_HISTORY_CLEANUP_PLAN.md](archive/PII_HISTORY_CLEANUP_PLAN.md) | 歷史清除方案（已決議不執行，僅留封存紀錄） |
 | [REPO_FILE_AUDIT.md](REPO_FILE_AUDIT.md) | Git repository 檔案用途與不必要檔案稽核 |
 
 ## 未啟用的未來模組

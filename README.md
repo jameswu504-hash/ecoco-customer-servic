@@ -182,7 +182,6 @@ https://ecoco-customer-servic.onrender.com/api/line/webhook
 | [`docs/MAINTENANCE_GUIDE.md`](docs/MAINTENANCE_GUIDE.md) | 日常維護、知識缺口狀態與檢查重點 |
 | [`docs/OPERATIONS_HANDOFF_GUIDE.md`](docs/OPERATIONS_HANDOFF_GUIDE.md) | 維護與交接總整理 |
 | [`docs/DEPLOYMENT_RUNBOOK.md`](docs/DEPLOYMENT_RUNBOOK.md) | Render 部署、環境變數與故障排查 |
-| [`docs/archive/GO_LIVE_CHECKLIST.md`](docs/archive/GO_LIVE_CHECKLIST.md) | 上線前檢查表 |
 | [`docs/LINE_ROLLOUT_CHECKLIST.md`](docs/LINE_ROLLOUT_CHECKLIST.md) | LINE@ 串接落地清單，列出權限、資源與測試項目 |
 | [`docs/LINE_INTEGRATION_GUIDE.md`](docs/LINE_INTEGRATION_GUIDE.md) | LINE@ 技術串接說明 |
 | [`docs/B2B_LINE_PARTNER_FRAMEWORK.md`](docs/B2B_LINE_PARTNER_FRAMEWORK.md) | 單一 LINE OA 的 B2B 公司分支、群組綁定與資料隔離 |

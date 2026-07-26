@@ -9,7 +9,7 @@ const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 
 const { getPostgresPoolConfig, getPostgresSslConfig } = require('./config/postgres-ssl');
-const { SCHEMA, migrateTimestampColumns } = require('./db/schema');
+const { SCHEMA, migrateTimestampColumns, migrateUniqueMessageIndexes } = require('./db/schema');
 const { requireAdminKey } = require('./middleware/admin-auth');
 const { requireIotSyncKey } = require('./middleware/iot-sync-auth');
 const { requireStaffKey } = require('./middleware/staff-auth');
@@ -22,6 +22,7 @@ const { createPartnersRouter } = require('./routes/partners.routes');
 const { createReportsRouter } = require('./routes/reports.routes');
 const { createUnansweredRouter } = require('./routes/unanswered.routes');
 const { createIotStatusService } = require('./services/iot-status.service');
+const { getKnowledgeEmbeddingStatus } = require('./services/health.service');
 const { isInternalMode } = require('./services/internal-wiki.service');
 const { createPromptService } = require('./services/prompt.service');
 const { createPartnerService } = require('./services/partner.service');
@@ -314,6 +315,7 @@ async function initDb(ragService) {
   for (const stmt of SCHEMA) {
     await pool.query(stmt);
   }
+  await migrateUniqueMessageIndexes(pool);
   await migrateTimestampColumns(pool);
   await ragService.ensurePgVector();
 
@@ -406,16 +408,7 @@ async function buildHealthStatus({ includeDetails = false, includeIotCheck = fal
       health.knowledgeSectionCount = Number(rows[0].section_count);
       health.knowledgeContentChars = Number(rows[0].content_chars);
 
-      const embeddingStatus = await pool.query(
-        `SELECT
-           COUNT(*) AS chunk_count,
-           COUNT(*) FILTER (
-             WHERE NULLIF(to_jsonb(knowledge_chunks)->>'embedding', '') IS NOT NULL
-           ) AS embedded_count
-         FROM knowledge_chunks`
-      );
-      const chunkCount = Number(embeddingStatus.rows[0].chunk_count);
-      const embeddedCount = Number(embeddingStatus.rows[0].embedded_count);
+      const { chunkCount, embeddedCount } = await getKnowledgeEmbeddingStatus(pool);
       health.knowledgeChunkCount = chunkCount;
       health.embeddingChunkCount = embeddedCount;
       health.missingEmbeddingChunkCount = Math.max(chunkCount - embeddedCount, 0);

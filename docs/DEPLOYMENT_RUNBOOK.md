@@ -155,6 +155,7 @@ Knowledge chunks rebuilt: ... chunks
 
 - 不要把 `.env`、API key、Render 環境變數截圖貼到 GitHub 或文件。
 - `IOT_SYNC_KEY` 必須與 `ADMIN_KEY` 不同；同步機不應持有完整後台權限。
+- 切換 `IOT_SYNC_KEY` 時，先更新同步機與本機安全設定並手動測試，再設定 Render 環境變數。Render 一旦設有專用 key，就不再接受舊 `ADMIN_KEY` 上傳。
 - `SESSION_SECRET` 必須獨立、隨機且至少 32 個字元。
 - GitHub repo 若曾公開，請先改 Private。
 - `data/*.json` 必須先跑個資掃描；每週備份改由 GitHub Actions artifact 保存，不再把 `backups/*.json` commit 進 repo。

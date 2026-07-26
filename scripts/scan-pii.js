@@ -12,6 +12,7 @@ const EXCLUDED_DIRS = new Set(['.git', 'node_modules', '.cache', 'dist', 'build'
 const ALLOWED_EMAILS = new Set([
   'actions@github.com',
 ]);
+const RESERVED_EMAIL_DOMAINS = /@(example\.(?:com|org|net)|test|invalid|localhost)$/i;
 const TEXT_EXTENSIONS = new Set([
   '.css',
   '.env',
@@ -45,7 +46,8 @@ function collectFiles(dir) {
 function scanFile(filePath) {
   const content = fs.readFileSync(filePath, 'utf8');
   const emailMatches = (content.match(EMAIL_PATTERN) || [])
-    .filter(email => !ALLOWED_EMAILS.has(email.toLowerCase()));
+    .filter(email => !ALLOWED_EMAILS.has(email.toLowerCase()))
+    .filter(email => !RESERVED_EMAIL_DOMAINS.test(email));
 
   return {
     filePath,
@@ -82,3 +84,8 @@ function run() {
 if (require.main === module) {
   run();
 }
+
+module.exports = {
+  RESERVED_EMAIL_DOMAINS,
+  scanFile,
+};

@@ -19,7 +19,7 @@ LINE 使用者訊息
 
 這樣做的好處是 LINE、網站前台與後台維護可以共用同一套知識庫、回覆規則、風險控管、對話紀錄與知識缺口紀錄，不需要在 LINE 後台重建另一套 FAQ。
 
-群組訊息另有 B2B 分流：一對一聊天維持 B2C；已綁定群組只讀取 ECOCO 共用資料與該公司的私有資料；未綁定群組不進入 RAG。完整設計見 [B2B_LINE_PARTNER_FRAMEWORK.md](B2B_LINE_PARTNER_FRAMEWORK.md)。
+群組訊息另有 B2B 分流：一對一聊天維持 B2C；已綁定群組只讀取 ECOCO 共用資料與該公司的私有資料；未綁定群組不進入 RAG。所有 `source.type = group` 訊息都先進 B2B 綁定 gate，未綁定群組只會收到綁定提示，不會退回一般 B2C。正式把官方帳號加入活動群、內部群或合作群前，應先確認用途。完整設計見 [B2B_LINE_PARTNER_FRAMEWORK.md](B2B_LINE_PARTNER_FRAMEWORK.md)。
 
 ## 2. Webhook URL
 

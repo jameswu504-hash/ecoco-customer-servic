@@ -2,6 +2,8 @@
 
 本文件用於正式討論 ECOCO AI 客服與 LINE Official Account 的串接方式。目標是讓客服、主管與技術窗口清楚知道需要哪些權限、資料、設定與測試流程。
 
+> 群組行為：所有 LINE 群組訊息都先進 B2B 綁定 gate。未綁定群組只會收到綁定提示，不會使用一般 B2C 回覆。上線前需盤點官方帳號已加入的所有群組。
+
 ## 1. 建議串接方式
 
 建議使用 LINE Official Account 的 Messaging API 與 Webhook 串接，不建議把 LINE 後台內建的「AI 聊天機器人」作為主要客服系統。

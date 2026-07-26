@@ -132,6 +132,18 @@ Logs: .local-iot-sync/logs/iot-sync-*.log
 
 `tools/iot-sync/` contains the versioned, secret-free runner templates. `.local-iot-sync/` is a local runtime folder and is excluded from Git/PII scans; it must not be copied as a credential handoff.
 
+The currently installed local task may still use a machine-local `.local-iot-sync/run-once.ps1` and Windows DPAPI-encrypted key file. Keep that local runner in place until a planned migration is completed. If the versioned template is used with a plaintext `.env`, restrict the file ACL to the scheduled-task Windows account and Administrators, and never place `.env` in a shared or synced folder.
+
+### Safe `IOT_SYNC_KEY` cutover order
+
+1. Update the sync machine checkout to a version that sends `x-iot-sync-key`.
+2. Put the new dedicated `IOT_SYNC_KEY` in the sync machine's protected local configuration.
+3. Run `npm run iot:sync` once against the current Render configuration and confirm success.
+4. Set the same `IOT_SYNC_KEY` in Render only after the runner is ready, then redeploy.
+5. Run the sync again and confirm `/api/system/status` reports `iotStationDataStale = false`.
+
+Once Render has `IOT_SYNC_KEY`, the sync endpoint intentionally stops accepting `ADMIN_KEY`. Reversing this order causes 401 uploads and stale station data.
+
 The station query parser recognizes Taiwan city/county plus district queries such as
 `台北市大安區`, removes conversational wrappers such as `我在` and `這裡`, and searches
 both `台` and `臺` spelling variants. A successful PostgreSQL query with no matching

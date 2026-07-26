@@ -55,22 +55,11 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_conv_session  ON conversations(session_id)`,
   `CREATE INDEX IF NOT EXISTS idx_conv_session_ts ON conversations(session_id, timestamp)`,
   `CREATE INDEX IF NOT EXISTS idx_conv_session_message ON conversations(session_id, message_id)`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS uq_conv_session_role_message
-     ON conversations(session_id, role, message_id)
-     WHERE message_id <> ''`,
   `CREATE INDEX IF NOT EXISTS idx_conv_role     ON conversations(role)`,
   `CREATE INDEX IF NOT EXISTS idx_conv_timestamp ON conversations(timestamp)`,
   `CREATE INDEX IF NOT EXISTS idx_conv_role_timestamp ON conversations(role, timestamp)`,
   `CREATE INDEX IF NOT EXISTS idx_ratings_type  ON ratings(type)`,
   `CREATE INDEX IF NOT EXISTS idx_ratings_timestamp ON ratings(timestamp)`,
-  `DELETE FROM ratings duplicate
-     USING ratings keeper
-     WHERE duplicate.msg_id <> ''
-       AND duplicate.msg_id = keeper.msg_id
-       AND duplicate.id < keeper.id`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS uq_ratings_msg_id
-     ON ratings(msg_id)
-     WHERE msg_id <> ''`,
   `CREATE INDEX IF NOT EXISTS idx_unanswered_ts ON unanswered_questions(timestamp)`,
   `CREATE INDEX IF NOT EXISTS idx_unanswered_status ON unanswered_questions(status)`,
   `CREATE INDEX IF NOT EXISTS idx_ks_sort       ON knowledge_sections(sort_order, id)`,
@@ -330,8 +319,80 @@ async function migrateTimestampColumns(pool) {
   }
 }
 
+async function migrateUniqueMessageIndexes(pool) {
+  const db = await pool.connect();
+  try {
+    await db.query('BEGIN');
+    await db.query("SELECT pg_advisory_xact_lock(hashtext('ecoco_unique_message_indexes'))");
+
+    const { rows: conversationRows } = await db.query(
+      `SELECT EXISTS (
+         SELECT 1
+         FROM conversations duplicate
+         JOIN conversations keeper
+           ON duplicate.session_id = keeper.session_id
+          AND duplicate.role = keeper.role
+          AND duplicate.message_id = keeper.message_id
+          AND duplicate.id < keeper.id
+         WHERE duplicate.message_id <> ''
+       ) AS exists`
+    );
+    const hasConversationDuplicates = Boolean(conversationRows[0]?.exists);
+    if (hasConversationDuplicates) {
+      await db.query(
+        `DELETE FROM conversations duplicate
+         USING conversations keeper
+         WHERE duplicate.message_id <> ''
+           AND duplicate.session_id = keeper.session_id
+           AND duplicate.role = keeper.role
+           AND duplicate.message_id = keeper.message_id
+           AND duplicate.id < keeper.id`
+      );
+    }
+    await db.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS uq_conv_session_role_message
+       ON conversations(session_id, role, message_id)
+       WHERE message_id <> ''`
+    );
+
+    const { rows: ratingRows } = await db.query(
+      `SELECT EXISTS (
+         SELECT 1
+         FROM ratings duplicate
+         JOIN ratings keeper
+           ON duplicate.msg_id = keeper.msg_id
+          AND duplicate.id < keeper.id
+         WHERE duplicate.msg_id <> ''
+       ) AS exists`
+    );
+    const hasRatingDuplicates = Boolean(ratingRows[0]?.exists);
+    if (hasRatingDuplicates) {
+      await db.query(
+        `DELETE FROM ratings duplicate
+         USING ratings keeper
+         WHERE duplicate.msg_id <> ''
+           AND duplicate.msg_id = keeper.msg_id
+           AND duplicate.id < keeper.id`
+      );
+    }
+    await db.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS uq_ratings_msg_id
+       ON ratings(msg_id)
+       WHERE msg_id <> ''`
+    );
+
+    await db.query('COMMIT');
+  } catch (err) {
+    await db.query('ROLLBACK');
+    throw err;
+  } finally {
+    db.release();
+  }
+}
+
 module.exports = {
   SCHEMA,
   TIMESTAMP_COLUMNS,
   migrateTimestampColumns,
+  migrateUniqueMessageIndexes,
 };

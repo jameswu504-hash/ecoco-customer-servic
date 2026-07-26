@@ -7,6 +7,7 @@ const { SCHEMA } = require('../db/schema');
 const { buildLineSessionId } = require('../routes/line.routes');
 const { getPartnerTestSessionId } = require('../routes/partners.routes');
 const {
+  PARTNER_NO_DATA_REPLY,
   PARTNER_SCOPE_DENIED_REPLY,
   buildPartnerKnowledgeContext,
   createPartnerService,
@@ -164,10 +165,71 @@ test('cross-company questions are denied before RAG and model access', async () 
   });
 
   assert.equal(result.reply, PARTNER_SCOPE_DENIED_REPLY);
+  assert.equal(result.reply, PARTNER_NO_DATA_REPLY);
   assert.equal(result.retrievalMode, 'partner_scope_denied');
   assert.equal(ragCalls, 0);
   assert.equal(modelCalls, 0);
   assert.ok(queries.some(({ sql }) => /INSERT INTO partner_conversations/.test(sql)));
+});
+
+test('partner knowledge is anonymized before database writes', async () => {
+  const phone = ['0912', '345', '678'].join('-');
+  const memberNumber = ['1234', '5678'].join('');
+  const queries = [];
+  const pool = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (/FROM partner_companies\s+WHERE id/.test(sql)) {
+        return { rows: [{ id: 1, name: '測試甲公司', status: 'active' }] };
+      }
+      if (/MAX\(sort_order\)/.test(sql)) return { rows: [{ next: 0 }] };
+      if (/INSERT INTO partner_knowledge_sections/.test(sql)) {
+        return { rows: [{ id: 8, company_id: 1, category: params[1], content: params[2] }] };
+      }
+      return { rows: [] };
+    },
+  };
+  const service = createService(pool);
+
+  await service.addKnowledge(1, {
+    category: '窗口 support@example.com',
+    content: `請聯絡 ${phone}，會員編號 ${memberNumber}。`,
+  });
+
+  const insert = queries.find(({ sql }) => /INSERT INTO partner_knowledge_sections/.test(sql));
+  assert.ok(insert);
+  assert.equal(insert.params[1].includes('support@example.com'), false);
+  assert.equal(insert.params[2].includes(phone), false);
+  assert.equal(insert.params[2].includes(memberNumber), false);
+});
+
+test('active partner names are cached briefly for B2B scope checks', async () => {
+  let companyListQueries = 0;
+  const pool = {
+    async query(sql) {
+      if (/SELECT id, slug, name\s+FROM partner_companies/.test(sql)) {
+        companyListQueries += 1;
+        return {
+          rows: [
+            { id: 1, name: '測試甲公司', slug: 'alpha' },
+            { id: 2, name: '測試乙公司', slug: 'beta' },
+          ],
+        };
+      }
+      return { rows: [] };
+    },
+  };
+  const service = createService(pool);
+  const request = {
+    company: { id: 1, name: '測試甲公司', slug: 'alpha', status: 'active' },
+    sessionId: 'partner_test_1_cache',
+    question: '測試乙公司的規則是什麼',
+  };
+
+  await service.answerPartnerQuestion(request);
+  await service.answerPartnerQuestion(request);
+
+  assert.equal(companyListQueries, 1);
 });
 
 test('authorized B2B branches keep the shared live station capability', async () => {

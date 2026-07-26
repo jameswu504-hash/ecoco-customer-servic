@@ -278,7 +278,8 @@ async function claimLineWebhookEvent(pool, event = {}) {
        last_error = '',
        updated_at = NOW()
      WHERE line_webhook_events.status = 'failed'
-        OR line_webhook_events.updated_at < NOW() - INTERVAL '5 minutes'
+        OR (line_webhook_events.status = 'processing'
+            AND line_webhook_events.updated_at < NOW() - INTERVAL '5 minutes')
      RETURNING event_id`,
     [eventId, Boolean(event.deliveryContext?.isRedelivery)]
   );

@@ -7,14 +7,16 @@ const {
   stripKnowledgeGapMarker,
 } = require('../routes/chat.routes');
 const { buildSearchTerms, escapeIlikePattern } = require('./rag.service');
+const { anonymizeText } = require('../scripts/anonymize-pii');
 const { maskSensitiveText } = require('./privacy.service');
 const { saveChatTrace } = require('./trace.service');
 
 const PARTNER_BINDING_CODE_TTL_HOURS = 24;
 const PARTNER_MAX_KNOWLEDGE_CHARS = 20_000;
+const PARTNER_COMPANY_CACHE_TTL_MS = 60 * 1000;
 const PARTNER_UNBOUND_REPLY = '此 LINE 群組尚未綁定 ECOCO 合作夥伴。請由 ECOCO 管理者建立公司並產生一次性綁定碼。';
-const PARTNER_NO_DATA_REPLY = companyName => `目前「${companyName}」尚未匯入可用的合作資料，請先由 ECOCO 管理者新增公司專屬知識後再測試。`;
-const PARTNER_SCOPE_DENIED_REPLY = '此群組只能查詢所屬公司的合作資料，無法查詢、比較或透露其他公司的內容。';
+const PARTNER_NO_DATA_REPLY = '目前沒有可供此群組回答的公司專屬資料，請聯絡 ECOCO 窗口協助確認。';
+const PARTNER_SCOPE_DENIED_REPLY = PARTNER_NO_DATA_REPLY;
 
 function normalizePartnerSlug(value) {
   return String(value || '')
@@ -95,6 +97,26 @@ function createPartnerService({
   classifyQuestion,
   retrieveLiveStationContext = null,
 }) {
+  let activeCompaniesCache = [];
+  let activeCompaniesCacheExpiresAt = 0;
+
+  function invalidateActiveCompaniesCache() {
+    activeCompaniesCache = [];
+    activeCompaniesCacheExpiresAt = 0;
+  }
+
+  async function loadActiveCompanies() {
+    if (Date.now() < activeCompaniesCacheExpiresAt) return activeCompaniesCache;
+    const { rows } = await pool.query(
+      `SELECT id, slug, name
+       FROM partner_companies
+       WHERE status = 'active'`
+    );
+    activeCompaniesCache = rows;
+    activeCompaniesCacheExpiresAt = Date.now() + PARTNER_COMPANY_CACHE_TTL_MS;
+    return activeCompaniesCache;
+  }
+
   async function getCompany(companyId) {
     const id = Number(companyId);
     if (!Number.isInteger(id) || id < 1) return null;
@@ -134,6 +156,7 @@ function createPartnerService({
        RETURNING id, slug, name, status, created_at, updated_at`,
       [normalizedSlug, companyName]
     );
+    invalidateActiveCompaniesCache();
     return rows[0];
   }
 
@@ -145,6 +168,7 @@ function createPartnerService({
        RETURNING id, slug, name, status, created_at, updated_at`,
       [Number(companyId), normalizeCompanyStatus(status)]
     );
+    invalidateActiveCompaniesCache();
     return rows[0] || null;
   }
 
@@ -288,7 +312,7 @@ function createPartnerService({
       return {
         type: 'binding',
         reply: result.reason === 'already_bound'
-          ? '此 LINE 群組已綁定其他合作公司，請由 ECOCO 管理者先停用原綁定。'
+          ? '此 LINE 群組目前無法完成綁定，請聯絡 ECOCO 窗口協助處理。'
           : '綁定碼無效、已使用或已過期，請由 ECOCO 管理者重新產生。',
       };
     }
@@ -329,8 +353,8 @@ function createPartnerService({
   async function addKnowledge(companyId, { category, content }) {
     const company = await getCompany(companyId);
     if (!company) return null;
-    const cleanCategory = String(category || '').trim().slice(0, 160);
-    const cleanContent = String(content || '').trim();
+    const cleanCategory = anonymizeText(String(category || '').trim()).slice(0, 160);
+    const cleanContent = anonymizeText(String(content || '').trim());
     if (!cleanCategory || !cleanContent) throw new Error('Knowledge category and content are required.');
     if (cleanContent.length > PARTNER_MAX_KNOWLEDGE_CHARS) {
       throw new Error(`Knowledge content must be under ${PARTNER_MAX_KNOWLEDGE_CHARS} characters.`);
@@ -429,11 +453,7 @@ function createPartnerService({
 
     const safeQuestion = String(question || '').trim().slice(0, 2000);
     const traceStart = Date.now();
-    const { rows: activeCompanies } = await pool.query(
-      `SELECT id, slug, name
-       FROM partner_companies
-       WHERE status = 'active'`
-    );
+    const activeCompanies = await loadActiveCompanies();
     if (mentionsOtherPartner(safeQuestion, resolvedCompany, activeCompanies)) {
       await saveChatTrace(pool, {
         sessionId,
@@ -509,7 +529,7 @@ function createPartnerService({
     }
 
     if (privateRows.length === 0 && !sharedRag?.context) {
-      const reply = PARTNER_NO_DATA_REPLY(resolvedCompany.name);
+      const reply = PARTNER_NO_DATA_REPLY;
       await storePartnerConversation({
         companyId: resolvedCompany.id,
         lineGroupId,
@@ -563,7 +583,7 @@ function createPartnerService({
       messages,
     }, signal ? { signal } : undefined);
     const rawReply = response.content.find(block => block.type === 'text')?.text
-      || PARTNER_NO_DATA_REPLY(resolvedCompany.name);
+      || PARTNER_NO_DATA_REPLY;
     const reply = stripKnowledgeGapMarker(rawReply);
 
     await saveChatTrace(pool, {
@@ -609,7 +629,9 @@ function createPartnerService({
 
 module.exports = {
   PARTNER_BINDING_CODE_TTL_HOURS,
+  PARTNER_COMPANY_CACHE_TTL_MS,
   PARTNER_MAX_KNOWLEDGE_CHARS,
+  PARTNER_NO_DATA_REPLY,
   PARTNER_SCOPE_DENIED_REPLY,
   PARTNER_UNBOUND_REPLY,
   buildPartnerKnowledgeContext,

@@ -59,6 +59,10 @@ The local runner uses:
 
 The versioned templates live in `tools/iot-sync/`. Do not commit `.local-iot-sync/`; it is local runtime state and may contain secrets/logs.
 
+The installed local task may use a machine-local runner plus a Windows DPAPI-encrypted key file. Do not replace that working local runner with the versioned `.env` template during an unrelated deployment. If a plaintext `.env` is intentionally used, restrict its Windows ACL to the scheduled-task account and Administrators.
+
+`IOT_SYNC_KEY` cutover order is strict: update and configure the sync machine first, test one upload, then set the same key on Render and test again. After Render has `IOT_SYNC_KEY`, the endpoint no longer accepts the old `ADMIN_KEY` fallback.
+
 ## Data Model
 
 Table:

@@ -22,6 +22,8 @@ const {
   validateHistory,
   WEB_SESSION_COOKIE_NAME,
 } = require('../routes/chat.routes');
+const { getKnowledgeEmbeddingStatus } = require('../services/health.service');
+const { scanFile } = require('../scripts/scan-pii');
 const { cleanKnowledgeInput } = require('../routes/knowledge.routes');
 const { requireStaffKey } = require('../middleware/staff-auth');
 const { maskSensitiveText } = require('../services/privacy.service');
@@ -63,7 +65,7 @@ const {
   normalizeScopeTerms,
   rankKnowledgeRows,
 } = require('../services/rag.service');
-const { SCHEMA, migrateTimestampColumns } = require('../db/schema');
+const { SCHEMA, migrateTimestampColumns, migrateUniqueMessageIndexes } = require('../db/schema');
 
 test('known point issue ranks the point knowledge first', () => {
   const terms = buildSearchTerms('點數沒有入帳怎麼辦');
@@ -464,15 +466,17 @@ test('server-side model history is normalized before sending to Claude', () => {
 test('web sessions accept only server-signed HttpOnly cookie values', () => {
   const env = { SESSION_SECRET: 'test-session-secret-with-at-least-32-characters' };
   const sessionId = getSafeSessionId({}, env);
-  const signed = createSignedSessionCookieValue(sessionId, env);
+  const issuedAt = Date.UTC(2026, 6, 27);
+  const signed = createSignedSessionCookieValue(sessionId, env, issuedAt);
   const headers = { cookie: `${WEB_SESSION_COOKIE_NAME}=${encodeURIComponent(signed)}` };
 
   assert.match(sessionId, /^session_[0-9a-f]{32}$/);
-  assert.equal(getClientSessionId(headers, env), sessionId);
+  assert.equal(getClientSessionId(headers, env, issuedAt + 1000), sessionId);
+  assert.equal(getClientSessionId(headers, env, issuedAt + (8 * 24 * 60 * 60 * 1000)), null);
   assert.equal(getClientSessionId({ 'x-session-id': sessionId }, env), null);
   assert.equal(getClientSessionId({
     cookie: `${WEB_SESSION_COOKIE_NAME}=${encodeURIComponent(`${signed}tampered`)}`,
-  }, env), null);
+  }, env, issuedAt + 1000), null);
 });
 
 test('admin middleware rejects missing admin key', () => {
@@ -757,6 +761,59 @@ test('rating session id requires a valid signed cookie', () => {
     getClientSessionId({ cookie: `${WEB_SESSION_COOKIE_NAME}=${encodeURIComponent(signed)}` }, env),
     sessionId
   );
+});
+
+test('LINE webhook only reclaims failed or stale processing events', async () => {
+  let capturedSql = '';
+  const pool = {
+    async query(sql) {
+      capturedSql = sql;
+      return { rows: [] };
+    },
+  };
+
+  await claimLineWebhookEvent(pool, {
+    webhookEventId: 'event-123',
+    deliveryContext: { isRedelivery: true },
+  });
+
+  assert.match(capturedSql, /status = 'failed'/);
+  assert.match(
+    capturedSql,
+    /\(line_webhook_events\.status = 'processing'\s+AND line_webhook_events\.updated_at < NOW\(\) - INTERVAL '5 minutes'\)/
+  );
+  assert.doesNotMatch(
+    capturedSql,
+    /OR line_webhook_events\.updated_at < NOW\(\) - INTERVAL '5 minutes'/
+  );
+});
+
+test('embedding health count checks the column before using a direct vector predicate', async () => {
+  const queries = [];
+  const pool = {
+    async query(sql) {
+      queries.push(sql);
+      if (/information_schema\.columns/.test(sql)) return { rows: [{ exists: true }] };
+      return { rows: [{ chunk_count: '10', embedded_count: '8' }] };
+    },
+  };
+
+  const status = await getKnowledgeEmbeddingStatus(pool);
+
+  assert.deepEqual(status, { chunkCount: 10, embeddedCount: 8 });
+  assert.match(queries[1], /embedding IS NOT NULL/);
+  assert.doesNotMatch(queries[1], /to_jsonb/);
+});
+
+test('PII scan ignores RFC-reserved example email domains', () => {
+  const fixturePath = path.join(__dirname, 'fixtures', 'reserved-email-domain.txt');
+  fs.mkdirSync(path.dirname(fixturePath), { recursive: true });
+  fs.writeFileSync(fixturePath, 'support@example.com dev@example.org qa@example.net');
+  try {
+    assert.equal(scanFile(fixturePath).emailMatches, 0);
+  } finally {
+    fs.unlinkSync(fixturePath);
+  }
 });
 
 test('rating question and reply are looked up by session and message id', async () => {
@@ -1279,6 +1336,46 @@ test('timestamp column migration is conditional instead of running ALTER on ever
   assert.match(schemaText, /conversations ADD COLUMN IF NOT EXISTS message_id/);
   assert.match(schemaText, /idx_conv_session_message/);
   assert.equal(typeof migrateTimestampColumns, 'function');
+});
+
+test('message-id dedupe is guarded and kept outside the startup schema list', () => {
+  const schemaText = SCHEMA.join('\n');
+  const schemaFile = fs.readFileSync(path.join(__dirname, '..', 'db', 'schema.js'), 'utf8');
+
+  assert.doesNotMatch(schemaText, /DELETE FROM ratings duplicate/);
+  assert.doesNotMatch(schemaText, /DELETE FROM conversations duplicate/);
+  assert.match(schemaFile, /SELECT EXISTS[\s\S]*FROM conversations duplicate/);
+  assert.match(schemaFile, /SELECT EXISTS[\s\S]*FROM ratings duplicate/);
+  assert.match(schemaFile, /if \(hasConversationDuplicates\)[\s\S]*DELETE FROM conversations duplicate/);
+  assert.match(schemaFile, /if \(hasRatingDuplicates\)[\s\S]*DELETE FROM ratings duplicate/);
+});
+
+test('message-id migration deletes rows only when duplicate guards find data', async () => {
+  const runMigration = async duplicateResults => {
+    const queries = [];
+    let resultIndex = 0;
+    const db = {
+      async query(sql) {
+        queries.push(sql);
+        if (/SELECT EXISTS/.test(sql)) {
+          return { rows: [{ exists: duplicateResults[resultIndex++] }] };
+        }
+        return { rows: [] };
+      },
+      release() {},
+    };
+    await migrateUniqueMessageIndexes({ connect: async () => db });
+    return queries;
+  };
+
+  const cleanQueries = await runMigration([false, false]);
+  const duplicateQueries = await runMigration([true, true]);
+
+  assert.equal(cleanQueries.some(sql => /DELETE FROM conversations duplicate/.test(sql)), false);
+  assert.equal(cleanQueries.some(sql => /DELETE FROM ratings duplicate/.test(sql)), false);
+  assert.equal(duplicateQueries.some(sql => /DELETE FROM conversations duplicate/.test(sql)), true);
+  assert.equal(duplicateQueries.some(sql => /DELETE FROM ratings duplicate/.test(sql)), true);
+  assert.equal(duplicateQueries.filter(sql => /CREATE UNIQUE INDEX IF NOT EXISTS/.test(sql)).length, 2);
 });
 
 test('internal wiki uses a separate staff-only schema and normalized filters', () => {

@@ -11,6 +11,7 @@ const DEFAULT_WEB_CHAT_TIMEOUT_MS = 45 * 1000;
 const MAX_WEB_CHAT_TIMEOUT_MS = 55 * 1000;
 const WEB_SESSION_COOKIE_NAME = 'ecoco_session';
 const WEB_SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+const WEB_SESSION_CLOCK_SKEW_SECONDS = 5 * 60;
 const EPHEMERAL_SESSION_SECRET = crypto.randomBytes(32).toString('base64url');
 const FRIENDLY_AI_ERROR_REPLY = '抱歉，AI 客服暫時連線不穩。請稍後再試，或透過客服表單補充問題：https://ecoco.tw/kWqgW';
 const KNOWLEDGE_GAP_MARKERS = [
@@ -210,15 +211,17 @@ function getSessionSecret(env = process.env) {
   return String(env.SESSION_SECRET || env.ADMIN_KEY || EPHEMERAL_SESSION_SECRET);
 }
 
-function signSessionId(sessionId, env = process.env) {
+function signSessionPayload(payload, env = process.env) {
   return crypto
     .createHmac('sha256', getSessionSecret(env))
-    .update(sessionId)
+    .update(payload)
     .digest('base64url');
 }
 
-function createSignedSessionCookieValue(sessionId, env = process.env) {
-  return `${sessionId}.${signSessionId(sessionId, env)}`;
+function createSignedSessionCookieValue(sessionId, env = process.env, nowMs = Date.now()) {
+  const issuedAt = Math.floor(Number(nowMs) / 1000);
+  const payload = `${sessionId}.${issuedAt}`;
+  return `${payload}.${signSessionPayload(payload, env)}`;
 }
 
 function getCookieValue(headers = {}, name = WEB_SESSION_COOKIE_NAME) {
@@ -236,16 +239,22 @@ function getCookieValue(headers = {}, name = WEB_SESSION_COOKIE_NAME) {
   return '';
 }
 
-function getClientSessionId(headers = {}, env = process.env) {
+function getClientSessionId(headers = {}, env = process.env, nowMs = Date.now()) {
   const token = getCookieValue(headers);
-  const separator = token.lastIndexOf('.');
-  if (separator < 1) return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
 
-  const sessionId = token.slice(0, separator);
-  const signature = token.slice(separator + 1);
+  const [sessionId, issuedAtText, signature] = parts;
   if (!/^session_[A-Za-z0-9_-]{8,80}$/.test(sessionId)) return null;
+  if (!/^\d{10,}$/.test(issuedAtText)) return null;
 
-  const expected = signSessionId(sessionId, env);
+  const issuedAt = Number(issuedAtText);
+  const nowSeconds = Math.floor(Number(nowMs) / 1000);
+  if (!Number.isSafeInteger(issuedAt) || !Number.isSafeInteger(nowSeconds)) return null;
+  if (issuedAt > nowSeconds + WEB_SESSION_CLOCK_SKEW_SECONDS) return null;
+  if (nowSeconds - issuedAt > WEB_SESSION_MAX_AGE_SECONDS) return null;
+
+  const expected = signSessionPayload(`${sessionId}.${issuedAtText}`, env);
   const providedBuffer = Buffer.from(signature);
   const expectedBuffer = Buffer.from(expected);
   if (providedBuffer.length !== expectedBuffer.length) return null;
@@ -270,7 +279,7 @@ function setWebSessionCookie(res, sessionId, headers = {}, env = process.env) {
     'SameSite=Strict',
   ];
   if (secure) parts.push('Secure');
-  res.setHeader('Set-Cookie', parts.join('; '));
+  res.append('Set-Cookie', parts.join('; '));
 }
 
 function resolveWebSession(req, res, env = process.env) {
@@ -762,6 +771,7 @@ module.exports = {
   KNOWLEDGE_GAP_MARKERS,
   MAX_WEB_CHAT_TIMEOUT_MS,
   WEB_SESSION_COOKIE_NAME,
+  WEB_SESSION_MAX_AGE_SECONDS,
   attachLiveStationContext,
   buildLiveStationStatusReply,
   shouldUseDeterministicStationReply,
