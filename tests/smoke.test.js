@@ -94,6 +94,24 @@ test('high risk chunk adds conservative guardrail', () => {
   assert.match(guardrail, /客服表單|不承諾|人工/i);
 });
 
+test('runtime guardrails ignore generic risk words from retrieved context', () => {
+  const guardrail = buildRuntimeGuardrails('\u9ede\u6578\u600e\u9ebc\u7b97', {
+    chunks: [{ risk_level: 'Low' }],
+    context: '\u5e33\u865f \u624b\u6a5f \u6545\u969c \u6eff\u5009 \u5ba2\u8a34 \u9ede\u6578\u672a\u5165\u5e33',
+  });
+
+  assert.equal(guardrail, '');
+});
+
+test('runtime guardrails still trigger for explicit high-risk user intent', () => {
+  const guardrail = buildRuntimeGuardrails('\u9ede\u6578\u672a\u5165\u5e33\uff0c\u53ef\u4ee5\u88dc\u9ede\u55ce', {
+    chunks: [{ risk_level: 'Low' }],
+    context: '',
+  });
+
+  assert.match(guardrail, /高風險客服回覆限制/);
+});
+
 test('knowledge gap marker is recorded', () => {
   const gap = detectKnowledgeGap('目前沒有足夠資料可以確認，建議您透過客服表單補充資訊。');
 
@@ -766,6 +784,32 @@ test('runtime config fails fast when required production secrets are missing', (
   assert.match(result.errors.join('\n'), /ADMIN_KEY/);
 });
 
+test('PostgreSQL SSL modes distinguish encryption from certificate verification', () => {
+  const { getPostgresSslConfig, validateRuntimeConfig } = require('../server');
+  const baseEnv = {
+    DATABASE_URL: 'postgresql://example',
+    ANTHROPIC_API_KEY: 'anthropic-key',
+    ADMIN_KEY: 'admin-key-with-enough-length',
+  };
+
+  assert.equal(getPostgresSslConfig({ PGSSL: 'disable' }), false);
+  assert.deepEqual(getPostgresSslConfig({ PGSSL: 'require' }), { rejectUnauthorized: false });
+  assert.deepEqual(getPostgresSslConfig({ PGSSL: 'verify-full' }), { rejectUnauthorized: true });
+  assert.match(
+    validateRuntimeConfig({ ...baseEnv, PGSSL: 'require' }).warnings.join('\n'),
+    /does not verify the server certificate/
+  );
+});
+
+test('admin IoT routes use async error handling', () => {
+  const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+
+  assert.match(server, /function asyncHandler/);
+  assert.match(server, /app\.post\('\/api\/iot\/station-statuses\/sync', requireAdminKey, asyncHandler/);
+  assert.match(server, /app\.get\('\/api\/iot\/station-statuses\/search', requireAdminKey, asyncHandler/);
+  assert.match(server, /app\.use\(\(err, req, res, next\) =>/);
+});
+
 test('readJsonFile returns null instead of throwing on malformed JSON', () => {
   const { readJsonFile } = require('../server');
   const tempRelativePath = path.join('tests', `.tmp-bad-json-${Date.now()}.json`);
@@ -909,6 +953,16 @@ test('LINE webhook rate limits a single sender before API calls', () => {
   assert.equal(isLineRateLimited(sessionId, now + 100, env), false);
   assert.equal(isLineRateLimited(sessionId, now + 200, env), true);
   assert.equal(isLineRateLimited(sessionId, now + 61_000, env), false);
+});
+
+test('LINE rate limit and timeout replies are not stored as conversation history', () => {
+  const lineRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'line.routes.js'), 'utf8');
+
+  assert.match(lineRoute, /let shouldStoreConversation = true/);
+  assert.match(lineRoute, /shouldStoreConversation = false/);
+  assert.match(lineRoute, /line_rate_limited/);
+  assert.match(lineRoute, /line_timeout/);
+  assert.match(lineRoute, /if \(shouldStoreConversation\)/);
 });
 
 test('LINE rate limit buckets are pruned before unbounded growth', () => {

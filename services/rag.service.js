@@ -224,21 +224,22 @@ function hasHighRiskChunk(rag) {
   return Array.isArray(rag?.chunks) && rag.chunks.some(chunk => normalizeRiskLevel(chunk.risk_level) === 'High');
 }
 
-function buildRuntimeGuardrails(question, rag) {
-  const text = `${question || ''}\n${rag?.context || ''}`;
-  const highRiskKeywords = [
-    '個資',
-    '退款',
-    '補點',
-    '點數未入帳',
-    '帳號',
-    '手機',
-    '客訴',
-    '機台異常',
-    '滿倉',
-    '故障',
+function hasExplicitHighRiskIntent(question) {
+  const text = normalizeText(question).replace(/\s+/g, '').toLowerCase();
+  const highRiskIntentPatterns = [
+    /個資|個人資料|隱私|privacy/,
+    /退款|退費|refund/,
+    /補點|補償|賠償|賠錢|賠付|compensation/,
+    /點數未入帳|點數沒入帳|未入帳|沒入帳|少點|點數少了/,
+    /客訴|申訴|投訴|抱怨/,
+    /法律|法規|提告|消保|消基會/,
   ];
-  const needsGuardrail = hasHighRiskChunk(rag) || highRiskKeywords.some(keyword => text.includes(keyword));
+
+  return highRiskIntentPatterns.some(pattern => pattern.test(text));
+}
+
+function buildRuntimeGuardrails(question, rag) {
+  const needsGuardrail = hasHighRiskChunk(rag) || hasExplicitHighRiskIntent(question);
   if (!needsGuardrail) return '';
 
   return `## 高風險客服回覆限制

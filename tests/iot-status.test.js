@@ -3,7 +3,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { attachLiveStationContext, buildLiveStationStatusReply } = require('../routes/chat.routes');
+const {
+  attachLiveStationContext,
+  buildLiveStationStatusReply,
+  shouldUseDeterministicStationReply,
+} = require('../routes/chat.routes');
 const { dedupeStationRows, toPostgresRow, uploadStationRows } = require('../scripts/sync-iot-stations-to-postgres');
 const { classifyQuestion } = require('../services/question-classifier.service');
 const {
@@ -496,6 +500,30 @@ test('station status reply is deterministic when live station rows are found', (
   assert.match(reply, /第 2 槽：剩餘 0，目前 1500\/1500（目前看起來已滿）/);
   assert.doesNotMatch(reply, /資料同步時間/);
   assert.doesNotMatch(reply, /2026-07-24T08:30:17.872Z/);
+});
+
+test('deterministic station reply only short-circuits status questions', () => {
+  const liveStationContext = {
+    rows: [{
+      stationCode: 'es0140',
+      stationName: '\u5c0f\u5317\u767e\u8ca8\u53f0\u5357\u897f\u9580\u5e97\u7ad9',
+      address: '\u81fa\u5357\u5e02\u5317\u5340\u897f\u9580\u8def\u56db\u6bb55\u865f',
+    }],
+  };
+  const classification = { category: 'station_machine' };
+
+  assert.equal(
+    shouldUseDeterministicStationReply('\u5c0f\u5317\u767e\u8ca8\u53f0\u5357\u897f\u9580\u5e97\u76ee\u524d\u72c0\u614b', classification, liveStationContext),
+    true
+  );
+  assert.equal(
+    shouldUseDeterministicStationReply('\u5c0f\u5317\u767e\u8ca8\u7684\u6a5f\u53f0\u53ef\u4ee5\u6295\u725b\u5976\u74f6\u55ce', classification, liveStationContext),
+    false
+  );
+  assert.equal(
+    shouldUseDeterministicStationReply('\u5c0f\u5317\u767e\u8ca8\u53ef\u4ee5\u56de\u6536\u55ce', { category: 'recycling_rules' }, liveStationContext),
+    false
+  );
 });
 
 test('station status reply uses nearby wording when multiple stations are found', () => {

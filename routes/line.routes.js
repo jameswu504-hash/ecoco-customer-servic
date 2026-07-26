@@ -4,6 +4,7 @@ const {
   KNOWLEDGE_GAP_MACHINE_MARKER,
   attachLiveStationContext,
   buildLiveStationStatusReply,
+  shouldUseDeterministicStationReply,
   detectKnowledgeGap,
   loadServerConversationHistory,
   normalizeModelMessages,
@@ -207,7 +208,9 @@ async function buildAiReply({
     classification,
     retrieveLiveStationContext,
   });
-  const stationStatusReply = buildLiveStationStatusReply(rag.liveStationContext);
+  const stationStatusReply = shouldUseDeterministicStationReply(question, classification, rag.liveStationContext)
+    ? buildLiveStationStatusReply(rag.liveStationContext)
+    : '';
   if (stationStatusReply) {
     await saveChatTrace(pool, {
       sessionId,
@@ -311,11 +314,21 @@ function createLineRouter({
 
       const sessionId = buildLineSessionId(event);
       let reply = LINE_FALLBACK_REPLY;
+      let shouldStoreConversation = true;
       const classification = typeof classifyQuestion === 'function'
         ? classifyQuestion(userText)
         : null;
       if (isLineRateLimited(sessionId)) {
         reply = LINE_RATE_LIMIT_REPLY;
+        shouldStoreConversation = false;
+        await saveChatTrace(pool, {
+          sessionId,
+          channel: 'line',
+          question: userText,
+          rag: { retrievalMode: 'line_rate_limited', chunks: [] },
+          latencyMs: 0,
+          questionClassification: classification,
+        });
       } else if (classification?.directReply && classification.shouldUseRag === false) {
         reply = classification.directReply;
         await saveChatTrace(pool, {
@@ -355,7 +368,19 @@ function createLineRouter({
           reply = result.value;
           if (result.timedOut) {
             console.warn(`LINE AI reply timed out after ${timeoutMs}ms: session=${sessionId}`);
-            aiReplyPromise.catch(() => {});
+            shouldStoreConversation = false;
+            await saveChatTrace(pool, {
+              sessionId,
+              channel: 'line',
+              question: userText,
+              rag: { retrievalMode: 'line_timeout', chunks: [] },
+              latencyMs: timeoutMs,
+              error: `LINE AI reply timed out after ${timeoutMs}ms`,
+              questionClassification: classification,
+            });
+            aiReplyPromise.catch(err => {
+              console.warn('Late LINE AI reply failed after timeout:', err.message);
+            });
           }
         } catch (err) {
           console.error('LINE AI reply error:', err.message);
@@ -380,10 +405,12 @@ function createLineRouter({
         console.error('LINE Reply API error:', err.message);
       }
 
-      try {
-        await storeLineConversation({ pool, sessionId, question: userText, reply, classification });
-      } catch (err) {
-        console.error('LINE conversation write error:', err.message);
+      if (shouldStoreConversation) {
+        try {
+          await storeLineConversation({ pool, sessionId, question: userText, reply, classification });
+        } catch (err) {
+          console.error('LINE conversation write error:', err.message);
+        }
       }
     }
   });

@@ -327,6 +327,18 @@ function buildLiveStationStatusReply(liveStationContext = null) {
   return lines.join('\n');
 }
 
+function shouldUseDeterministicStationReply(question, classification = null, liveStationContext = null) {
+  const rows = Array.isArray(liveStationContext?.rows) ? liveStationContext.rows : [];
+  if (rows.length === 0) return false;
+  if (classification?.category !== 'station_machine') return false;
+
+  const text = String(question || '').normalize('NFKC').replace(/\s+/g, '').toLowerCase();
+  const asksItemRule = /(可以投|能不能投|可不可以投|可以回收|能回收|收不收|能不能收)/.test(text)
+    && /(牛奶瓶|鮮奶瓶|奶瓶|紙盒|鋁箔包|玻璃|紙杯|塑膠袋|便當盒)/.test(text);
+
+  return !asksItemRule;
+}
+
 function createChatRouter({
   pool,
   client,
@@ -398,7 +410,9 @@ function createChatRouter({
         classification,
         retrieveLiveStationContext,
       });
-      const stationStatusReply = buildLiveStationStatusReply(rag.liveStationContext);
+      const stationStatusReply = shouldUseDeterministicStationReply(userMsg.content, classification, rag.liveStationContext)
+        ? buildLiveStationStatusReply(rag.liveStationContext)
+        : '';
       if (stationStatusReply) {
         await saveChatTrace(pool, {
           sessionId,
@@ -563,6 +577,7 @@ module.exports = {
   KNOWLEDGE_GAP_MARKERS,
   attachLiveStationContext,
   buildLiveStationStatusReply,
+  shouldUseDeterministicStationReply,
   createChatRouter,
   detectKnowledgeGap,
   FRIENDLY_AI_ERROR_REPLY,

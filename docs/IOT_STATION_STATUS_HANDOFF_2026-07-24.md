@@ -44,7 +44,9 @@ Current local setup:
 ```text
 Task Scheduler name: ECOCO IoT Station Sync
 Interval: every 5 minutes
-Script: .local-iot-sync/run-once.ps1
+Task action: wscript.exe //B //Nologo .local-iot-sync/run-hidden.vbs
+Hidden launcher: .local-iot-sync/run-hidden.vbs
+PowerShell script: .local-iot-sync/run-once.ps1
 Logs: .local-iot-sync/logs/iot-sync-*.log
 ```
 
@@ -81,7 +83,9 @@ Written to PostgreSQL after dedupe: 701 rows
 
 ## Customer Reply Style
 
-When station rows are found, the app returns a deterministic Traditional Chinese reply instead of asking Claude to invent or interpret the status.
+When station rows are found for a pure station/machine status or nearby-station question, the app returns a deterministic Traditional Chinese reply instead of asking Claude to invent or interpret the status.
+
+Do not short-circuit product/rule questions just because a station name was mentioned. For example, "小北百貨的機台可以投牛奶瓶嗎？" should still go through RAG/AI for recycling rules, with station data available as context only when useful.
 
 ## Station Data Routing Policy
 

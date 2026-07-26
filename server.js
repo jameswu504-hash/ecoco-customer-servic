@@ -72,10 +72,23 @@ const startedAt = new Date().toISOString();
 let startupWarnings = [];
 let httpServer = null;
 
+function asyncHandler(handler) {
+  return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+}
+
+function getPostgresSslConfig(env = process.env) {
+  const mode = String(env.PGSSL || 'require').trim().toLowerCase();
+  if (mode === 'disable') return false;
+  if (['verify-full', 'verify_ca', 'verify-ca'].includes(mode)) {
+    return { rejectUnauthorized: true };
+  }
+  return { rejectUnauthorized: false };
+}
+
 const client = new Anthropic();
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.PGSSL === 'disable' ? false : { rejectUnauthorized: false },
+  ssl: getPostgresSslConfig(process.env),
 });
 pool.on('error', err => {
   console.error('PG pool error:', err.message);
@@ -144,6 +157,14 @@ function validateRuntimeConfig(env = process.env) {
 
   if (isInternalMode(env) && !env.STAFF_KEY) {
     errors.push('STAFF_KEY is required when APP_MODE=internal');
+  }
+
+  const pgSslMode = String(env.PGSSL || 'require').trim().toLowerCase();
+  if (pgSslMode && !['disable', 'require', 'verify-full', 'verify_ca', 'verify-ca'].includes(pgSslMode)) {
+    warnings.push(`PGSSL=${env.PGSSL} is not recognized; using encrypted SSL without certificate verification.`);
+  }
+  if (!pgSslMode || pgSslMode === 'require') {
+    warnings.push('PGSSL=require encrypts the PostgreSQL connection but does not verify the server certificate. Use PGSSL=verify-full when the provider certificate chain is trusted.');
   }
 
   if (['replace', 'upsert'].includes(getKnowledgeAutoSyncMode())) {
@@ -375,7 +396,7 @@ app.get('/api/system/status', requireAdminKey, async (req, res) => {
   res.status(health.status === 'ok' ? 200 : 503).json(health);
 });
 
-app.post('/api/iot/station-statuses/sync', requireAdminKey, async (req, res) => {
+app.post('/api/iot/station-statuses/sync', requireAdminKey, asyncHandler(async (req, res) => {
   const { dedupeStationRows, toPostgresRow, upsertStationRows } = require('./scripts/sync-iot-stations-to-postgres');
   const stations = Array.isArray(req.body?.stations) ? req.body.stations : [];
   if (stations.length === 0) {
@@ -409,9 +430,9 @@ app.post('/api/iot/station-statuses/sync', requireAdminKey, async (req, res) => 
     pruned,
     syncedAt: syncedAt.toISOString(),
   });
-});
+}));
 
-app.get('/api/iot/station-statuses/search', requireAdminKey, async (req, res) => {
+app.get('/api/iot/station-statuses/search', requireAdminKey, asyncHandler(async (req, res) => {
   const q = String(req.query.q || '').trim();
   if (q.length < 2) {
     res.status(400).json({ error: 'q must be at least 2 characters' });
@@ -451,7 +472,7 @@ app.get('/api/iot/station-statuses/search', requireAdminKey, async (req, res) =>
   );
 
   res.json({ q, count: rows.length, rows });
-});
+}));
 
 app.use('/api', createChatRouter({
   pool,
@@ -492,6 +513,17 @@ app.use('/api/knowledge', createKnowledgeRouter({
 if (isInternalMode()) {
   app.use('/api/internal', createInternalRouter({ pool, requireStaffKey }));
 }
+
+app.use((err, req, res, next) => {
+  if (res.headersSent) {
+    next(err);
+    return;
+  }
+  console.error('Unhandled request error:', err.message);
+  res.status(500).json({
+    error: 'Internal server error.',
+  });
+});
 
 async function start() {
   try {
@@ -554,6 +586,8 @@ module.exports = {
   start,
   syncKnowledgeFromImportFile,
   buildHealthStatus,
+  asyncHandler,
+  getPostgresSslConfig,
   shutdown,
   validateRuntimeConfig,
   isInternalMode,
