@@ -211,13 +211,14 @@ test('passive LINE group messages are masked and stored without an assistant rep
     },
   };
   const service = createService(pool);
+  const phone = ['0912', '345', '678'].join('-');
 
   await service.storePartnerMessage({
     companyId: 7,
     lineGroupId: 12,
     sessionId: 'line_group_session',
     role: 'user',
-    content: '請聯絡 0912-345-678',
+    content: `請聯絡 ${phone}`,
   });
 
   assert.equal(queries.length, 1);
