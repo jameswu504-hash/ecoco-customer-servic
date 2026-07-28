@@ -510,6 +510,22 @@ button:disabled {
   margin-top: 5px;
 }
 
+.line-import-privacy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.line-import-privacy input {
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  accent-color: var(--green);
+}
+
 .line-import-actions {
   display: flex;
   flex: 0 0 auto;

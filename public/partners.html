@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ECOCO B2B 合作夥伴</title>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;800&family=Space+Mono&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="partners.css?v=20260728" />
+  <link rel="stylesheet" href="partners.css?v=20260728-2" />
 </head>
 <body>
   <div class="login-overlay" id="loginOverlay">
@@ -118,6 +118,10 @@
             <div>
               <strong id="lineImportFileName">尚未選擇檔案</strong>
               <small id="lineImportSummary"></small>
+              <label class="line-import-privacy">
+                <input id="lineImportPreservePersonalData" type="checkbox" checked />
+                <span>保留原始發言者與聯絡資料</span>
+              </label>
               <span class="form-error" id="lineImportError" role="alert"></span>
             </div>
             <div class="line-import-actions">
@@ -185,6 +189,6 @@
     </form>
   </dialog>
 
-  <script src="partners.js?v=20260728" defer></script>
+  <script src="partners.js?v=20260728-2" defer></script>
 </body>
 </html>

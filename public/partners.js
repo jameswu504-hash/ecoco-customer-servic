@@ -341,9 +341,11 @@ function clearLineImport() {
   const input = document.getElementById('lineTxtFileInput');
   const panel = document.getElementById('lineImportPanel');
   const confirmButton = document.getElementById('confirmLineImportBtn');
+  const preserveInput = document.getElementById('lineImportPreservePersonalData');
   if (input) input.value = '';
   if (panel) panel.hidden = true;
   if (confirmButton) confirmButton.disabled = false;
+  if (preserveInput) preserveInput.checked = true;
   const error = document.getElementById('lineImportError');
   if (error) error.textContent = '';
 }
@@ -352,6 +354,20 @@ function openLineTxtPicker() {
   const input = document.getElementById('lineTxtFileInput');
   input.value = '';
   input.click();
+}
+
+function updateLineImportSummary() {
+  const pending = partnerState.pendingLineImport;
+  if (!pending) return;
+  const preservePersonalData = document.getElementById('lineImportPreservePersonalData').checked;
+  const privacyText = preservePersonalData
+    ? '保留原始發言者與聯絡資料'
+    : '遮蔽電話、Email 與長編號';
+  document.getElementById('lineImportSummary').textContent = [
+    `${pending.content.length.toLocaleString('zh-TW')} 字`,
+    '系統會移除附件占位並自動切成多筆公司資料',
+    privacyText,
+  ].join('；');
 }
 
 async function prepareLineTxtImport(event) {
@@ -385,7 +401,7 @@ async function prepareLineTxtImport(event) {
       sourceName: file.name,
       content,
     };
-    summary.textContent = `${content.length.toLocaleString('zh-TW')} 字，系統會自動去識別、移除附件占位並切成多筆公司資料。`;
+    updateLineImportSummary();
   } catch (err) {
     summary.textContent = '';
     error.textContent = err.message;
@@ -407,7 +423,10 @@ async function importLineTxt() {
   try {
     const result = await partnerFetch(`/api/partners/${company.id}/knowledge/import-line`, {
       method: 'POST',
-      body: JSON.stringify(pending),
+      body: JSON.stringify({
+        ...pending,
+        preservePersonalData: document.getElementById('lineImportPreservePersonalData').checked,
+      }),
     });
     partnerState.pendingLineImport = null;
     document.getElementById('lineTxtFileInput').value = '';
@@ -415,6 +434,7 @@ async function importLineTxt() {
       `完成：新增 ${result.createdCount} 筆`,
       `略過 ${result.skippedDuplicateCount} 筆重複`,
       `忽略 ${result.ignoredAttachmentCount} 個附件占位`,
+      result.preservePersonalData ? '已保留原始發言者與聯絡資料' : '已遮蔽聯絡資料',
     ].join('；');
     succeeded = true;
     await loadCompanies(false);
@@ -482,6 +502,7 @@ function bindEvents() {
   document.getElementById('knowledgeForm').addEventListener('submit', addKnowledge);
   document.getElementById('selectLineTxtBtn').addEventListener('click', openLineTxtPicker);
   document.getElementById('lineTxtFileInput').addEventListener('change', prepareLineTxtImport);
+  document.getElementById('lineImportPreservePersonalData').addEventListener('change', updateLineImportSummary);
   document.getElementById('cancelLineImportBtn').addEventListener('click', clearLineImport);
   document.getElementById('confirmLineImportBtn').addEventListener('click', importLineTxt);
   document.getElementById('testForm').addEventListener('submit', sendTestQuestion);

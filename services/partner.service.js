@@ -91,13 +91,14 @@ function buildPartnerKnowledgeContext(company, rows = [], sharedContext = '') {
   ].filter(Boolean).join('\n\n');
 }
 
-function normalizeLineImportSourceName(value) {
+function normalizeLineImportSourceName(value, preservePersonalData = false) {
   const filename = String(value || '')
     .split(/[\\/]/)
     .pop()
     .replace(/\.txt$/i, '')
     .replace(/^\[LINE\]\s*/i, '');
-  return anonymizeText(filename)
+  const safeFilename = preservePersonalData ? filename : anonymizeText(filename);
+  return safeFilename
     .normalize('NFKC')
     .replace(/\s+/g, ' ')
     .trim()
@@ -126,15 +127,25 @@ function splitTextByLimit(text, maxChars) {
   return pieces;
 }
 
-function buildLineChatKnowledgeSections({ sourceName, content }) {
+function buildLineChatKnowledgeSections({
+  sourceName,
+  content,
+  preservePersonalData = false,
+}) {
   const rawContent = String(content || '').replace(/^\uFEFF/, '').trim();
   if (!rawContent) throw new Error('LINE TXT content is required.');
   if (rawContent.length > PARTNER_LINE_IMPORT_MAX_CHARS) {
     throw new Error(`LINE TXT content must be under ${PARTNER_LINE_IMPORT_MAX_CHARS} characters.`);
   }
 
-  const safeSourceName = normalizeLineImportSourceName(sourceName);
-  const safeContent = anonymizeText(rawContent).replace(/\r\n?/g, '\n');
+  const shouldPreservePersonalData = preservePersonalData === true;
+  const safeSourceName = normalizeLineImportSourceName(
+    sourceName,
+    shouldPreservePersonalData
+  );
+  const safeContent = (
+    shouldPreservePersonalData ? rawContent : anonymizeText(rawContent)
+  ).replace(/\r\n?/g, '\n');
   const cleanedLines = [];
   let ignoredAttachmentCount = 0;
   let previousBlank = false;
@@ -211,6 +222,9 @@ function buildLineChatKnowledgeSections({ sourceName, content }) {
   const guidance = [
     `[匯入來源] ${safeSourceName}`,
     '[資料性質] LINE 歷史聊天紀錄。回答時以較新日期為優先；報價、活動期限、門市或機台狀態，以及尚未明確確認的事項，不可直接視為目前承諾，必要時請 ECOCO 窗口確認。',
+    shouldPreservePersonalData
+      ? '[資料處理] 保留原始發言者與聯絡資料，只能在目前合作公司的授權範圍內使用。'
+      : '[資料處理] 已遮蔽電話、Email 與長編號等聯絡資料。',
   ].join('\n');
 
   const sections = groups.map((group, index) => {
@@ -231,6 +245,7 @@ function buildLineChatKnowledgeSections({ sourceName, content }) {
   return {
     sourceName: safeSourceName,
     sourceCharacters: rawContent.length,
+    preservePersonalData: shouldPreservePersonalData,
     ignoredAttachmentCount,
     sections,
   };
@@ -576,6 +591,7 @@ function createPartnerService({
         company,
         sourceName: parsed.sourceName,
         sourceCharacters: parsed.sourceCharacters,
+        preservePersonalData: parsed.preservePersonalData,
         ignoredAttachmentCount: parsed.ignoredAttachmentCount,
         totalSectionCount: parsed.sections.length,
         createdCount: createdSections.length,

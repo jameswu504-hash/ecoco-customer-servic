@@ -241,6 +241,25 @@ test('LINE TXT imports are anonymized, cleaned and split at date boundaries', ()
   assert.match(combined, /較新日期為優先/);
 });
 
+test('LINE TXT imports can preserve speaker attribution and contact details for internal use', () => {
+  const phone = ['0912', '345', '678'].join('-');
+  const email = ['project.owner', 'example.com'].join('@');
+  const parsed = buildLineChatKnowledgeSections({
+    sourceName: '內部合作群.txt',
+    preservePersonalData: true,
+    content: [
+      '2026/7/28（週二）',
+      `09:00\t全家-專案窗口\t請聯絡 ${phone} 或 ${email}`,
+    ].join('\n'),
+  });
+  const combined = parsed.sections.map(section => section.content).join('\n');
+
+  assert.equal(parsed.preservePersonalData, true);
+  assert.match(combined, /全家-專案窗口/);
+  assert.ok(combined.includes(phone));
+  assert.ok(combined.includes(email));
+});
+
 test('LINE TXT batch import writes only new company-scoped sections in one transaction', async () => {
   const payload = {
     sourceName: '合作公司聊天.txt',
@@ -410,7 +429,9 @@ test('partner admin page exposes company-scoped test chat behind admin API', () 
   assert.match(html, /尚未綁定真實 LINE 群組，仍可先使用下方測試功能|testChat/);
   assert.match(js, /\/api\/partners\/\$\{company\.id\}\/test-chat/);
   assert.match(html, /lineTxtFileInput/);
+  assert.match(html, /lineImportPreservePersonalData/);
   assert.match(js, /file\.text\(\)/);
+  assert.match(js, /preservePersonalData/);
   assert.match(routes, /knowledge\/import-line/);
   assert.match(js, /x-admin-key/);
   assert.match(routes, /router\.use\(requireAdminKey\)/);

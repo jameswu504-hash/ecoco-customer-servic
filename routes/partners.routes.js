@@ -126,6 +126,7 @@ function createPartnersRouter({ partnerService, requireAdminKey, pool }) {
         details: {
           sourceName: result.sourceName,
           sourceCharacters: result.sourceCharacters,
+          preservePersonalData: result.preservePersonalData,
           totalSectionCount: result.totalSectionCount,
           createdCount: result.createdCount,
           skippedDuplicateCount: result.skippedDuplicateCount,
@@ -135,6 +136,7 @@ function createPartnersRouter({ partnerService, requireAdminKey, pool }) {
       res.status(result.createdCount > 0 ? 201 : 200).json({
         sourceName: result.sourceName,
         sourceCharacters: result.sourceCharacters,
+        preservePersonalData: result.preservePersonalData,
         totalSectionCount: result.totalSectionCount,
         createdCount: result.createdCount,
         skippedDuplicateCount: result.skippedDuplicateCount,
