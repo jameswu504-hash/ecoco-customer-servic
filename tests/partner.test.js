@@ -658,15 +658,23 @@ test('unbound LINE groups are intercepted before the B2C classifier', () => {
     path.join(__dirname, '..', 'routes', 'line.routes.js'),
     'utf8'
   );
-  const partnerBranch = lineRoute.indexOf('} else if (isPartnerGroup) {');
-  const b2cBranch = lineRoute.indexOf('} else {', partnerBranch + 1);
+  const b2bService = fs.readFileSync(
+    path.join(__dirname, '..', 'services', 'line-b2b.service.js'),
+    'utf8'
+  );
+  const b2cService = fs.readFileSync(
+    path.join(__dirname, '..', 'services', 'line-b2c.service.js'),
+    'utf8'
+  );
 
-  assert.ok(partnerBranch > -1);
-  assert.ok(b2cBranch > partnerBranch);
-  assert.match(lineRoute, /partnerService\.routeLineGroupMessage/);
-  assert.match(lineRoute, /isLineBotMentioned\(event\.message\)/);
-  assert.match(lineRoute, /partnerService\.storePartnerMessage/);
-  assert.match(lineRoute, /partnerRoute\.type === 'binding'[\s\S]*'partner_unbound'/);
+  assert.match(lineRoute, /event\.source\?\.type === 'group' && handleLineB2BMessage/);
+  assert.match(lineRoute, /await handleLineB2BMessage\(context\)[\s\S]*await handleLineB2CMessage\(context\)/);
+  assert.match(b2bService, /partnerService\.routeLineGroupMessage/);
+  assert.match(b2bService, /isLineBotMentioned\(event\.message\)/);
+  assert.match(b2bService, /partnerService\.storePartnerMessage/);
+  assert.match(b2bService, /partnerRoute\.type === 'binding'[\s\S]*'partner_unbound'/);
+  assert.match(b2cService, /classifyQuestion\(userText\)/);
+  assert.doesNotMatch(b2bService, /classifyQuestion/);
 });
 
 test('partner admin page exposes company-scoped test chat behind admin API', () => {

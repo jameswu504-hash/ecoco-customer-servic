@@ -1061,6 +1061,7 @@ test('runtime config warns about undersized dedicated secrets', () => {
 test('shared chat behavior lives in services instead of route modules', () => {
   const chatRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'chat.routes.js'), 'utf8');
   const lineRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'line.routes.js'), 'utf8');
+  const lineB2CService = fs.readFileSync(path.join(__dirname, '..', 'services', 'line-b2c.service.js'), 'utf8');
   const partnerService = fs.readFileSync(path.join(__dirname, '..', 'services', 'partner.service.js'), 'utf8');
 
   assert.doesNotMatch(lineRoute, /require\(['"]\.\/chat\.routes['"]\)/);
@@ -1069,6 +1070,8 @@ test('shared chat behavior lives in services instead of route modules', () => {
   assert.match(chatRoute, /services\/knowledge-gap\.util/);
   assert.match(chatRoute, /services\/station-response\.service/);
   assert.match(chatRoute, /services\/conversation-history\.service/);
+  assert.match(lineB2CService, /conversation-history\.service/);
+  assert.match(lineB2CService, /station-response\.service/);
 });
 
 test('IoT sync authentication retains ADMIN_KEY compatibility when no dedicated key is set', () => {
@@ -1232,7 +1235,10 @@ test('LINE webhook signature verification accepts only valid signatures', () => 
 });
 
 test('LINE signature comparison pads unequal lengths before timing-safe compare', () => {
-  const lineRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'line.routes.js'), 'utf8');
+  const lineSharedService = fs.readFileSync(
+    path.join(__dirname, '..', 'services', 'line-shared.service.js'),
+    'utf8'
+  );
 
   assert.equal(safeCompare('abc', 'abc'), true);
   assert.equal(safeCompare('abc', 'abcd'), false);
@@ -1240,7 +1246,7 @@ test('LINE signature comparison pads unequal lengths before timing-safe compare'
   assert.equal(compareSecret('key-value', 'key-value'), true);
   assert.equal(compareSecret('key-value', 'key-value\0'), false);
   assert.equal(compareSecret('', ''), false);
-  assert.equal(lineRoute.includes('left.length !== right.length) return false'), false);
+  assert.equal(lineSharedService.includes('left.length !== right.length) return false'), false);
 });
 
 test('LINE route is wired and documented through environment variables', () => {
@@ -1277,12 +1283,15 @@ test('LINE replies are converted to plain text before sending', () => {
 });
 
 test('LINE webhook reuses server-side conversation history', () => {
-  const lineRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'line.routes.js'), 'utf8');
+  const lineB2CService = fs.readFileSync(
+    path.join(__dirname, '..', 'services', 'line-b2c.service.js'),
+    'utf8'
+  );
 
-  assert.match(lineRoute, /loadServerConversationHistory/);
-  assert.match(lineRoute, /normalizeModelMessages/);
-  assert.match(lineRoute, /buildLineModelMessages/);
-  assert.match(lineRoute, /messages: modelMessages/);
+  assert.match(lineB2CService, /loadServerConversationHistory/);
+  assert.match(lineB2CService, /normalizeModelMessages/);
+  assert.match(lineB2CService, /buildLineModelMessages/);
+  assert.match(lineB2CService, /messages: modelMessages/);
 });
 
 test('LINE webhook events are claimed once and completed events are skipped', async () => {
@@ -1339,13 +1348,17 @@ test('LINE location messages return a usable query or an explicit validation err
 });
 
 test('LINE rate limit and timeout replies are not stored as conversation history', () => {
+  const lineB2CService = fs.readFileSync(
+    path.join(__dirname, '..', 'services', 'line-b2c.service.js'),
+    'utf8'
+  );
   const lineRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'line.routes.js'), 'utf8');
 
-  assert.match(lineRoute, /let shouldStoreConversation = true/);
-  assert.match(lineRoute, /shouldStoreConversation = false/);
-  assert.match(lineRoute, /line_rate_limited/);
-  assert.match(lineRoute, /line_timeout/);
-  assert.match(lineRoute, /if \(shouldStoreConversation\)/);
+  assert.match(lineB2CService, /let shouldStoreConversation = true/);
+  assert.match(lineB2CService, /shouldStoreConversation = false/);
+  assert.match(lineB2CService, /line_rate_limited/);
+  assert.match(lineB2CService, /line_timeout/);
+  assert.match(lineRoute, /if \(outcome\.shouldStoreConversation\)/);
 });
 
 test('LINE rate limit buckets are pruned before unbounded growth', () => {
