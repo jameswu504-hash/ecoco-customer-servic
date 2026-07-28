@@ -1,11 +1,11 @@
 const crypto = require('crypto');
+const { normalizeModelMessages } = require('./conversation-history.service');
+const { stripKnowledgeGapMarker } = require('./knowledge-gap.util');
 const {
   attachLiveStationContext,
   buildLiveStationStatusReply,
-  normalizeModelMessages,
   shouldUseDeterministicStationReply,
-  stripKnowledgeGapMarker,
-} = require('../routes/chat.routes');
+} = require('./station-response.service');
 const { buildSearchTerms, escapeIlikePattern } = require('./rag.service');
 const { anonymizeText } = require('../scripts/anonymize-pii');
 const { maskSensitiveText } = require('./privacy.service');

@@ -4,12 +4,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const {
+  getRequestCoords,
+} = require('../routes/chat.routes');
+const {
   attachLiveStationContext,
   buildLiveStationStatusReply,
   formatDistance,
-  getRequestCoords,
   shouldUseDeterministicStationReply,
-} = require('../routes/chat.routes');
+} = require('../services/station-response.service');
 const { dedupeStationRows, toPostgresRow, uploadStationRows } = require('../scripts/sync-iot-stations-to-postgres');
 const { classifyQuestion } = require('../services/question-classifier.service');
 const stationQueryIntent = require('../services/station-query-intent.service');

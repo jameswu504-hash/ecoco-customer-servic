@@ -5,6 +5,7 @@ const {
   RAG_KEYWORDS,
   RAG_SYNONYM_GROUPS,
 } = require('../config/rag-config');
+const { normalizeUnicodeText } = require('./text-normalization.service');
 
 const KNOWLEDGE_CHUNK_LOCK_ID = 60229;
 
@@ -28,12 +29,7 @@ function extractRiskLevel(text) {
 }
 
 function normalizeText(value) {
-  return String(value || '')
-    .normalize('NFKC')
-    .replace(/\p{Extended_Pictographic}/gu, '')
-    .replace(/[ \t\u00a0]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return normalizeUnicodeText(value);
 }
 
 function normalizeKnowledgeContent(value) {

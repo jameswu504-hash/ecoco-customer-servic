@@ -1,18 +1,22 @@
 const crypto = require('crypto');
 const express = require('express');
 const {
-  KNOWLEDGE_GAP_MACHINE_MARKER,
-  attachLiveStationContext,
-  buildLiveStationStatusReply,
-  shouldUseDeterministicStationReply,
-  detectKnowledgeGap,
   loadServerConversationHistory,
   normalizeModelMessages,
+} = require('../services/conversation-history.service');
+const {
+  detectKnowledgeGap,
+  KNOWLEDGE_GAP_MACHINE_MARKER,
   stripKnowledgeGapMarker,
-} = require('./chat.routes');
+} = require('../services/knowledge-gap.util');
 const { normalizeCoords } = require('../services/iot-status.service');
 const { maskSensitiveText } = require('../services/privacy.service');
 const { compareSecret } = require('../services/secret.service');
+const {
+  attachLiveStationContext,
+  buildLiveStationStatusReply,
+  shouldUseDeterministicStationReply,
+} = require('../services/station-response.service');
 const { saveChatTrace } = require('../services/trace.service');
 
 const LINE_REPLY_ENDPOINT = 'https://api.line.me/v2/bot/message/reply';
@@ -118,6 +122,15 @@ function buildLineSessionId(event = {}) {
       ? source.roomId
       : source.userId;
   return `line_${crypto.createHash('sha256').update(sourceId || 'unknown').digest('hex').slice(0, 32)}`;
+}
+
+function buildLineRateLimitKey(event = {}) {
+  const source = event.source || {};
+  const sourceId = source.userId
+    || source.groupId
+    || source.roomId
+    || 'unknown';
+  return `line_rate_${crypto.createHash('sha256').update(String(sourceId)).digest('hex').slice(0, 32)}`;
 }
 
 function getLineRateLimitMax(env = process.env) {
@@ -420,6 +433,7 @@ function createLineRouter({
       if (!webhookClaim.claimed) continue;
 
       const sessionId = buildLineSessionId(event);
+      const rateLimitKey = buildLineRateLimitKey(event);
       let reply = LINE_FALLBACK_REPLY;
       let shouldStoreConversation = true;
       let webhookProcessingError = null;
@@ -427,7 +441,7 @@ function createLineRouter({
       const classification = !isPartnerGroup && typeof classifyQuestion === 'function'
         ? classifyQuestion(userText)
         : null;
-      if (isLineRateLimited(sessionId)) {
+      if (isLineRateLimited(rateLimitKey)) {
         reply = LINE_RATE_LIMIT_REPLY;
         shouldStoreConversation = false;
         await saveChatTrace(pool, {
@@ -636,6 +650,7 @@ module.exports = {
   buildAiReply,
   buildLineModelMessages,
   buildLineSessionId,
+  buildLineRateLimitKey,
   claimLineWebhookEvent,
   cleanupLineRateBuckets,
   completeLineWebhookEvent,

@@ -5,23 +5,31 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { requireAdminKey } = require('../middleware/admin-auth');
+const { requireIotSyncKey } = require('../middleware/iot-sync-auth');
 const {
   createMessageWithTimeout,
-  createSignedSessionCookieValue,
   createChatRouter,
-  detectKnowledgeGap,
   FRIENDLY_AI_ERROR_REPLY,
-  getClientSessionId,
   getLatestUserMessage,
-  getSafeSessionId,
   getWebChatTimeoutMs,
+  persistChatArtifacts,
+  validateHistory,
+} = require('../routes/chat.routes');
+const {
   loadExchangeByMessageId,
   normalizeModelMessages,
+} = require('../services/conversation-history.service');
+const {
+  detectKnowledgeGap,
   parseKnowledgeGapMeta,
   stripKnowledgeGapMarker,
-  validateHistory,
+} = require('../services/knowledge-gap.util');
+const {
+  createSignedSessionCookieValue,
+  getClientSessionId,
+  getSafeSessionId,
   WEB_SESSION_COOKIE_NAME,
-} = require('../routes/chat.routes');
+} = require('../services/session.service');
 const { getKnowledgeEmbeddingStatus } = require('../services/health.service');
 const { scanFile } = require('../scripts/scan-pii');
 const { cleanKnowledgeInput } = require('../routes/knowledge.routes');
@@ -67,6 +75,10 @@ const {
   rankKnowledgeRows,
 } = require('../services/rag.service');
 const { SCHEMA, migrateTimestampColumns, migrateUniqueMessageIndexes } = require('../db/schema');
+
+const TEST_SESSION_ENV = {
+  SESSION_SECRET: 'test-session-secret-with-at-least-32-characters',
+};
 
 test('known point issue ranks the point knowledge first', () => {
   const terms = buildSearchTerms('點數沒有入帳怎麼辦');
@@ -356,6 +368,7 @@ test('/api/chat integration returns an AI reply and stores masked conversation r
     buildSystemPrompt: (context, guardrail) => `${context}\n${guardrail}`,
     buildSystemPromptBlocks: null,
     defaultAnthropicModel: 'test-chat-model',
+    sessionEnv: TEST_SESSION_ENV,
   }));
 
   const server = app.listen(0);
@@ -425,6 +438,7 @@ test('/api/chat direct manual routing bypasses Claude and records an unanswered 
     buildSystemPromptBlocks: null,
     defaultAnthropicModel: 'test-chat-model',
     classifyQuestion,
+    sessionEnv: TEST_SESSION_ENV,
   }));
 
   const server = app.listen(0);
@@ -478,6 +492,12 @@ test('web sessions accept only server-signed HttpOnly cookie values', () => {
   assert.equal(getClientSessionId({
     cookie: `${WEB_SESSION_COOKIE_NAME}=${encodeURIComponent(`${signed}tampered`)}`,
   }, env, issuedAt + 1000), null);
+  assert.match(
+    createSignedSessionCookieValue(sessionId, {
+      ADMIN_KEY: 'temporary-admin-key-fallback',
+    }),
+    new RegExp(`^${sessionId}\\.\\d+\\.`)
+  );
 });
 
 test('admin middleware rejects missing admin key', () => {
@@ -822,6 +842,7 @@ test('rating question and reply are looked up by session and message id', async 
     query: async (sql, params) => {
       assert.match(sql, /FROM conversations/);
       assert.match(sql, /message_id = \$2/);
+      assert.match(sql, /LIMIT 2/);
       assert.deepEqual(params, ['session_abcdefgh', 'reply-123']);
       return {
         rows: [
@@ -837,6 +858,40 @@ test('rating question and reply are looked up by session and message id', async 
 
   const empty = await loadExchangeByMessageId(fakePool, null, 'reply-123');
   assert.deepEqual(empty, { question: '', reply: '' });
+});
+
+test('chat trace and conversation writes start in parallel', async () => {
+  const pendingResolvers = [];
+  const queries = [];
+  const pool = {
+    query(sql) {
+      queries.push(sql);
+      return new Promise(resolve => pendingResolvers.push(() => resolve({ rows: [] })));
+    },
+  };
+
+  const pending = persistChatArtifacts({
+    pool,
+    trace: {
+      sessionId: 'session_parallel',
+      question: 'question',
+      rag: { retrievalMode: 'none', chunks: [] },
+    },
+    exchange: {
+      pool,
+      sessionId: 'session_parallel',
+      question: 'question',
+      reply: 'reply',
+      messageId: 'message-parallel',
+    },
+  });
+
+  await Promise.resolve();
+  assert.equal(queries.length, 2);
+  assert.ok(queries.some(sql => /INSERT INTO chat_traces/.test(sql)));
+  assert.ok(queries.some(sql => /INSERT INTO conversations/.test(sql)));
+  pendingResolvers.forEach(resolve => resolve());
+  assert.equal(await pending, true);
 });
 
 test('/api/rating binds feedback to the selected response instead of the latest exchange', async () => {
@@ -984,6 +1039,71 @@ test('runtime config fails fast when required production secrets are missing', (
   assert.match(result.errors.join('\n'), /DATABASE_URL/);
   assert.match(result.errors.join('\n'), /ANTHROPIC_API_KEY/);
   assert.match(result.errors.join('\n'), /ADMIN_KEY/);
+  assert.match(result.warnings.join('\n'), /SESSION_SECRET/);
+  assert.match(result.warnings.join('\n'), /IOT_SYNC_KEY/);
+});
+
+test('runtime config warns about undersized dedicated secrets', () => {
+  const { validateRuntimeConfig } = require('../server');
+  const short = validateRuntimeConfig({
+    DATABASE_URL: 'postgresql://example',
+    ANTHROPIC_API_KEY: 'anthropic-key',
+    ADMIN_KEY: 'admin-key-with-enough-length',
+    SESSION_SECRET: 'short',
+    IOT_SYNC_KEY: 'short',
+  });
+
+  assert.equal(short.errors.length, 0);
+  assert.match(short.warnings.join('\n'), /SESSION_SECRET is short/);
+  assert.match(short.warnings.join('\n'), /IOT_SYNC_KEY is short/);
+});
+
+test('shared chat behavior lives in services instead of route modules', () => {
+  const chatRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'chat.routes.js'), 'utf8');
+  const lineRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'line.routes.js'), 'utf8');
+  const partnerService = fs.readFileSync(path.join(__dirname, '..', 'services', 'partner.service.js'), 'utf8');
+
+  assert.doesNotMatch(lineRoute, /require\(['"]\.\/chat\.routes['"]\)/);
+  assert.doesNotMatch(partnerService, /require\(['"]\.\.\/routes\/chat\.routes['"]\)/);
+  assert.match(chatRoute, /services\/session\.service/);
+  assert.match(chatRoute, /services\/knowledge-gap\.util/);
+  assert.match(chatRoute, /services\/station-response\.service/);
+  assert.match(chatRoute, /services\/conversation-history\.service/);
+});
+
+test('IoT sync authentication retains ADMIN_KEY compatibility when no dedicated key is set', () => {
+  const previousAdmin = process.env.ADMIN_KEY;
+  const previousSync = process.env.IOT_SYNC_KEY;
+  process.env.ADMIN_KEY = 'admin-key-with-enough-length';
+  delete process.env.IOT_SYNC_KEY;
+
+  let statusCode = 0;
+  let nextCalled = false;
+  const res = {
+    status(code) {
+      statusCode = code;
+      return this;
+    },
+    json() {
+      return this;
+    },
+  };
+
+  try {
+    requireIotSyncKey(
+      { headers: { 'x-admin-key': process.env.ADMIN_KEY } },
+      res,
+      () => { nextCalled = true; }
+    );
+  } finally {
+    if (previousAdmin === undefined) delete process.env.ADMIN_KEY;
+    else process.env.ADMIN_KEY = previousAdmin;
+    if (previousSync === undefined) delete process.env.IOT_SYNC_KEY;
+    else process.env.IOT_SYNC_KEY = previousSync;
+  }
+
+  assert.equal(statusCode, 0);
+  assert.equal(nextCalled, true);
 });
 
 test('PostgreSQL SSL modes distinguish encryption from certificate verification', () => {
@@ -995,6 +1115,8 @@ test('PostgreSQL SSL modes distinguish encryption from certificate verification'
     DATABASE_URL: 'postgresql://example',
     ANTHROPIC_API_KEY: 'anthropic-key',
     ADMIN_KEY: 'admin-key-with-enough-length',
+    SESSION_SECRET: 'test-session-secret-with-at-least-32-characters',
+    IOT_SYNC_KEY: 'test-iot-sync-key-with-24-chars',
   };
 
   assert.equal(getPostgresSslConfig({ PGSSL: 'disable' }), false);
@@ -1046,6 +1168,8 @@ test('internal mode requires a staff key and customer mode does not', () => {
     DATABASE_URL: 'postgresql://example',
     ANTHROPIC_API_KEY: 'anthropic-key',
     ADMIN_KEY: 'admin-key-with-enough-length',
+    SESSION_SECRET: 'test-session-secret-with-at-least-32-characters',
+    IOT_SYNC_KEY: 'test-iot-sync-key-with-24-chars',
   };
 
   assert.equal(isInternalMode({ APP_MODE: 'internal' }), true);

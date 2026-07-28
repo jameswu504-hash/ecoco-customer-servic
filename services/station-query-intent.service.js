@@ -1,12 +1,11 @@
 const STATION_CODE_PATTERN = /es\d{3,6}(?:_[a-z0-9]+)?/i;
+const { normalizeUnicodeText } = require('./text-normalization.service');
 
 function normalizeStationQueryText(value) {
-  return String(value || '')
-    .normalize('NFKC')
-    .replace(/\p{Extended_Pictographic}/gu, '')
-    .replace(/\s+/g, '')
-    .toLowerCase()
-    .trim();
+  return normalizeUnicodeText(value, {
+    lowercase: true,
+    whitespace: 'remove',
+  });
 }
 
 function hasAny(text, words = []) {

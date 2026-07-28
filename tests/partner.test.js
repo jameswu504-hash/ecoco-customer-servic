@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { SCHEMA } = require('../db/schema');
-const { buildLineSessionId } = require('../routes/line.routes');
+const { buildLineRateLimitKey, buildLineSessionId } = require('../routes/line.routes');
 const { getPartnerTestSessionId } = require('../routes/partners.routes');
 const {
   PARTNER_LINE_IMPORT_CHUNK_CHARS,
@@ -77,6 +77,21 @@ test('LINE group sessions are scoped to groupId instead of member userId', () =>
 
   assert.equal(firstMember, secondMember);
   assert.notEqual(firstMember, otherGroup);
+});
+
+test('LINE group rate limits are scoped to member userId instead of the whole group', () => {
+  const firstMember = buildLineRateLimitKey({
+    source: { type: 'group', groupId: 'group-a', userId: 'user-a' },
+  });
+  const secondMember = buildLineRateLimitKey({
+    source: { type: 'group', groupId: 'group-a', userId: 'user-b' },
+  });
+  const sameMemberOtherGroup = buildLineRateLimitKey({
+    source: { type: 'group', groupId: 'group-b', userId: 'user-a' },
+  });
+
+  assert.notEqual(firstMember, secondMember);
+  assert.equal(firstMember, sameMemberOtherGroup);
 });
 
 test('partner retrieval always scopes SQL by company_id', async () => {

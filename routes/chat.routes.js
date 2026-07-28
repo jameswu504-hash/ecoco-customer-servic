@@ -3,24 +3,28 @@ const express = require('express');
 const { normalizeCoords } = require('../services/iot-status.service');
 const { maskSensitiveText } = require('../services/privacy.service');
 const { saveChatTrace } = require('../services/trace.service');
+const {
+  loadExchangeByMessageId,
+  loadServerConversationHistory,
+  normalizeModelMessages,
+} = require('../services/conversation-history.service');
+const {
+  detectKnowledgeGap,
+  stripKnowledgeGapMarker,
+} = require('../services/knowledge-gap.util');
+const {
+  getClientSessionId,
+  resolveWebSession,
+} = require('../services/session.service');
+const {
+  attachLiveStationContext,
+  buildLiveStationStatusReply,
+  shouldUseDeterministicStationReply,
+} = require('../services/station-response.service');
 
-const KNOWLEDGE_GAP_MACHINE_MARKER = '[KNOWLEDGE_GAP]';
-const KNOWLEDGE_GAP_META_PATTERN = /<meta>\s*({[\s\S]*?})\s*<\/meta>/i;
-const KNOWLEDGE_GAP_META_STRIP_PATTERN = /<meta>\s*{[\s\S]*?}\s*<\/meta>/gi;
-const KNOWLEDGE_GAP_META_INCOMPLETE_PATTERN = /<meta>(?![\s\S]*<\/meta>)[\s\S]*$/i;
 const DEFAULT_WEB_CHAT_TIMEOUT_MS = 45 * 1000;
 const MAX_WEB_CHAT_TIMEOUT_MS = 55 * 1000;
-const WEB_SESSION_COOKIE_NAME = 'ecoco_session';
-const WEB_SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
-const WEB_SESSION_CLOCK_SKEW_SECONDS = 5 * 60;
-const EPHEMERAL_SESSION_SECRET = crypto.randomBytes(32).toString('base64url');
 const FRIENDLY_AI_ERROR_REPLY = '抱歉，AI 客服暫時連線不穩。請稍後再試，或透過客服表單補充問題：https://ecoco.tw/kWqgW';
-const KNOWLEDGE_GAP_MARKERS = [
-  '沒有確切資料',
-  '目前沒有足夠資料',
-  '建議您透過客服表單',
-  '需要人工補充或確認',
-];
 
 function getWebChatTimeoutMs(env = process.env) {
   const configured = Number(env.WEB_CHAT_TIMEOUT_MS || DEFAULT_WEB_CHAT_TIMEOUT_MS);
@@ -48,76 +52,6 @@ async function createMessageWithTimeout(client, payload, timeoutMs = getWebChatT
   } finally {
     clearTimeout(timer);
   }
-}
-
-function parseKnowledgeGapMeta(reply) {
-  if (typeof reply !== 'string') return null;
-  const match = reply.match(KNOWLEDGE_GAP_META_PATTERN);
-  if (!match) return null;
-
-  try {
-    const meta = JSON.parse(match[1]);
-    return {
-      gap: Boolean(meta.gap),
-      confidence: String(meta.confidence || '').trim().toLowerCase(),
-      reason: String(meta.reason || '').trim(),
-      raw: meta,
-    };
-  } catch (err) {
-    return {
-      gap: false,
-      confidence: '',
-      reason: `Invalid knowledge gap meta: ${err.message}`,
-      raw: null,
-    };
-  }
-}
-
-function detectKnowledgeGap(reply, stopReason = '') {
-  if (typeof reply !== 'string') {
-    return { isGap: false, reason: '' };
-  }
-
-  if (String(stopReason || '') === 'max_tokens') {
-    return {
-      isGap: true,
-      reason: 'AI reply truncated at max_tokens; gap meta may be missing, flagged for manual review.',
-    };
-  }
-
-  const meta = parseKnowledgeGapMeta(reply);
-  if (meta && meta.gap) {
-    return {
-      isGap: true,
-      reason: `AI reply included structured knowledge gap meta: confidence=${meta.confidence || 'unknown'}${meta.reason ? `; ${meta.reason}` : ''}`,
-      confidence: meta.confidence || 'unknown',
-    };
-  }
-
-  if (reply.includes(KNOWLEDGE_GAP_MACHINE_MARKER)) {
-    return {
-      isGap: true,
-      reason: `AI reply included knowledge gap marker: ${KNOWLEDGE_GAP_MACHINE_MARKER}`,
-    };
-  }
-
-  const marker = KNOWLEDGE_GAP_MARKERS.find(text => reply.includes(text));
-  if (!marker) {
-    return { isGap: false, reason: '' };
-  }
-
-  return {
-    isGap: true,
-    reason: `AI 回覆包含知識缺口標記：「${marker}」`,
-  };
-}
-
-function stripKnowledgeGapMarker(reply) {
-  return String(reply || '')
-    .replaceAll(KNOWLEDGE_GAP_MACHINE_MARKER, '')
-    .replace(KNOWLEDGE_GAP_META_STRIP_PATTERN, '')
-    .replace(KNOWLEDGE_GAP_META_INCOMPLETE_PATTERN, '')
-    .trim();
 }
 
 function validateHistory(history) {
@@ -184,145 +118,6 @@ function getLatestUserMessage(body = {}) {
   };
 }
 
-function normalizeModelMessages(messages = []) {
-  const normalized = [];
-  for (const message of messages) {
-    if (!message || !['user', 'assistant'].includes(message.role)) continue;
-    const content = String(message.content || '').trim();
-    if (!content) continue;
-
-    const previous = normalized[normalized.length - 1];
-    if (previous && previous.role === message.role) {
-      previous.content = `${previous.content}\n\n${content}`;
-    } else {
-      normalized.push({ role: message.role, content });
-    }
-  }
-  return normalized;
-}
-
-async function loadServerConversationHistory(pool, sessionId, limit = 12) {
-  const { rows } = await pool.query(
-    `SELECT role, content
-     FROM conversations
-     WHERE session_id = $1
-     ORDER BY timestamp DESC, id DESC
-     LIMIT $2`,
-    [sessionId, limit]
-  );
-
-  return normalizeModelMessages(rows.reverse());
-}
-
-function getSessionSecret(env = process.env) {
-  return String(env.SESSION_SECRET || env.ADMIN_KEY || EPHEMERAL_SESSION_SECRET);
-}
-
-function signSessionPayload(payload, env = process.env) {
-  return crypto
-    .createHmac('sha256', getSessionSecret(env))
-    .update(payload)
-    .digest('base64url');
-}
-
-function createSignedSessionCookieValue(sessionId, env = process.env, nowMs = Date.now()) {
-  const issuedAt = Math.floor(Number(nowMs) / 1000);
-  const payload = `${sessionId}.${issuedAt}`;
-  return `${payload}.${signSessionPayload(payload, env)}`;
-}
-
-function getCookieValue(headers = {}, name = WEB_SESSION_COOKIE_NAME) {
-  const rawCookie = String(headers.cookie || '');
-  for (const part of rawCookie.split(';')) {
-    const separator = part.indexOf('=');
-    if (separator < 0) continue;
-    if (part.slice(0, separator).trim() !== name) continue;
-    try {
-      return decodeURIComponent(part.slice(separator + 1).trim());
-    } catch {
-      return '';
-    }
-  }
-  return '';
-}
-
-function getClientSessionId(headers = {}, env = process.env, nowMs = Date.now()) {
-  const token = getCookieValue(headers);
-  const parts = token.split('.');
-  if (parts.length !== 3) return null;
-
-  const [sessionId, issuedAtText, signature] = parts;
-  if (!/^session_[A-Za-z0-9_-]{8,80}$/.test(sessionId)) return null;
-  if (!/^\d{10,}$/.test(issuedAtText)) return null;
-
-  const issuedAt = Number(issuedAtText);
-  const nowSeconds = Math.floor(Number(nowMs) / 1000);
-  if (!Number.isSafeInteger(issuedAt) || !Number.isSafeInteger(nowSeconds)) return null;
-  if (issuedAt > nowSeconds + WEB_SESSION_CLOCK_SKEW_SECONDS) return null;
-  if (nowSeconds - issuedAt > WEB_SESSION_MAX_AGE_SECONDS) return null;
-
-  const expected = signSessionPayload(`${sessionId}.${issuedAtText}`, env);
-  const providedBuffer = Buffer.from(signature);
-  const expectedBuffer = Buffer.from(expected);
-  if (providedBuffer.length !== expectedBuffer.length) return null;
-  if (!crypto.timingSafeEqual(providedBuffer, expectedBuffer)) return null;
-
-  return sessionId;
-}
-
-function getSafeSessionId(headers = {}, env = process.env) {
-  return getClientSessionId(headers, env)
-    || `session_${crypto.randomUUID().replaceAll('-', '')}`;
-}
-
-function setWebSessionCookie(res, sessionId, headers = {}, env = process.env) {
-  const secure = env.NODE_ENV === 'production'
-    || String(headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase() === 'https';
-  const parts = [
-    `${WEB_SESSION_COOKIE_NAME}=${encodeURIComponent(createSignedSessionCookieValue(sessionId, env))}`,
-    'Path=/',
-    `Max-Age=${WEB_SESSION_MAX_AGE_SECONDS}`,
-    'HttpOnly',
-    'SameSite=Strict',
-  ];
-  if (secure) parts.push('Secure');
-  res.append('Set-Cookie', parts.join('; '));
-}
-
-function resolveWebSession(req, res, env = process.env) {
-  const existing = getClientSessionId(req.headers, env);
-  if (existing) return existing;
-
-  const sessionId = getSafeSessionId({}, env);
-  setWebSessionCookie(res, sessionId, req.headers, env);
-  return sessionId;
-}
-
-async function loadExchangeByMessageId(pool, sessionId, messageId) {
-  if (!pool || !sessionId || !messageId) return { question: '', reply: '' };
-
-  const { rows } = await pool.query(
-    `SELECT role, content
-     FROM conversations
-     WHERE session_id = $1
-       AND message_id = $2
-     ORDER BY timestamp ASC, id ASC`,
-    [sessionId, messageId]
-  );
-
-  let question = '';
-  let reply = '';
-  for (const row of rows) {
-    if (!question && row.role === 'user') {
-      question = String(row.content || '');
-    } else if (!reply && row.role === 'assistant') {
-      reply = String(row.content || '');
-    }
-  }
-
-  return { question, reply };
-}
-
 async function storeChatExchange({
   pool,
   sessionId,
@@ -353,234 +148,17 @@ async function storeChatExchange({
   }
 }
 
-async function attachLiveStationContext({
-  rag,
-  question,
-  classification,
-  retrieveLiveStationContext,
-  coords = null,
-}) {
-  if (typeof retrieveLiveStationContext !== 'function') return rag;
-
-  try {
-    const live = await retrieveLiveStationContext(question, { classification, coords });
-    const hasTrustedMiss = (
-      live.retrievalMode === 'postgres_iot_miss'
-        && Array.isArray(live.terms)
-        && live.terms.length > 0
-    ) || (
-      live.retrievalMode === 'postgres_iot_nearest_miss'
-        && live.coords
-    );
-    if (!live.context && !hasTrustedMiss) return rag;
-    const retrievalModes = [rag.retrievalMode, live.retrievalMode]
-      .filter(mode => mode && mode !== 'none');
-    return {
-      ...rag,
-      retrievalMode: retrievalModes.length > 0 ? retrievalModes.join('+') : rag.retrievalMode,
-      context: [rag.context, live.context].filter(Boolean).join('\n\n'),
-      liveStationContext: live,
-    };
-  } catch (err) {
-    console.error('Live station context lookup error:', err.message);
-    return rag;
-  }
-}
-
-function formatStatus(value) {
-  const status = String(value || '').trim().toLowerCase();
-  if (!status) return '未知';
-  if (['up', 'online', 'normal', 'ok'].includes(status)) return '正常';
-  if (['down', 'offline'].includes(status)) return '離線';
-  return String(value);
-}
-
-function hasNumber(value) {
-  return value !== null && value !== undefined && value !== '';
-}
-
-// 1 公里內以公尺（取十位數）顯示，其餘顯示公里一位小數。
-function formatDistance(distanceKm) {
-  if (distanceKm === null || distanceKm === undefined || distanceKm === '') return '';
-  const km = Number(distanceKm);
-  if (!Number.isFinite(km) || km < 0) return '';
-  if (km < 1) return `（約 ${Math.max(Math.round((km * 1000) / 10) * 10, 10)} 公尺）`;
-  return `（約 ${Math.round(km * 10) / 10} 公里）`;
-}
-
-function formatCapacity(slotName, count, max, remain) {
-  if (!hasNumber(count) && !hasNumber(max) && !hasNumber(remain)) {
-    return `${slotName}：目前還沒有容量數字`;
-  }
-
-  const remainText = hasNumber(remain) ? `剩餘 ${remain}` : '剩餘量未知';
-  const usageText = hasNumber(count) && hasNumber(max) ? `目前 ${count}/${max}` : '';
-  const fullHint = hasNumber(remain) && Number(remain) === 0 ? '（目前看起來已滿）' : '';
-  return `${slotName}：${[remainText, usageText].filter(Boolean).join('，')}${fullHint}`;
-}
-
-function buildLiveStationStatusReply(liveStationContext = null) {
-  const rows = Array.isArray(liveStationContext?.rows) ? liveStationContext.rows : [];
-  if (rows.length === 0) {
-    if (liveStationContext?.retrievalMode === 'postgres_iot_nearest_miss') {
-      const label = liveStationContext?.coords?.label || '';
-      return [
-        label
-          ? `可可粉，依目前同步的站點資料，在「${label}」附近沒有查到 ECOCO 站點。`
-          : '可可粉，依目前同步的站點資料，在你目前的位置附近沒有查到 ECOCO 站點。',
-        '',
-        '你可以改傳另一個位置，或先到 ECOCO App 查看完整站點地圖。',
-      ].join('\n');
-    }
-    if (liveStationContext?.retrievalMode !== 'postgres_iot_miss') return '';
-    const terms = Array.isArray(liveStationContext?.terms) ? liveStationContext.terms : [];
-    const location = terms[0] || '\u9019\u500b\u5730\u5340';
-    return [
-      '\u53ef\u53ef\u7c89\uff0c\u6211\u6709\u5e6b\u4f60\u67e5\u8a62 ECOCO \u7ad9\u9ede\u8cc7\u6599\u3002',
-      '',
-      `\u76ee\u524d\u5728\u300c${location}\u300d\u6c92\u6709\u67e5\u5230\u7ad9\u9ede\u3002`,
-      '',
-      '\u4f60\u53ef\u4ee5\u518d\u544a\u8a34\u6211\u9644\u8fd1\u7684\u6377\u904b\u7ad9\u3001\u8def\u540d\u6216\u5730\u6a19\uff0c\u6211\u518d\u5e6b\u4f60\u67e5\u67e5\u770b\u3002',
-    ].join('\n');
-  }
-
-  const uniqueRows = [];
-  const seenStations = new Set();
-  for (const row of rows) {
-    const fallbackKey = [row.stationName, row.address].filter(Boolean).join('|');
-    const key = String(row.stationCode || fallbackKey).trim();
-    if (key && seenStations.has(key)) continue;
-    if (key) seenStations.add(key);
-    uniqueRows.push(row);
-  }
-
-  const displayedRows = uniqueRows.slice(0, 3);
-
-  // 最近站點查詢（含真實座標）：以距離為主的回覆格式。
-  // isStale 時距離與地址仍可信（站點位置不會變），但不揭露機台狀態與容量。
-  const isNearestQuery = liveStationContext?.retrievalMode === 'postgres_iot_nearest';
-  if (isNearestQuery) {
-    const label = liveStationContext?.coords?.label || '';
-    const lines = [
-      label
-        ? `可可粉，離「${label}」最近的 ECOCO 站點是：`
-        : '可可粉，離你最近的 ECOCO 站點是：',
-    ];
-    displayedRows.forEach((row, index) => {
-      const name = row.stationName || row.stationCode || `站點 ${index + 1}`;
-      lines.push(
-        '',
-        `${index + 1}. ${name}${formatDistance(row.distanceKm)}`,
-        `地址：${row.address || '未知'}`
-      );
-      if (liveStationContext?.isStale !== true) {
-        lines.push(`目前狀態：機台${formatStatus(row.machineStatus || row.stationStatus)}、連線${formatStatus(row.lastConnectionStatus)}`);
-      }
-    });
-    if (liveStationContext?.isStale === true) {
-      lines.push('', '站點資料目前沒有在預期時間內更新，所以我暫時不能確認最新的機台狀態或回收槽容量，建議出發前先查看 ECOCO App。');
-    } else {
-      lines.push('', '如果你到現場看到的狀態和這裡不一樣，可以透過 App 或客服表單回報，我們會協助確認。');
-    }
-    return lines.join('\n');
-  }
-  const matchedStationCount = Number(liveStationContext?.matchedStationCount);
-  if (liveStationContext?.queryIntent?.asksCount && Number.isFinite(matchedStationCount)) {
-    const terms = Array.isArray(liveStationContext?.terms) ? liveStationContext.terms : [];
-    const location = terms[0] || '\u9019\u500b\u5730\u5340';
-    const lines = [
-      '\u53ef\u53ef\u7c89\uff0c\u6211\u6709\u5e6b\u4f60\u67e5\u8a62 ECOCO \u7ad9\u9ede\u8cc7\u6599\u3002',
-      '',
-      `\u4f9d\u76ee\u524d\u540c\u6b65\u5230\u7684\u7ad9\u9ede\u8cc7\u6599\uff0c\u300c${location}\u300d\u5171\u6709 ${matchedStationCount} \u500b ECOCO \u7ad9\u9ede\u3002`,
-    ];
-
-    if (displayedRows.length > 0) {
-      lines.push('', '\u5176\u4e2d\u5305\u542b\uff1a');
-      displayedRows.forEach((row, index) => {
-        const name = row.stationName || row.stationCode || `\u7ad9\u9ede ${index + 1}`;
-        lines.push(
-          `${index + 1}. ${name}`,
-          `\u5730\u5740\uff1a${row.address || '\u672a\u63d0\u4f9b'}`
-        );
-      });
-    }
-
-    if (liveStationContext?.isStale === true) {
-      lines.push(
-        '',
-        '\u7ad9\u9ede\u8cc7\u6599\u76ee\u524d\u6c92\u6709\u5728\u9810\u671f\u6642\u9593\u5167\u66f4\u65b0\uff0c\u6578\u91cf\u53ef\u80fd\u4e0d\u662f\u6700\u65b0\u72c0\u614b\u3002'
-      );
-    }
-    return lines.join('\n');
-  }
-
-  if (liveStationContext?.isStale === true) {
-    const lines = [
-      '可可粉，站點資料目前沒有在預期時間內更新，所以我暫時不能確認最新的機台狀態或回收槽容量。',
-      '',
-      '目前可以確認的站點位置：',
-    ];
-    displayedRows.forEach((row, index) => {
-      const name = row.stationName || row.stationCode || `站點 ${index + 1}`;
-      lines.push(
-        displayedRows.length > 1 ? `${index + 1}. ${name}` : name,
-        `地址：${row.address || '未知'}`
-      );
-    });
-    lines.push('', '建議出發前先查看 ECOCO App；若現場有異常，也可以透過客服表單回報，我們會協助確認。');
-    return lines.join('\n');
-  }
-
-  const lines = displayedRows.length > 1
-    ? ['可可粉，幫你找到幾個可能適合的 ECOCO 站點囉：']
-    : ['可可粉，幫你查到這個站點目前的狀況囉：'];
-  displayedRows.forEach((row, index) => {
-    const name = row.stationName || row.stationCode || `站點 ${index + 1}`;
-    lines.push(
-      '',
-      displayedRows.length > 1 ? `${index + 1}. ${name}` : name,
-      `地址：${row.address || '未知'}`,
-      '',
-      '目前狀態',
-      `機台：${formatStatus(row.machineStatus || row.stationStatus)}`,
-      `連線：${formatStatus(row.lastConnectionStatus)}`,
-      '',
-      '回收槽容量',
-      formatCapacity('第 1 槽', row.bin1Count, row.bin1MaxCapacity, row.bin1RemainCapacity),
-      formatCapacity('第 2 槽', row.bin2Count, row.bin2MaxCapacity, row.bin2RemainCapacity),
-    );
-  });
-
-  lines.push('', '如果你到現場看到的狀態和這裡不一樣，可以直接透過 App 或客服表單回報，我們會協助確認。');
-  return lines.join('\n');
-}
-
-function shouldUseDeterministicStationReply(question, classification = null, liveStationContext = null) {
-  const rows = Array.isArray(liveStationContext?.rows) ? liveStationContext.rows : [];
-  // 使用者傳了真實座標 = 明確的找站點意圖，不需要分類器同意。
-  if (liveStationContext?.retrievalMode === 'postgres_iot_nearest' && rows.length > 0) {
-    return true;
-  }
-  if (liveStationContext?.retrievalMode === 'postgres_iot_nearest_miss') {
-    return true;
-  }
-  if (classification?.category !== 'station_machine') return false;
-  // 「怎麼查詢站點」這類使用教學問題交給 RAG 回答，不走固定站點回覆。
-  if (liveStationContext?.queryIntent?.isHowTo === true) return false;
-  if (rows.length === 0) {
-    // Miss 回覆只在問題含有具體地點（行政區、地標、站碼）時才成立；
-    // terms 只剩「站點」「機台」這類通稱時，代表沒有可查的地點，應交給 RAG。
-    return liveStationContext?.retrievalMode === 'postgres_iot_miss'
-      && liveStationContext?.queryIntent?.hasLocationTerms === true
-      && Array.isArray(liveStationContext?.terms)
-      && liveStationContext.terms.length > 0;
-  }
-
-  const text = String(question || '').normalize('NFKC').replace(/\s+/g, '').toLowerCase();
-  const asksItemRule = /(可以投|能不能投|可不可以投|可以回收|能回收|收不收|能不能收)/.test(text)
-    && /(牛奶瓶|鮮奶瓶|奶瓶|紙盒|鋁箔包|玻璃|紙杯|塑膠袋|便當盒)/.test(text);
-
-  return !asksItemRule;
+async function persistChatArtifacts({ pool, trace, exchange }) {
+  const [, exchangeStored] = await Promise.all([
+    saveChatTrace(pool, trace),
+    storeChatExchange(exchange)
+      .then(() => true)
+      .catch(dbErr => {
+        console.error('DB conversation write error:', dbErr.message);
+        return false;
+      }),
+  ]);
+  return exchangeStored;
 }
 
 function createChatRouter({
@@ -623,30 +201,27 @@ function createChatRouter({
 
       if (classification?.directReply && classification.shouldUseRag === false) {
         const reply = stripKnowledgeGapMarker(classification.directReply);
-        await saveChatTrace(pool, {
-          sessionId,
-          channel: 'web',
-          question: userMsg.content,
-          rag,
-          latencyMs: Date.now() - traceStart,
-          questionClassification: classification,
-        });
-
-        try {
-          await storeChatExchange({
+        const exchangeStored = await persistChatArtifacts({
+          pool,
+          trace: {
+            sessionId,
+            channel: 'web',
+            question: userMsg.content,
+            rag,
+            latencyMs: Date.now() - traceStart,
+            questionClassification: classification,
+          },
+          exchange: {
             pool,
             sessionId,
             question: userMsg.content,
             reply,
             messageId,
             classification,
-          });
-        } catch (dbErr) {
-          console.error('DB conversation write error:', dbErr.message);
-          return res.json({ reply });
-        }
+          },
+        });
 
-        return res.json({ reply, messageId });
+        return res.json(exchangeStored ? { reply, messageId } : { reply });
       }
 
       rag = await retrieveKnowledgeForQuestion(userMsg.content, {
@@ -664,30 +239,29 @@ function createChatRouter({
         ? buildLiveStationStatusReply(rag.liveStationContext)
         : '';
       if (stationStatusReply) {
-        await saveChatTrace(pool, {
-          sessionId,
-          channel: 'web',
-          question: userMsg.content,
-          rag,
-          latencyMs: Date.now() - traceStart,
-          questionClassification: classification,
-        });
-
-        try {
-          await storeChatExchange({
+        const exchangeStored = await persistChatArtifacts({
+          pool,
+          trace: {
+            sessionId,
+            channel: 'web',
+            question: userMsg.content,
+            rag,
+            latencyMs: Date.now() - traceStart,
+            questionClassification: classification,
+          },
+          exchange: {
             pool,
             sessionId,
             question: userMsg.content,
             reply: stationStatusReply,
             messageId,
             classification,
-          });
-        } catch (dbErr) {
-          console.error('DB conversation write error:', dbErr.message);
-          return res.json({ reply: stationStatusReply });
-        }
+          },
+        });
 
-        return res.json({ reply: stationStatusReply, messageId });
+        return res.json(exchangeStored
+          ? { reply: stationStatusReply, messageId }
+          : { reply: stationStatusReply });
       }
       const runtimeGuardrails = buildRuntimeGuardrails(userMsg.content, rag);
       const response = await createMessageWithTimeout(client, {
@@ -708,18 +282,18 @@ function createChatRouter({
         console.warn(`Claude reply reached max_tokens: session=${sessionId}`);
       }
 
-      await saveChatTrace(pool, {
-        sessionId,
-        channel: 'web',
-        question: userMsg.content,
-        rag,
-        latencyMs: Date.now() - traceStart,
-        response,
-        questionClassification: classification,
-      });
-
-      try {
-        await storeChatExchange({
+      const exchangeStored = await persistChatArtifacts({
+        pool,
+        trace: {
+          sessionId,
+          channel: 'web',
+          question: userMsg.content,
+          rag,
+          latencyMs: Date.now() - traceStart,
+          response,
+          questionClassification: classification,
+        },
+        exchange: {
           pool,
           sessionId,
           question: userMsg.content,
@@ -727,13 +301,10 @@ function createChatRouter({
           messageId,
           gap,
           classification,
-        });
-      } catch (dbErr) {
-        console.error('DB conversation write error:', dbErr.message);
-        return res.json({ reply });
-      }
+        },
+      });
 
-      res.json({ reply, messageId });
+      res.json(exchangeStored ? { reply, messageId } : { reply });
     } catch (err) {
       console.error('Claude API error:', err.message);
       await saveChatTrace(pool, {
@@ -841,32 +412,14 @@ function createChatRouter({
 
 module.exports = {
   DEFAULT_WEB_CHAT_TIMEOUT_MS,
-  KNOWLEDGE_GAP_MACHINE_MARKER,
-  KNOWLEDGE_GAP_MARKERS,
   MAX_WEB_CHAT_TIMEOUT_MS,
-  WEB_SESSION_COOKIE_NAME,
-  WEB_SESSION_MAX_AGE_SECONDS,
-  attachLiveStationContext,
-  buildLiveStationStatusReply,
-  shouldUseDeterministicStationReply,
   createMessageWithTimeout,
-  createSignedSessionCookieValue,
   createChatRouter,
-  detectKnowledgeGap,
   FRIENDLY_AI_ERROR_REPLY,
-  getClientSessionId,
   getLatestUserMessage,
   getRequestCoords,
-  formatDistance,
-  getSafeSessionId,
   getWebChatTimeoutMs,
-  loadExchangeByMessageId,
-  loadServerConversationHistory,
-  normalizeModelMessages,
-  parseKnowledgeGapMeta,
-  resolveWebSession,
-  setWebSessionCookie,
+  persistChatArtifacts,
   storeChatExchange,
-  stripKnowledgeGapMarker,
   validateHistory,
 };

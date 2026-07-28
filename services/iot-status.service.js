@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const mysql = require('mysql2/promise');
 const stationQueryIntent = require('./station-query-intent.service');
+const { normalizeUnicodeText } = require('./text-normalization.service');
 
 const DEFAULT_LIMIT = 5;
 const MAX_LIMIT = 8;
@@ -28,11 +29,7 @@ function normalizeCoords(coords) {
 const DEFAULT_SNAPSHOT_PATH = path.join(__dirname, '..', 'data', 'iot-station-snapshot.json');
 
 function normalizeText(value) {
-  return String(value || '')
-    .normalize('NFKC')
-    .replace(/\p{Extended_Pictographic}/gu, '')
-    .replace(/\s+/g, '')
-    .trim();
+  return normalizeUnicodeText(value, { whitespace: 'remove' });
 }
 
 function getBooleanEnv(value, fallback = false) {
