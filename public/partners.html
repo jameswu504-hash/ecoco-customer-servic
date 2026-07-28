@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ECOCO B2B 合作夥伴</title>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;800&family=Space+Mono&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="partners.css?v=20260728-2" />
+  <link rel="stylesheet" href="partners.css?v=20260728-3" />
 </head>
 <body>
   <div class="login-overlay" id="loginOverlay">
@@ -146,10 +146,33 @@
           <div class="knowledge-list" id="knowledgeList"></div>
         </section>
 
-        <section class="workspace-section test-section">
+        <section class="workspace-section">
           <div class="section-heading">
             <div>
               <span class="section-index">03</span>
+              <h3>LINE 對話紀錄</h3>
+            </div>
+            <div class="conversation-controls">
+              <label for="conversationDays">顯示期間</label>
+              <select id="conversationDays">
+                <option value="7">最近 7 天</option>
+                <option value="30" selected>最近 30 天</option>
+                <option value="90">最近 90 天</option>
+              </select>
+              <button class="secondary-button" id="refreshConversationsBtn" type="button">更新紀錄</button>
+            </div>
+          </div>
+          <p class="conversation-summary" id="conversationSummary">真實 LINE 群組問答會自動寫入後台，並依台灣日期分組。</p>
+          <p class="form-error" id="conversationError" role="alert"></p>
+          <div class="conversation-log" id="conversationLog">
+            <div class="empty-row">尚未讀取 LINE 對話紀錄。</div>
+          </div>
+        </section>
+
+        <section class="workspace-section test-section">
+          <div class="section-heading">
+            <div>
+              <span class="section-index">04</span>
               <h3>LINE 分支測試</h3>
             </div>
             <span class="test-company-label" id="testCompanyLabel"></span>
@@ -189,6 +212,6 @@
     </form>
   </dialog>
 
-  <script src="partners.js?v=20260728-2" defer></script>
+  <script src="partners.js?v=20260728-3" defer></script>
 </body>
 </html>

@@ -17,6 +17,9 @@ const PARTNER_LINE_IMPORT_MAX_CHARS = 250_000;
 const PARTNER_LINE_IMPORT_CHUNK_CHARS = 6_000;
 const PARTNER_LINE_IMPORT_MAX_SECTIONS = 50;
 const PARTNER_COMPANY_CACHE_TTL_MS = 60 * 1000;
+const PARTNER_CONVERSATION_DEFAULT_DAYS = 30;
+const PARTNER_CONVERSATION_MAX_DAYS = 90;
+const PARTNER_CONVERSATION_MAX_ROWS = 2000;
 const PARTNER_UNBOUND_REPLY = '此 LINE 群組尚未綁定 ECOCO 合作夥伴。請由 ECOCO 管理者建立公司並產生一次性綁定碼。';
 const PARTNER_NO_DATA_REPLY = '目前沒有可供此群組回答的公司專屬資料，請聯絡 ECOCO 窗口協助確認。';
 const PARTNER_SCOPE_DENIED_REPLY = PARTNER_NO_DATA_REPLY;
@@ -566,6 +569,71 @@ function createPartnerService({
     return rows;
   }
 
+  async function listLineConversationDays(companyId, days = PARTNER_CONVERSATION_DEFAULT_DAYS) {
+    const requestedDays = Number(days);
+    const safeDays = Number.isFinite(requestedDays)
+      ? Math.min(Math.max(Math.floor(requestedDays), 1), PARTNER_CONVERSATION_MAX_DAYS)
+      : PARTNER_CONVERSATION_DEFAULT_DAYS;
+    const { rows } = await pool.query(
+      `SELECT
+         pc.id,
+         pc.line_group_id,
+         pc.session_id,
+         pc.role,
+         pc.content,
+         pc.timestamp,
+         TO_CHAR(pc.timestamp AT TIME ZONE 'Asia/Taipei', 'YYYY-MM-DD') AS conversation_day,
+         plg.label AS group_label,
+         plg.group_id_last4
+       FROM partner_conversations pc
+       JOIN partner_line_groups plg
+         ON plg.id = pc.line_group_id
+        AND plg.company_id = pc.company_id
+       WHERE pc.company_id = $1
+         AND pc.line_group_id IS NOT NULL
+         AND pc.timestamp >= NOW() - ($2::integer * INTERVAL '1 day')
+       ORDER BY pc.timestamp DESC, pc.id DESC
+       LIMIT $3`,
+      [Number(companyId), safeDays, PARTNER_CONVERSATION_MAX_ROWS]
+    );
+
+    const dayMap = new Map();
+    for (const row of rows) {
+      const date = String(row.conversation_day || '').trim();
+      if (!date) continue;
+      if (!dayMap.has(date)) {
+        dayMap.set(date, {
+          date,
+          messageCount: 0,
+          messages: [],
+        });
+      }
+      const day = dayMap.get(date);
+      day.messageCount += 1;
+      day.messages.push({
+        id: row.id,
+        lineGroupId: row.line_group_id,
+        sessionId: row.session_id,
+        role: row.role,
+        content: row.content,
+        timestamp: row.timestamp,
+        groupLabel: row.group_label || `LINE 群組 • ${row.group_id_last4 || '----'}`,
+      });
+    }
+
+    const groupedDays = [...dayMap.values()].map(day => ({
+      ...day,
+      messages: day.messages.reverse(),
+    }));
+    return {
+      days: groupedDays,
+      selectedDays: safeDays,
+      totalDays: groupedDays.length,
+      totalMessages: groupedDays.reduce((sum, day) => sum + day.messageCount, 0),
+      truncated: rows.length >= PARTNER_CONVERSATION_MAX_ROWS,
+    };
+  }
+
   async function addKnowledge(companyId, { category, content }) {
     const company = await getCompany(companyId);
     if (!company) return null;
@@ -932,6 +1000,7 @@ function createPartnerService({
     importLineChatKnowledge,
     listCompanies,
     listKnowledge,
+    listLineConversationDays,
     listLineGroups,
     resolveLineGroup,
     retrievePartnerKnowledge,

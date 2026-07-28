@@ -49,6 +49,7 @@ test('B2B schema separates companies, groups, knowledge and conversations', () =
   assert.match(schema, /partner_knowledge_sections[\s\S]*company_id\s+INTEGER NOT NULL/);
   assert.match(schema, /partner_conversations[\s\S]*company_id\s+INTEGER NOT NULL/);
   assert.match(schema, /group_key\s+TEXT NOT NULL UNIQUE/);
+  assert.match(schema, /idx_partner_conversations_company_day[\s\S]*WHERE line_group_id IS NOT NULL/);
   assert.doesNotMatch(schema, /\bgroup_id\s+TEXT/);
 });
 
@@ -93,6 +94,69 @@ test('partner retrieval always scopes SQL by company_id', async () => {
   assert.equal(queries.length, 1);
   assert.match(queries[0].sql, /WHERE company_id = \$1/);
   assert.equal(queries[0].params[0], 27);
+});
+
+test('partner LINE conversation logs are company-scoped and grouped by Taipei day', async () => {
+  const queries = [];
+  const pool = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      return {
+        rows: [
+          {
+            id: 4,
+            line_group_id: 8,
+            session_id: 'line_group_a',
+            role: 'assistant',
+            content: '第二天回覆',
+            timestamp: '2026-07-28T01:05:00.000Z',
+            conversation_day: '2026-07-28',
+            group_label: '全家測試群',
+            group_id_last4: '1234',
+          },
+          {
+            id: 3,
+            line_group_id: 8,
+            session_id: 'line_group_a',
+            role: 'user',
+            content: '第二天問題',
+            timestamp: '2026-07-28T01:04:00.000Z',
+            conversation_day: '2026-07-28',
+            group_label: '全家測試群',
+            group_id_last4: '1234',
+          },
+          {
+            id: 2,
+            line_group_id: 8,
+            session_id: 'line_group_a',
+            role: 'assistant',
+            content: '第一天回覆',
+            timestamp: '2026-07-27T02:05:00.000Z',
+            conversation_day: '2026-07-27',
+            group_label: '',
+            group_id_last4: '1234',
+          },
+        ],
+      };
+    },
+  };
+  const service = createService(pool);
+
+  const result = await service.listLineConversationDays(7, 999);
+
+  assert.equal(result.selectedDays, 90);
+  assert.equal(result.totalDays, 2);
+  assert.equal(result.totalMessages, 3);
+  assert.equal(result.days[0].date, '2026-07-28');
+  assert.deepEqual(
+    result.days[0].messages.map(message => message.role),
+    ['user', 'assistant']
+  );
+  assert.equal(result.days[1].messages[0].groupLabel, 'LINE 群組 • 1234');
+  assert.match(queries[0].sql, /WHERE pc\.company_id = \$1/);
+  assert.match(queries[0].sql, /pc\.line_group_id IS NOT NULL/);
+  assert.match(queries[0].sql, /AT TIME ZONE 'Asia\/Taipei'/);
+  assert.deepEqual(queries[0].params.slice(0, 2), [7, 90]);
 });
 
 test('partner retrieval turns natural-language company questions into useful search terms', async () => {
@@ -538,8 +602,11 @@ test('partner admin page exposes company-scoped test chat behind admin API', () 
   const routes = fs.readFileSync(path.join(__dirname, '..', 'routes', 'partners.routes.js'), 'utf8');
 
   assert.match(html, /LINE 分支測試/);
+  assert.match(html, /LINE 對話紀錄/);
   assert.match(html, /尚未綁定真實 LINE 群組，仍可先使用下方測試功能|testChat/);
   assert.match(js, /\/api\/partners\/\$\{company\.id\}\/test-chat/);
+  assert.match(js, /\/api\/partners\/\$\{companyId\}\/conversations\?days=\$\{days\}/);
+  assert.match(js, /conversation-day/);
   assert.match(html, /lineTxtFileInput/);
   assert.match(html, /lineImportPreservePersonalData/);
   assert.match(js, /file\.text\(\)/);
@@ -549,6 +616,7 @@ test('partner admin page exposes company-scoped test chat behind admin API', () 
   assert.match(js, /knowledge-full-content/);
   assert.match(js, /fullContent\.textContent = String\(item\.content/);
   assert.match(routes, /knowledge\/import-line/);
+  assert.match(routes, /:companyId\/conversations/);
   assert.match(js, /x-admin-key/);
   assert.match(routes, /router\.use\(requireAdminKey\)/);
 });
