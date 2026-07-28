@@ -336,6 +336,32 @@ function getLocationAliasTerms(text) {
   return [...new Set(terms)];
 }
 
+function getStoreNameTerms(value) {
+  const text = normalizeStationQueryText(value);
+  let candidate = text;
+  const administrativeTerms = [
+    ...getLocationAliasTerms(text),
+    ...getAdministrativeAreaTerms(text),
+  ]
+    .map(normalizeStationQueryText)
+    .sort((a, b) => b.length - a.length);
+
+  for (const term of administrativeTerms) {
+    if (candidate.startsWith(term)) {
+      candidate = candidate.slice(term.length);
+      break;
+    }
+  }
+
+  candidate = stripCommonStationWords(candidate);
+  const match = candidate.match(/^([\u4e00-\u9fffA-Za-z0-9]{2,24})(\u9580\u5e02|\u5e97)$/);
+  if (!match || /^(?:\u54ea\u4e9b|\u54ea\u5bb6|\u54ea\u9593|\u4ec0\u9ebc|\u4ec0\u4e48|\u6240\u6709|\u6709\u5e7e)/.test(match[1])) {
+    return [];
+  }
+
+  return [match[1], `${match[1]}${match[2]}`];
+}
+
 function isStationDataQuestion(question) {
   const text = normalizeStationQueryText(question);
   if (!text) return false;
@@ -350,9 +376,11 @@ function isStationDataQuestion(question) {
   const hasKnownLocation = getLocationAliasTerms(text).length > 0
     || getAdministrativeAreaTerms(text).length > 0;
   const hasLikelyEntity = hasLikelyStationEntity(text);
+  const hasNamedStore = getStoreNameTerms(text).length > 0;
 
   if (hasStationResource && (hasLiveStatus || hasNearby || asksLocation || asksCount || hasKnownLocation)) return true;
   if (hasLiveStatus && hasLikelyEntity) return true;
+  if (hasKnownLocation && hasNamedStore) return true;
   if (hasKnownLocation && (hasNearby || asksLocation) && (hasStationResource || hasRecyclePlace)) return true;
   if ((hasNearby || asksLocation) && hasRecyclePlace && hasKnownLocation) return true;
 
@@ -440,6 +468,7 @@ function buildStationSearchTerms(question) {
 
   for (const match of text.matchAll(/es\d{3,6}(?:_[a-z0-9]+)?/gi)) addTerm(terms, match[0]);
   for (const match of text.matchAll(/\b\d{8,22}\b/g)) addTerm(terms, match[0]);
+  getStoreNameTerms(text).forEach(term => addTerm(terms, term));
   getLocationAliasTerms(text).forEach(term => addTerm(terms, term));
   getAdministrativeAreaTerms(text).forEach(term => addTerm(terms, term));
 
@@ -469,6 +498,7 @@ module.exports = {
   buildStationSearchTerms,
   getAdministrativeAreaTerms,
   getLocationAliasTerms,
+  getStoreNameTerms,
   hasLikelyStationEntity,
   hasMeaningfulLocationTerms,
   isStationDataQuestion,

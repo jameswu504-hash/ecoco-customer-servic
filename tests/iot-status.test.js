@@ -110,6 +110,18 @@ test('city shorthand and station count questions use normalized location terms',
   }
 });
 
+test('district plus store name queries route to live station lookup with a specific store term', () => {
+  const question = '\u53f0\u5357\u6771\u5340 \u5d07\u5b78\u5e97';
+  const classification = classifyQuestion(question);
+  const terms = buildStationSearchTerms(question);
+
+  assert.equal(classification.category, 'station_machine');
+  assert.equal(shouldUseLiveStationContext(question, classification), true);
+  assert.equal(terms[0], '\u5d07\u5b78');
+  assert.ok(terms.includes('\u5d07\u5b78\u5e97'));
+  assert.ok(terms.includes('\u6771\u5340'));
+});
+
 test('nearby recycling questions are routed to live station lookup', () => {
   for (const question of ['成大附近哪裡可以回收', '成功大學附近有 ECOCO 嗎']) {
     const classification = classifyQuestion(question);
