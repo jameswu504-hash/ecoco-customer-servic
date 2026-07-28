@@ -13,10 +13,15 @@ const { saveChatTrace } = require('./trace.service');
 
 const PARTNER_BINDING_CODE_TTL_HOURS = 24;
 const PARTNER_MAX_KNOWLEDGE_CHARS = 20_000;
+const PARTNER_LINE_IMPORT_MAX_CHARS = 250_000;
+const PARTNER_LINE_IMPORT_CHUNK_CHARS = 6_000;
+const PARTNER_LINE_IMPORT_MAX_SECTIONS = 50;
 const PARTNER_COMPANY_CACHE_TTL_MS = 60 * 1000;
 const PARTNER_UNBOUND_REPLY = '此 LINE 群組尚未綁定 ECOCO 合作夥伴。請由 ECOCO 管理者建立公司並產生一次性綁定碼。';
 const PARTNER_NO_DATA_REPLY = '目前沒有可供此群組回答的公司專屬資料，請聯絡 ECOCO 窗口協助確認。';
 const PARTNER_SCOPE_DENIED_REPLY = PARTNER_NO_DATA_REPLY;
+const LINE_EXPORT_DATE_PATTERN = /^(\d{4})\/(\d{1,2})\/(\d{1,2})(?:（[^）]*）)?\s*$/;
+const LINE_EXPORT_ATTACHMENT_PATTERN = /^\d{1,2}:\d{2}\t[^\t]+\t\[(?:照片|貼圖|檔案|影片|語音訊息)\]\s*$/;
 
 function normalizePartnerSlug(value) {
   return String(value || '')
@@ -84,6 +89,151 @@ function buildPartnerKnowledgeContext(company, rows = [], sharedContext = '') {
     privateContext ? `## ${company.name} 專屬資料\n${privateContext}` : '',
     sharedContext ? `## ECOCO 共用資料\n${sharedContext}` : '',
   ].filter(Boolean).join('\n\n');
+}
+
+function normalizeLineImportSourceName(value) {
+  const filename = String(value || '')
+    .split(/[\\/]/)
+    .pop()
+    .replace(/\.txt$/i, '')
+    .replace(/^\[LINE\]\s*/i, '');
+  return anonymizeText(filename)
+    .normalize('NFKC')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80) || 'LINE 聊天紀錄';
+}
+
+function parseLineExportDate(line) {
+  const match = String(line || '').match(LINE_EXPORT_DATE_PATTERN);
+  if (!match) return null;
+  return {
+    display: `${match[1]}-${String(match[2]).padStart(2, '0')}-${String(match[3]).padStart(2, '0')}`,
+    raw: String(line).trim(),
+  };
+}
+
+function splitTextByLimit(text, maxChars) {
+  const pieces = [];
+  let remaining = String(text || '').trim();
+  while (remaining.length > maxChars) {
+    let cutAt = remaining.lastIndexOf('\n', maxChars);
+    if (cutAt < Math.floor(maxChars * 0.5)) cutAt = maxChars;
+    pieces.push(remaining.slice(0, cutAt).trim());
+    remaining = remaining.slice(cutAt).trim();
+  }
+  if (remaining) pieces.push(remaining);
+  return pieces;
+}
+
+function buildLineChatKnowledgeSections({ sourceName, content }) {
+  const rawContent = String(content || '').replace(/^\uFEFF/, '').trim();
+  if (!rawContent) throw new Error('LINE TXT content is required.');
+  if (rawContent.length > PARTNER_LINE_IMPORT_MAX_CHARS) {
+    throw new Error(`LINE TXT content must be under ${PARTNER_LINE_IMPORT_MAX_CHARS} characters.`);
+  }
+
+  const safeSourceName = normalizeLineImportSourceName(sourceName);
+  const safeContent = anonymizeText(rawContent).replace(/\r\n?/g, '\n');
+  const cleanedLines = [];
+  let ignoredAttachmentCount = 0;
+  let previousBlank = false;
+
+  for (const rawLine of safeContent.split('\n')) {
+    const line = rawLine.replace(/[ \t]+$/g, '');
+    if (/^\[LINE\].*聊天記錄\s*$/.test(line) || /^儲存日期[:：]/.test(line)) continue;
+    if (LINE_EXPORT_ATTACHMENT_PATTERN.test(line)) {
+      ignoredAttachmentCount += 1;
+      continue;
+    }
+    const isBlank = !line.trim();
+    if (isBlank && previousBlank) continue;
+    cleanedLines.push(line);
+    previousBlank = isBlank;
+  }
+
+  const blocks = [];
+  let currentDate = null;
+  let currentLines = [];
+  const flushBlock = () => {
+    const body = currentLines.join('\n').trim();
+    if (body) blocks.push({ date: currentDate, body });
+    currentLines = [];
+  };
+
+  for (const line of cleanedLines) {
+    const parsedDate = parseLineExportDate(line);
+    if (parsedDate) {
+      flushBlock();
+      currentDate = parsedDate;
+      continue;
+    }
+    currentLines.push(line);
+  }
+  flushBlock();
+
+  if (blocks.length === 0) {
+    throw new Error('LINE TXT does not contain usable chat messages.');
+  }
+
+  const contentBudget = PARTNER_LINE_IMPORT_CHUNK_CHARS - 320;
+  const atoms = [];
+  for (const block of blocks) {
+    const dateLine = block.date?.raw || '未標日期';
+    for (const piece of splitTextByLimit(block.body, contentBudget - dateLine.length - 1)) {
+      atoms.push({
+        startDate: block.date?.display || '',
+        endDate: block.date?.display || '',
+        text: `${dateLine}\n${piece}`,
+      });
+    }
+  }
+
+  const groups = [];
+  let currentGroup = null;
+  for (const atom of atoms) {
+    const candidateLength = currentGroup
+      ? currentGroup.text.length + 2 + atom.text.length
+      : atom.text.length;
+    if (!currentGroup || candidateLength > contentBudget) {
+      currentGroup = { ...atom };
+      groups.push(currentGroup);
+      continue;
+    }
+    currentGroup.text += `\n\n${atom.text}`;
+    currentGroup.endDate = atom.endDate || currentGroup.endDate;
+  }
+
+  if (groups.length > PARTNER_LINE_IMPORT_MAX_SECTIONS) {
+    throw new Error(`LINE TXT creates more than ${PARTNER_LINE_IMPORT_MAX_SECTIONS} knowledge sections.`);
+  }
+
+  const guidance = [
+    `[匯入來源] ${safeSourceName}`,
+    '[資料性質] LINE 歷史聊天紀錄。回答時以較新日期為優先；報價、活動期限、門市或機台狀態，以及尚未明確確認的事項，不可直接視為目前承諾，必要時請 ECOCO 窗口確認。',
+  ].join('\n');
+
+  const sections = groups.map((group, index) => {
+    const dateRange = group.startDate
+      ? (group.endDate && group.endDate !== group.startDate
+        ? `${group.startDate}~${group.endDate}`
+        : group.startDate)
+      : '未標日期';
+    const sectionContent = `${guidance}\n\n${group.text}`.trim();
+    const contentHash = crypto.createHash('sha256').update(sectionContent).digest('hex').slice(0, 10);
+    return {
+      category: `LINE 歷史｜${safeSourceName}｜${dateRange}｜${contentHash}`.slice(0, 160),
+      content: sectionContent,
+      sortIndex: index,
+    };
+  });
+
+  return {
+    sourceName: safeSourceName,
+    sourceCharacters: rawContent.length,
+    ignoredAttachmentCount,
+    sections,
+  };
 }
 
 function createPartnerService({
@@ -375,6 +525,71 @@ function createPartnerService({
     return rows[0];
   }
 
+  async function importLineChatKnowledge(companyId, payload = {}) {
+    const company = await getCompany(companyId);
+    if (!company) return null;
+    const parsed = buildLineChatKnowledgeSections(payload);
+    const db = await pool.connect();
+
+    try {
+      await db.query('BEGIN');
+      await db.query(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [`partner_knowledge_import:${company.id}`]
+      );
+      const { rows: existingRows } = await db.query(
+        `SELECT category
+         FROM partner_knowledge_sections
+         WHERE company_id = $1 AND archived_at IS NULL`,
+        [company.id]
+      );
+      const existingCategories = new Set(existingRows.map(row => row.category));
+      const { rows: sortRows } = await db.query(
+        `SELECT COALESCE(MAX(sort_order), -1) + 1 AS next
+         FROM partner_knowledge_sections
+         WHERE company_id = $1`,
+        [company.id]
+      );
+      let nextSortOrder = Number(sortRows[0]?.next || 0);
+      const createdSections = [];
+      let skippedDuplicateCount = 0;
+
+      for (const section of parsed.sections) {
+        if (existingCategories.has(section.category)) {
+          skippedDuplicateCount += 1;
+          continue;
+        }
+        const { rows } = await db.query(
+          `INSERT INTO partner_knowledge_sections
+            (company_id, category, content, sort_order, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, NOW(), NOW())
+           RETURNING id, company_id, category, content, sort_order, created_at, updated_at`,
+          [company.id, section.category, section.content, nextSortOrder]
+        );
+        createdSections.push(rows[0]);
+        existingCategories.add(section.category);
+        nextSortOrder += 1;
+      }
+
+      await db.query('COMMIT');
+      return {
+        company,
+        sourceName: parsed.sourceName,
+        sourceCharacters: parsed.sourceCharacters,
+        ignoredAttachmentCount: parsed.ignoredAttachmentCount,
+        totalSectionCount: parsed.sections.length,
+        createdCount: createdSections.length,
+        skippedDuplicateCount,
+        createdSections,
+      };
+    } catch (err) {
+      await db.query('ROLLBACK');
+      throw err;
+    } finally {
+      db.release();
+    }
+  }
+
   async function retrievePartnerKnowledge(companyId, question) {
     const terms = buildSearchTerms(question)
       .map(term => String(term || '').trim())
@@ -617,6 +832,7 @@ function createPartnerService({
     createCompany,
     generateBindingCode,
     getCompany,
+    importLineChatKnowledge,
     listCompanies,
     listKnowledge,
     listLineGroups,
@@ -630,10 +846,14 @@ function createPartnerService({
 module.exports = {
   PARTNER_BINDING_CODE_TTL_HOURS,
   PARTNER_COMPANY_CACHE_TTL_MS,
+  PARTNER_LINE_IMPORT_CHUNK_CHARS,
+  PARTNER_LINE_IMPORT_MAX_CHARS,
+  PARTNER_LINE_IMPORT_MAX_SECTIONS,
   PARTNER_MAX_KNOWLEDGE_CHARS,
   PARTNER_NO_DATA_REPLY,
   PARTNER_SCOPE_DENIED_REPLY,
   PARTNER_UNBOUND_REPLY,
+  buildLineChatKnowledgeSections,
   buildPartnerKnowledgeContext,
   createPartnerService,
   generatePartnerBindingCode,

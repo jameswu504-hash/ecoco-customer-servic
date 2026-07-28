@@ -112,6 +112,42 @@ function createPartnersRouter({ partnerService, requireAdminKey, pool }) {
     }
   }));
 
+  router.post('/:companyId/knowledge/import-line', asyncHandler(async (req, res) => {
+    try {
+      const result = await partnerService.importLineChatKnowledge(
+        req.params.companyId,
+        req.body || {}
+      );
+      if (!result) return res.status(404).json({ error: 'Partner company not found.' });
+      await saveAdminAudit(pool, {
+        action: 'partner_line_knowledge_imported',
+        targetType: 'partner_company',
+        targetId: String(result.company.id),
+        details: {
+          sourceName: result.sourceName,
+          sourceCharacters: result.sourceCharacters,
+          totalSectionCount: result.totalSectionCount,
+          createdCount: result.createdCount,
+          skippedDuplicateCount: result.skippedDuplicateCount,
+          ignoredAttachmentCount: result.ignoredAttachmentCount,
+        },
+      });
+      res.status(result.createdCount > 0 ? 201 : 200).json({
+        sourceName: result.sourceName,
+        sourceCharacters: result.sourceCharacters,
+        totalSectionCount: result.totalSectionCount,
+        createdCount: result.createdCount,
+        skippedDuplicateCount: result.skippedDuplicateCount,
+        ignoredAttachmentCount: result.ignoredAttachmentCount,
+      });
+    } catch (err) {
+      if (/required|must be under|does not contain usable|creates more than/i.test(err.message)) {
+        return res.status(400).json({ error: err.message });
+      }
+      throw err;
+    }
+  }));
+
   router.post('/:companyId/test-chat', asyncHandler(async (req, res) => {
     const question = String(req.body?.question || '').trim();
     if (!question) return res.status(400).json({ error: 'Question is required.' });

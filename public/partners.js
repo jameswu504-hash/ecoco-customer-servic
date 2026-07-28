@@ -3,7 +3,11 @@ const partnerState = {
   selectedCompanyId: null,
   detail: null,
   testSessionId: '',
+  pendingLineImport: null,
 };
+
+const LINE_TXT_MAX_CHARACTERS = 250000;
+const LINE_TXT_MAX_BYTES = 1000000;
 
 function getAdminKey() {
   return sessionStorage.getItem('adminKey') || '';
@@ -200,6 +204,7 @@ async function loadCompanyDetail(companyId) {
 async function selectCompany(companyId) {
   if (Number(companyId) === Number(partnerState.selectedCompanyId)) return;
   partnerState.testSessionId = '';
+  clearLineImport();
   document.getElementById('bindingResult').hidden = true;
   const chat = document.getElementById('testChat');
   chat.replaceChildren();
@@ -331,6 +336,99 @@ async function addKnowledge(event) {
   }
 }
 
+function clearLineImport() {
+  partnerState.pendingLineImport = null;
+  const input = document.getElementById('lineTxtFileInput');
+  const panel = document.getElementById('lineImportPanel');
+  const confirmButton = document.getElementById('confirmLineImportBtn');
+  if (input) input.value = '';
+  if (panel) panel.hidden = true;
+  if (confirmButton) confirmButton.disabled = false;
+  const error = document.getElementById('lineImportError');
+  if (error) error.textContent = '';
+}
+
+function openLineTxtPicker() {
+  const input = document.getElementById('lineTxtFileInput');
+  input.value = '';
+  input.click();
+}
+
+async function prepareLineTxtImport(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const panel = document.getElementById('lineImportPanel');
+  const error = document.getElementById('lineImportError');
+  const summary = document.getElementById('lineImportSummary');
+  const confirmButton = document.getElementById('confirmLineImportBtn');
+  document.getElementById('lineImportFileName').textContent = file.name;
+  panel.hidden = false;
+  error.textContent = '';
+  summary.textContent = '讀取檔案中...';
+  confirmButton.textContent = '開始匯入';
+  confirmButton.disabled = false;
+  partnerState.pendingLineImport = null;
+
+  try {
+    if (!file.name.toLowerCase().endsWith('.txt')) {
+      throw new Error('請選擇 LINE 匯出的 TXT 檔。');
+    }
+    if (file.size > LINE_TXT_MAX_BYTES) {
+      throw new Error('TXT 檔案過大，請控制在 1 MB 以內。');
+    }
+    const content = await file.text();
+    if (!content.trim()) throw new Error('TXT 檔案沒有內容。');
+    if (content.length > LINE_TXT_MAX_CHARACTERS) {
+      throw new Error(`TXT 內容需少於 ${LINE_TXT_MAX_CHARACTERS.toLocaleString('zh-TW')} 字。`);
+    }
+    partnerState.pendingLineImport = {
+      sourceName: file.name,
+      content,
+    };
+    summary.textContent = `${content.length.toLocaleString('zh-TW')} 字，系統會自動去識別、移除附件占位並切成多筆公司資料。`;
+  } catch (err) {
+    summary.textContent = '';
+    error.textContent = err.message;
+    confirmButton.disabled = true;
+  }
+}
+
+async function importLineTxt() {
+  const company = partnerState.detail?.company;
+  const pending = partnerState.pendingLineImport;
+  if (!company || !pending) return;
+  const button = document.getElementById('confirmLineImportBtn');
+  const error = document.getElementById('lineImportError');
+  const summary = document.getElementById('lineImportSummary');
+  let succeeded = false;
+  error.textContent = '';
+  setBusy(button, true, '匯入中...');
+
+  try {
+    const result = await partnerFetch(`/api/partners/${company.id}/knowledge/import-line`, {
+      method: 'POST',
+      body: JSON.stringify(pending),
+    });
+    partnerState.pendingLineImport = null;
+    document.getElementById('lineTxtFileInput').value = '';
+    summary.textContent = [
+      `完成：新增 ${result.createdCount} 筆`,
+      `略過 ${result.skippedDuplicateCount} 筆重複`,
+      `忽略 ${result.ignoredAttachmentCount} 個附件占位`,
+    ].join('；');
+    succeeded = true;
+    await loadCompanies(false);
+  } catch (err) {
+    error.textContent = err.message;
+  } finally {
+    setBusy(button, false);
+    if (succeeded) {
+      button.textContent = '匯入完成';
+      button.disabled = true;
+    }
+  }
+}
+
 function appendTestMessage(role, text) {
   const chat = document.getElementById('testChat');
   const message = document.createElement('div');
@@ -382,6 +480,10 @@ function bindEvents() {
   document.getElementById('generateBindingCodeBtn').addEventListener('click', generateBindingCode);
   document.getElementById('copyBindingCodeBtn').addEventListener('click', copyBindingCode);
   document.getElementById('knowledgeForm').addEventListener('submit', addKnowledge);
+  document.getElementById('selectLineTxtBtn').addEventListener('click', openLineTxtPicker);
+  document.getElementById('lineTxtFileInput').addEventListener('change', prepareLineTxtImport);
+  document.getElementById('cancelLineImportBtn').addEventListener('click', clearLineImport);
+  document.getElementById('confirmLineImportBtn').addEventListener('click', importLineTxt);
   document.getElementById('testForm').addEventListener('submit', sendTestQuestion);
   document.getElementById('refreshBtn').addEventListener('click', () => loadCompanies(false));
 }

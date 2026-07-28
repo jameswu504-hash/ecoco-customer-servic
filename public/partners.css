@@ -475,6 +475,47 @@ button:disabled {
   font-size: 13px;
 }
 
+.line-import-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 20px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.line-import-panel > div:first-child {
+  min-width: 0;
+}
+
+.line-import-panel strong,
+.line-import-panel small,
+.line-import-panel .form-error {
+  display: block;
+}
+
+.line-import-panel strong {
+  overflow-wrap: anywhere;
+}
+
+.line-import-panel small {
+  margin-top: 5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.line-import-panel .form-error {
+  margin-top: 5px;
+}
+
+.line-import-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
 .knowledge-form {
   display: grid;
   grid-template-columns: minmax(180px, 0.35fr) minmax(0, 1fr);
@@ -710,6 +751,15 @@ dialog::backdrop {
   .knowledge-form,
   .test-form {
     grid-template-columns: 1fr;
+  }
+
+  .line-import-panel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .line-import-actions {
+    justify-content: flex-end;
   }
 
   .chat-message {

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ECOCO B2B 合作夥伴</title>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;800&family=Space+Mono&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="partners.css?v=20260727" />
+  <link rel="stylesheet" href="partners.css?v=20260728" />
 </head>
 <body>
   <div class="login-overlay" id="loginOverlay">
@@ -111,6 +111,19 @@
               <span class="section-index">02</span>
               <h3>公司專屬資料</h3>
             </div>
+            <button class="secondary-button" id="selectLineTxtBtn" type="button">匯入 LINE TXT</button>
+          </div>
+          <input id="lineTxtFileInput" type="file" accept=".txt,text/plain" hidden />
+          <div class="line-import-panel" id="lineImportPanel" hidden>
+            <div>
+              <strong id="lineImportFileName">尚未選擇檔案</strong>
+              <small id="lineImportSummary"></small>
+              <span class="form-error" id="lineImportError" role="alert"></span>
+            </div>
+            <div class="line-import-actions">
+              <button class="secondary-button" id="cancelLineImportBtn" type="button">取消</button>
+              <button id="confirmLineImportBtn" type="button">開始匯入</button>
+            </div>
           </div>
           <form class="knowledge-form" id="knowledgeForm">
             <label>
@@ -172,6 +185,6 @@
     </form>
   </dialog>
 
-  <script src="partners.js?v=20260727" defer></script>
+  <script src="partners.js?v=20260728" defer></script>
 </body>
 </html>

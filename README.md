@@ -47,7 +47,7 @@ flowchart LR
 - 支援 pgvector / embedding 語意檢索；若 OpenAI embedding 失敗，會降級為關鍵字檢索。
 - 對話、評分與知識缺口會寫入 PostgreSQL。
 - LINE Messaging API Webhook 已串接；一對一訊息走 B2C，已綁定群組走公司隔離的 B2B 分支。
-- B2B 管理頁可在尚未綁定真實 LINE 群組前，先建立公司、加入測試資料與模擬問答。
+- B2B 管理頁可在尚未綁定真實 LINE 群組前，先建立公司、手動新增資料或批次匯入 LINE 聊天 TXT，並模擬公司隔離後的問答。
 - GitHub Actions 為目前正式維運自動化方式，負責 CI、知識庫備份與每週 AI 維運分析。
 
 ## 系統架構

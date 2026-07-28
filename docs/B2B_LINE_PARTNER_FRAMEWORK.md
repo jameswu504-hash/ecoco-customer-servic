@@ -49,7 +49,7 @@ flowchart TD
 1. 開啟 `https://ecoco-customer-servic.onrender.com/partners.html`。
 2. 使用現有 `ADMIN_KEY` 登入。
 3. 建立一間測試公司。
-4. 在「公司專屬資料」新增幾筆臨時內容。
+4. 在「公司專屬資料」手動新增內容，或直接匯入 LINE 匯出的 `.txt` 聊天紀錄。
 5. 在「LINE 分支測試」輸入問題。
 
 此測試直接使用所選公司的 `company_id`，不用先建立真實 LINE 群組，但走的是同一套公司隔離、RAG 與 Claude 回覆服務。
@@ -76,6 +76,20 @@ flowchart TD
 
 綁定碼只能使用一次；重新產生時，同公司的舊未使用代碼會立即失效。
 
+## 快速匯入公司聊天紀錄
+
+管理者可在公司頁按「匯入 LINE TXT」，一次選擇 LINE 匯出的完整聊天 `.txt`。不需要手動拆成 20,000 字一筆，後端會：
+
+1. 限制單一來源檔最多 250,000 字。
+2. 移除匯出檔標頭與純照片、貼圖、檔案、影片、語音訊息占位。
+3. 使用既有隱私處理遮蔽電話、Email 與長編號等敏感內容。
+4. 依聊天日期邊界切成約 6,000 字的公司專屬資料。
+5. 在同一筆資料庫交易內寫入，並略過內容相同的重複分段。
+
+手動新增 API 仍保留每筆 20,000 字上限。這是單筆知識的防護，不是公司總資料量上限；自動匯入會建立多筆資料，因此公司可以累積遠超過 20,000 字。
+
+LINE 聊天屬於歷史紀錄，不等同整理完成的 SOP。匯入內容會附上日期與使用規則：回答時以較新日期優先；報價、活動期限、門市或機台狀態，以及尚未明確確認的事項，不得直接視為目前承諾，必要時需請 ECOCO 窗口確認。
+
 ## 管理 API
 
 所有 API 都需要 `x-admin-key`：
@@ -88,6 +102,7 @@ flowchart TD
 | `PATCH` | `/api/partners/:companyId/status` | 啟用或停用公司 |
 | `POST` | `/api/partners/:companyId/binding-code` | 產生一次性綁定碼 |
 | `POST` | `/api/partners/:companyId/knowledge` | 新增公司專屬資料 |
+| `POST` | `/api/partners/:companyId/knowledge/import-line` | 去識別、分段並批次匯入 LINE TXT |
 | `POST` | `/api/partners/:companyId/test-chat` | 模擬該公司 LINE 問答 |
 
 ## 目前範圍
@@ -99,6 +114,7 @@ flowchart TD
 - 未綁定群組拒絕存取。
 - 管理者模擬測試。
 - 跨公司問題的後端拒答。
+- LINE 聊天 TXT 去識別、自動分段與重複匯入防護。
 
 後續有正式合作資料時再做：
 

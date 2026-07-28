@@ -7,8 +7,10 @@ const { SCHEMA } = require('../db/schema');
 const { buildLineSessionId } = require('../routes/line.routes');
 const { getPartnerTestSessionId } = require('../routes/partners.routes');
 const {
+  PARTNER_LINE_IMPORT_CHUNK_CHARS,
   PARTNER_NO_DATA_REPLY,
   PARTNER_SCOPE_DENIED_REPLY,
+  buildLineChatKnowledgeSections,
   buildPartnerKnowledgeContext,
   createPartnerService,
   generatePartnerBindingCode,
@@ -203,6 +205,101 @@ test('partner knowledge is anonymized before database writes', async () => {
   assert.equal(insert.params[2].includes(memberNumber), false);
 });
 
+test('LINE TXT imports are anonymized, cleaned and split at date boundaries', () => {
+  const phone = ['0912', '345', '678'].join('-');
+  const memberNumber = ['1234', '5678'].join('');
+  const repeatedMessage = '門市設備、活動排程與回收合作細節請依最新確認內容辦理。'.repeat(300);
+  const parsed = buildLineChatKnowledgeSections({
+    sourceName: '[LINE] ECOCO x 測試公司 全循環的聊天.txt',
+    content: [
+      '[LINE] ECOCO x 測試公司 全循環的聊天記錄',
+      '儲存日期：2026/7/28 10:24',
+      '',
+      '2026/7/26（週日）',
+      `09:00\t測試窗口\t聯絡電話 ${phone}，會員編號 ${memberNumber}`,
+      '09:01\t測試窗口\t[照片]',
+      repeatedMessage,
+      '',
+      '2026/7/27（週一）',
+      '10:00\tECOCO\t這是較新的確認內容',
+      '10:01\tECOCO\t[貼圖]',
+    ].join('\n'),
+  });
+
+  assert.ok(parsed.sections.length >= 2);
+  assert.equal(parsed.ignoredAttachmentCount, 2);
+  assert.equal(parsed.sourceName, 'ECOCO x 測試公司 全循環的聊天');
+  assert.ok(parsed.sections.every(section => section.content.length <= PARTNER_LINE_IMPORT_CHUNK_CHARS));
+  assert.ok(parsed.sections.every(section => /LINE 歷史｜/.test(section.category)));
+  assert.ok(parsed.sections.some(section => /2026-07-26/.test(section.category)));
+  assert.ok(parsed.sections.some(section => /2026-07-27/.test(section.category)));
+  const combined = parsed.sections.map(section => section.content).join('\n');
+  assert.equal(combined.includes(phone), false);
+  assert.equal(combined.includes(memberNumber), false);
+  assert.equal(combined.includes('[照片]'), false);
+  assert.equal(combined.includes('[貼圖]'), false);
+  assert.match(combined, /較新日期為優先/);
+});
+
+test('LINE TXT batch import writes only new company-scoped sections in one transaction', async () => {
+  const payload = {
+    sourceName: '合作公司聊天.txt',
+    content: [
+      '2026/7/25（週六）',
+      `09:00\t窗口\t${'舊合作紀錄。'.repeat(700)}`,
+      '2026/7/26（週日）',
+      `10:00\t窗口\t${'新合作紀錄。'.repeat(700)}`,
+    ].join('\n'),
+  };
+  const parsed = buildLineChatKnowledgeSections(payload);
+  const transactionQueries = [];
+  const connection = {
+    async query(sql, params = []) {
+      transactionQueries.push({ sql, params });
+      if (/SELECT category/.test(sql)) {
+        return { rows: [{ category: parsed.sections[0].category }] };
+      }
+      if (/MAX\(sort_order\)/.test(sql)) return { rows: [{ next: 12 }] };
+      if (/INSERT INTO partner_knowledge_sections/.test(sql)) {
+        return {
+          rows: [{
+            id: 100 + transactionQueries.length,
+            company_id: params[0],
+            category: params[1],
+            content: params[2],
+            sort_order: params[3],
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+    release() {},
+  };
+  const pool = {
+    async query(sql) {
+      if (/FROM partner_companies\s+WHERE id/.test(sql)) {
+        return { rows: [{ id: 9, name: '合作公司', status: 'active' }] };
+      }
+      return { rows: [] };
+    },
+    async connect() {
+      return connection;
+    },
+  };
+  const service = createService(pool);
+
+  const result = await service.importLineChatKnowledge(9, payload);
+
+  assert.equal(result.totalSectionCount, parsed.sections.length);
+  assert.equal(result.skippedDuplicateCount, 1);
+  assert.equal(result.createdCount, parsed.sections.length - 1);
+  assert.ok(transactionQueries.some(({ sql }) => sql === 'BEGIN'));
+  assert.ok(transactionQueries.some(({ sql }) => sql === 'COMMIT'));
+  const inserts = transactionQueries.filter(({ sql }) => /INSERT INTO partner_knowledge_sections/.test(sql));
+  assert.ok(inserts.every(({ params }) => params[0] === 9));
+  assert.ok(inserts.every(({ params }) => params[2].length <= PARTNER_LINE_IMPORT_CHUNK_CHARS));
+});
+
 test('active partner names are cached briefly for B2B scope checks', async () => {
   let companyListQueries = 0;
   const pool = {
@@ -312,6 +409,9 @@ test('partner admin page exposes company-scoped test chat behind admin API', () 
   assert.match(html, /LINE 分支測試/);
   assert.match(html, /尚未綁定真實 LINE 群組，仍可先使用下方測試功能|testChat/);
   assert.match(js, /\/api\/partners\/\$\{company\.id\}\/test-chat/);
+  assert.match(html, /lineTxtFileInput/);
+  assert.match(js, /file\.text\(\)/);
+  assert.match(routes, /knowledge\/import-line/);
   assert.match(js, /x-admin-key/);
   assert.match(routes, /router\.use\(requireAdminKey\)/);
 });
