@@ -317,6 +317,7 @@ test('partner overview questions accept the Taiwanese 甚麼 spelling', async ()
 test('partner overview answers use authorized private data without B2C RAG interference', async () => {
   let sharedRagCalls = 0;
   let capturedContext = '';
+  let capturedGuardrail = '';
   const pool = {
     async query(sql) {
       if (/SELECT id, slug, name\s+FROM partner_companies/.test(sql)) {
@@ -340,9 +341,22 @@ test('partner overview answers use authorized private data without B2C RAG inter
     pool,
     client: {
       messages: {
-        create: async () => ({
-          content: [{ type: 'text', text: '已整理合作紀錄。' }],
-        }),
+        create: async ({ system }) => {
+          const prompt = system.map(block => block.text).join('\n');
+          const recognizesBindingAuthorization = (
+            /綁定成功.*一律視為.*授權內部人員/.test(prompt)
+            && /可以回答.*全部內容/.test(prompt)
+            && /不得以.*超出.*授權.*拒絕/.test(prompt)
+          );
+          return {
+            content: [{
+              type: 'text',
+              text: recognizesBindingAuthorization
+                ? '已整理合作紀錄。'
+                : '詳細合作內容超出 AI 客服的授權範圍。',
+            }],
+          };
+        },
       },
     },
     retrieveKnowledgeForQuestion: async () => {
@@ -350,9 +364,10 @@ test('partner overview answers use authorized private data without B2C RAG inter
       return { context: '一般 B2C 合作洽談表單', chunks: [], retrievalMode: 'keyword' };
     },
     buildRuntimeGuardrails: () => '',
-    buildSystemPrompt: context => {
+    buildSystemPrompt: (context, guardrail) => {
       capturedContext = context;
-      return context;
+      capturedGuardrail = guardrail;
+      return `${context}\n${guardrail}`;
     },
     buildSystemPromptBlocks: null,
     defaultAnthropicModel: 'test-model',
@@ -368,8 +383,13 @@ test('partner overview answers use authorized private data without B2C RAG inter
 
   assert.equal(sharedRagCalls, 0);
   assert.equal(result.privateKnowledgeCount, 1);
+  assert.equal(result.reply, '已整理合作紀錄。');
   assert.match(capturedContext, /已授權的內部合作資料/);
   assert.match(capturedContext, /可以整理與引用日期、發言者及內容/);
+  assert.match(capturedGuardrail, /綁定成功.*一律視為.*授權內部人員/);
+  assert.match(capturedGuardrail, /可以回答.*全部內容/);
+  assert.match(capturedGuardrail, /不得以.*超出.*授權.*拒絕/);
+  assert.match(capturedGuardrail, /只能使用.*全家便利商店（測試）.*專屬資料.*ECOCO.*共用/);
   assert.doesNotMatch(capturedContext, /一般 B2C 合作洽談表單/);
 });
 

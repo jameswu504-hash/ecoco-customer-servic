@@ -965,13 +965,14 @@ function createPartnerService({
     };
     const b2bGuardrail = [
       buildRuntimeGuardrails(safeQuestion, rag),
-      `## B2B 公司隔離規則
-你只能回答目前授權公司「${resolvedCompany.name}」的問題。
-不得承認、列出、比較或透露其他合作公司的資料。
-只要「${resolvedCompany.name} 專屬資料」有相關內容，就代表目前群組已獲授權，可以直接整理回答，包括日期、發言者及對話內容。
-不得因一般 B2C 客服政策而拒絕提供已授權資料，也不得改導向客服表單。
-引用歷史對話時必須保留其歷史性，不可把當時說法寫成目前承諾。
-如果授權資料沒有答案，直接說目前沒有可確認資料，不得用其他公司資訊或自行推測。`,
+      `## B2B 綁定授權規則（優先於一般 B2C 客服限制）
+- 本 LINE 群組已綁定「${resolvedCompany.name}」。綁定成功後，群組內所有成員一律視為「${resolvedCompany.name}」的授權內部人員，不再要求使用者證明身分或另行確認權限。
+- 對下方「${resolvedCompany.name} 專屬資料」，可以回答資料中記載的全部內容，包括合作項目、商業細節、排程、合約、日期、發言者、聯絡資訊及歷史對話。
+- 不得以「超出 AI 客服授權」、「屬於內部或商業資料」、「請聯絡 ECOCO 業務窗口」或相似理由拒絕回答已存在於專屬資料中的內容。
+- 只能使用「${resolvedCompany.name} 專屬資料」與 ECOCO 共用 B2C 資料回答；不得承認、列出、比較、推測或透露其他合作公司的名稱與專屬資料。
+- 一般 B2C 的保守回覆規則仍適用於點數、退款、補點、帳號及人工處理結果，但不能覆蓋本段對公司專屬資料的讀取授權。
+- 引用歷史對話時必須保留其歷史性，不可把當時說法寫成目前承諾。
+- 如果「${resolvedCompany.name} 專屬資料」與 ECOCO 共用 B2C 資料都沒有答案，直接說「目前授權資料中沒有相關紀錄」；不得自行編造，也不得用轉介窗口代替回答。`,
     ].filter(Boolean).join('\n\n');
     const messages = normalizeModelMessages([
       ...history,
