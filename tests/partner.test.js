@@ -292,6 +292,28 @@ test('partner overview questions retrieve recent knowledge within the same compa
   assert.match(queries[0].sql, /WHERE company_id = \$1/);
 });
 
+test('partner overview questions accept the Taiwanese 甚麼 spelling', async () => {
+  const queries = [];
+  const pool = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (/ORDER BY sort_order DESC/.test(sql)) {
+        return {
+          rows: [{ id: 8, company_id: 7, category: '最新合作紀錄', content: '近期內容' }],
+        };
+      }
+      return { rows: [] };
+    },
+  };
+  const service = createService(pool);
+
+  const rows = await service.retrievePartnerKnowledge(7, 'ECOCO 跟全家有甚麼合作？');
+
+  assert.equal(rows.length, 1);
+  assert.equal(queries[0].params[0], 7);
+  assert.match(queries[0].sql, /ORDER BY sort_order DESC/);
+});
+
 test('partner overview answers use authorized private data without B2C RAG interference', async () => {
   let sharedRagCalls = 0;
   let capturedContext = '';
@@ -341,7 +363,7 @@ test('partner overview answers use authorized private data without B2C RAG inter
   const result = await service.answerPartnerQuestion({
     company: { id: 7, slug: 'familymart-test', name: '全家便利商店（測試）', status: 'active' },
     sessionId: 'partner_test_7_overview',
-    question: '全家目前有哪些合作紀錄？',
+    question: 'ECOCO 跟全家有甚麼合作？',
   });
 
   assert.equal(sharedRagCalls, 0);

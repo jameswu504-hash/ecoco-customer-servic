@@ -78,9 +78,9 @@ function normalizePartnerQuestionText(value) {
 function isPartnerOverviewQuestion(question) {
   const normalized = normalizePartnerQuestionText(question).replace(/\s+/g, '');
   return (
-    /(?:有哪些|有什麼|有哪一些|列出|整理|總覽|摘要).*(?:合作|資料|紀錄|內容)/
+    /(?:有哪些|有什麼|有甚麼|有哪一些|列出|整理|總覽|摘要).*(?:合作|資料|紀錄|內容)/
       .test(normalized)
-    || /(?:合作|資料|紀錄|內容).*(?:有哪些|有什麼|有哪一些|列出|整理|總覽|摘要)/
+    || /(?:合作|資料|紀錄|內容).*(?:有哪些|有什麼|有甚麼|有哪一些|列出|整理|總覽|摘要)/
       .test(normalized)
   );
 }
@@ -89,7 +89,7 @@ function buildPartnerSearchTerms(question) {
   const terms = new Set(buildSearchTerms(question));
   const simplified = normalizePartnerQuestionText(question)
     .replace(
-      /(?:我想知道|想了解|有哪一些|有哪些|有什麼|為什麼|怎麼|如何|能不能|可不可以|請問|麻煩|幫我|目前|現在|是否|關於|的問題|問題|一下|的|嗎|呢)/g,
+      /(?:我想知道|想了解|有哪一些|有哪些|有什麼|有甚麼|為什麼|怎麼|如何|能不能|可不可以|請問|麻煩|幫我|目前|現在|是否|關於|的問題|問題|一下|的|嗎|呢)/g,
       ' '
     )
     .replace(/\s+/g, ' ')
