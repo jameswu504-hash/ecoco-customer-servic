@@ -64,6 +64,53 @@ function normalizePartnerMatchText(value) {
     .replace(/\s+/g, '');
 }
 
+function normalizePartnerQuestionText(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .replace(/[^0-9A-Za-z\u4e00-\u9fff]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isPartnerOverviewQuestion(question) {
+  const normalized = normalizePartnerQuestionText(question).replace(/\s+/g, '');
+  return (
+    /(?:有哪些|有什麼|有哪一些|列出|整理|總覽|摘要).*(?:合作|資料|紀錄|內容)/
+      .test(normalized)
+    || /(?:合作|資料|紀錄|內容).*(?:有哪些|有什麼|有哪一些|列出|整理|總覽|摘要)/
+      .test(normalized)
+  );
+}
+
+function buildPartnerSearchTerms(question) {
+  const terms = new Set(buildSearchTerms(question));
+  const simplified = normalizePartnerQuestionText(question)
+    .replace(
+      /(?:我想知道|想了解|有哪一些|有哪些|有什麼|為什麼|怎麼|如何|能不能|可不可以|請問|麻煩|幫我|目前|現在|是否|關於|的問題|問題|一下|的|嗎|呢)/g,
+      ' '
+    )
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  for (const segment of simplified.split(' ')) {
+    const length = [...segment].length;
+    if (length >= 2 && length <= 24) terms.add(segment);
+    if (length > 8) {
+      const chars = [...segment];
+      for (let index = 0; index <= chars.length - 8; index += 1) {
+        terms.add(chars.slice(index, index + 8).join(''));
+      }
+    }
+  }
+
+  return [...terms]
+    .filter(term => {
+      const length = [...String(term)].length;
+      return length >= 2 && length <= 24;
+    })
+    .slice(0, 24);
+}
+
 function mentionsOtherPartner(question, currentCompany, companies = []) {
   const normalizedQuestion = normalizePartnerMatchText(question);
   if (!normalizedQuestion) return false;
@@ -607,16 +654,34 @@ function createPartnerService({
   }
 
   async function retrievePartnerKnowledge(companyId, question) {
-    const terms = buildSearchTerms(question)
+    if (isPartnerOverviewQuestion(question)) {
+      const { rows } = await pool.query(
+        `SELECT id, company_id, category, content, sort_order
+         FROM partner_knowledge_sections
+         WHERE company_id = $1
+           AND archived_at IS NULL
+         ORDER BY sort_order DESC, id DESC
+         LIMIT 8`,
+        [Number(companyId)]
+      );
+      return rows;
+    }
+
+    const terms = buildPartnerSearchTerms(question)
       .map(term => String(term || '').trim())
       .filter(term => term.length >= 2)
-      .slice(0, 8);
+      .slice(0, 24);
     if (terms.length === 0) return [];
 
     const values = [Number(companyId)];
+    const scoreExpressions = [];
     const clauses = terms.map(term => {
       values.push(`%${escapeIlikePattern(term)}%`);
       const param = `$${values.length}`;
+      scoreExpressions.push(
+        `(CASE WHEN category ILIKE ${param} ESCAPE '\\' OR content ILIKE ${param} ESCAPE '\\' `
+        + `THEN ${[...term].length} ELSE 0 END)`
+      );
       return `(category ILIKE ${param} ESCAPE '\\' OR content ILIKE ${param} ESCAPE '\\')`;
     });
     const { rows } = await pool.query(
@@ -625,7 +690,7 @@ function createPartnerService({
        WHERE company_id = $1
          AND archived_at IS NULL
          AND (${clauses.join(' OR ')})
-       ORDER BY sort_order ASC, id ASC
+       ORDER BY (${scoreExpressions.join(' + ')}) DESC, sort_order DESC, id DESC
        LIMIT 8`,
       values
     );
@@ -869,11 +934,13 @@ module.exports = {
   PARTNER_NO_DATA_REPLY,
   PARTNER_SCOPE_DENIED_REPLY,
   PARTNER_UNBOUND_REPLY,
+  buildPartnerSearchTerms,
   buildLineChatKnowledgeSections,
   buildPartnerKnowledgeContext,
   createPartnerService,
   generatePartnerBindingCode,
   hashPartnerValue,
+  isPartnerOverviewQuestion,
   mentionsOtherPartner,
   normalizePartnerSlug,
   parsePartnerBindingCommand,

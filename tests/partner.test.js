@@ -95,6 +95,49 @@ test('partner retrieval always scopes SQL by company_id', async () => {
   assert.equal(queries[0].params[0], 27);
 });
 
+test('partner retrieval turns natural-language company questions into useful search terms', async () => {
+  const queries = [];
+  const pool = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      const hasCompanyTerm = params.some(value => value === '%全家%');
+      return {
+        rows: hasCompanyTerm
+          ? [{ id: 1, company_id: 7, category: 'LINE 歷史', content: '全家合作紀錄' }]
+          : [],
+      };
+    },
+  };
+  const service = createService(pool);
+
+  const rows = await service.retrievePartnerKnowledge(7, '全家的問題');
+
+  assert.equal(rows.length, 1);
+  assert.ok(queries[0].params.includes('%全家%'));
+});
+
+test('partner overview questions retrieve recent knowledge within the same company', async () => {
+  const queries = [];
+  const pool = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (/ORDER BY sort_order DESC/.test(sql)) {
+        return {
+          rows: [{ id: 8, company_id: 7, category: '最新合作紀錄', content: '近期內容' }],
+        };
+      }
+      return { rows: [] };
+    },
+  };
+  const service = createService(pool);
+
+  const rows = await service.retrievePartnerKnowledge(7, '全家目前有哪些合作紀錄？');
+
+  assert.equal(rows.length, 1);
+  assert.equal(queries[0].params[0], 7);
+  assert.match(queries[0].sql, /WHERE company_id = \$1/);
+});
+
 test('partner context contains only the selected company private rows', () => {
   const context = buildPartnerKnowledgeContext(
     { id: 1, name: '測試甲公司' },
