@@ -1326,6 +1326,19 @@ test('LINE webhook events are claimed once and completed events are skipped', as
   assert.deepEqual(calls[0].params, ['evt-123', true]);
 });
 
+test('LINE webhook emits privacy-safe operational checkpoints', () => {
+  const lineRoute = fs.readFileSync(
+    path.join(__dirname, '..', 'routes', 'line.routes.js'),
+    'utf8'
+  );
+
+  assert.match(lineRoute, /LINE webhook accepted:/);
+  assert.match(lineRoute, /LINE webhook event claimed:/);
+  assert.match(lineRoute, /LINE webhook handled:/);
+  assert.match(lineRoute, /LINE message delivered:/);
+  assert.doesNotMatch(lineRoute, /console\.(?:log|info).*userText/);
+});
+
 test('LINE webhook rate limits a single sender before API calls', () => {
   const env = { LINE_RATE_LIMIT_MAX_EVENTS: '2' };
   const sessionId = `line_test_${Date.now()}`;

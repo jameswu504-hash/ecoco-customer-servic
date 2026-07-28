@@ -60,6 +60,7 @@ function createLineRouter({
   router.post('/line/webhook', async (req, res) => {
     const config = getLineConfig();
     if (!config.channelSecret || !config.channelAccessToken) {
+      console.warn('LINE webhook rejected: integration is not configured.');
       return res.status(503).json({ error: 'LINE integration is not configured.' });
     }
 
@@ -68,12 +69,16 @@ function createLineRouter({
       signature: req.headers['x-line-signature'],
       channelSecret: config.channelSecret,
     });
-    if (!isValid) return res.status(401).json({ error: 'Invalid LINE signature.' });
+    if (!isValid) {
+      console.warn('LINE webhook rejected: invalid signature.');
+      return res.status(401).json({ error: 'Invalid LINE signature.' });
+    }
 
     const events = Array.isArray(req.body?.events) ? req.body.events : [];
     const finishWebhookTask = webhookTaskTracker?.begin();
     try {
       res.status(200).json({ ok: true });
+      console.log(`LINE webhook accepted: events=${events.length}`);
 
       for (const event of events) {
       const isTextMessage = event.message?.type === 'text';
@@ -101,7 +106,15 @@ function createLineRouter({
         console.error('LINE webhook event claim error:', err.message);
         continue;
       }
-      if (!webhookClaim.claimed) continue;
+      if (!webhookClaim.claimed) {
+        console.log('LINE webhook event skipped: reason=duplicate');
+        continue;
+      }
+      console.log(
+        `LINE webhook event claimed: source=${event.source?.type || 'unknown'}`
+        + ` message=${event.message?.type || 'unknown'}`
+        + ` redelivery=${Boolean(event.deliveryContext?.isRedelivery)}`
+      );
 
       const context = {
         event,
@@ -129,6 +142,10 @@ function createLineRouter({
           userText,
         };
       }
+      console.log(
+        `LINE webhook handled: channel=${isPartnerGroup ? 'b2b' : 'b2c'}`
+        + ` shouldReply=${Boolean(outcome.shouldReply)}`
+      );
 
       let webhookProcessingError = outcome.processingError;
       if (!outcome.shouldReply) {
@@ -149,6 +166,10 @@ function createLineRouter({
         if (delivery.deliveryMode === 'push') {
           console.warn('LINE reply token expired; delivered response with Push API.');
         }
+        console.log(
+          `LINE message delivered: channel=${isPartnerGroup ? 'b2b' : 'b2c'}`
+          + ` mode=${delivery.deliveryMode}`
+        );
       } catch (err) {
         console.error('LINE message delivery error:', err.message);
         webhookProcessingError = err;
