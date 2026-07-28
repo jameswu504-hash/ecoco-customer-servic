@@ -4,7 +4,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { SCHEMA } = require('../db/schema');
-const { buildLineRateLimitKey, buildLineSessionId } = require('../routes/line.routes');
+const {
+  buildLineRateLimitKey,
+  buildLineSessionId,
+  isLineBotMentioned,
+  stripLineBotMentions,
+} = require('../routes/line.routes');
 const { getPartnerTestSessionId } = require('../routes/partners.routes');
 const {
   PARTNER_LINE_IMPORT_CHUNK_CHARS,
@@ -94,6 +99,29 @@ test('LINE group rate limits are scoped to member userId instead of the whole gr
   assert.equal(firstMember, sameMemberOtherGroup);
 });
 
+test('LINE group replies require an official self mention and remove it from the question', () => {
+  const message = {
+    type: 'text',
+    text: '@ECOCO客服系統 請問機台正常嗎？',
+    mention: {
+      mentionees: [{
+        index: 0,
+        length: 10,
+        type: 'user',
+        isSelf: true,
+      }],
+    },
+  };
+
+  assert.equal(isLineBotMentioned(message), true);
+  assert.equal(stripLineBotMentions(message), '請問機台正常嗎？');
+  assert.equal(isLineBotMentioned({
+    ...message,
+    mention: { mentionees: [{ ...message.mention.mentionees[0], isSelf: false }] },
+  }), false);
+  assert.equal(isLineBotMentioned({ type: 'text', text: '@ECOCO客服系統 請問' }), false);
+});
+
 test('partner retrieval always scopes SQL by company_id', async () => {
   const queries = [];
   const pool = {
@@ -172,6 +200,33 @@ test('partner LINE conversation logs are company-scoped and grouped by Taipei da
   assert.match(queries[0].sql, /pc\.line_group_id IS NOT NULL/);
   assert.match(queries[0].sql, /AT TIME ZONE 'Asia\/Taipei'/);
   assert.deepEqual(queries[0].params.slice(0, 2), [7, 90]);
+});
+
+test('passive LINE group messages are masked and stored without an assistant reply', async () => {
+  const queries = [];
+  const pool = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      return { rows: [] };
+    },
+  };
+  const service = createService(pool);
+
+  await service.storePartnerMessage({
+    companyId: 7,
+    lineGroupId: 12,
+    sessionId: 'line_group_session',
+    role: 'user',
+    content: '請聯絡 0912-345-678',
+  });
+
+  assert.equal(queries.length, 1);
+  assert.match(queries[0].sql, /INSERT INTO partner_conversations/);
+  assert.equal(queries[0].params[0], 7);
+  assert.equal(queries[0].params[1], 12);
+  assert.equal(queries[0].params[3], 'user');
+  assert.equal(queries[0].params[4], '請聯絡 [phone]');
+  assert.doesNotMatch(queries[0].sql, /'assistant'/);
 });
 
 test('partner retrieval turns natural-language company questions into useful search terms', async () => {
@@ -608,6 +663,8 @@ test('unbound LINE groups are intercepted before the B2C classifier', () => {
   assert.ok(partnerBranch > -1);
   assert.ok(b2cBranch > partnerBranch);
   assert.match(lineRoute, /partnerService\.routeLineGroupMessage/);
+  assert.match(lineRoute, /isLineBotMentioned\(event\.message\)/);
+  assert.match(lineRoute, /partnerService\.storePartnerMessage/);
   assert.match(lineRoute, /partnerRoute\.type === 'binding'[\s\S]*'partner_unbound'/);
 });
 

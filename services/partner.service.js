@@ -805,6 +805,29 @@ function createPartnerService({
     );
   }
 
+  async function storePartnerMessage({
+    companyId,
+    lineGroupId = null,
+    sessionId,
+    role = 'user',
+    content,
+  }) {
+    const safeRole = role === 'assistant' ? 'assistant' : 'user';
+    await pool.query(
+      `INSERT INTO partner_conversations
+        (company_id, line_group_id, session_id, role, content, timestamp)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        Number(companyId),
+        lineGroupId ? Number(lineGroupId) : null,
+        String(sessionId || ''),
+        safeRole,
+        maskSensitiveText(content),
+        new Date().toISOString(),
+      ]
+    );
+  }
+
   async function answerPartnerQuestion({
     company,
     companyId,
@@ -1005,6 +1028,7 @@ function createPartnerService({
     resolveLineGroup,
     retrievePartnerKnowledge,
     routeLineGroupMessage,
+    storePartnerMessage,
     updateCompanyStatus,
   };
 }

@@ -133,6 +133,36 @@ function buildLineRateLimitKey(event = {}) {
   return `line_rate_${crypto.createHash('sha256').update(String(sourceId)).digest('hex').slice(0, 32)}`;
 }
 
+function isLineBotMentioned(message = {}) {
+  const mentionees = Array.isArray(message.mention?.mentionees)
+    ? message.mention.mentionees
+    : [];
+  return mentionees.some(mentionee => (
+    mentionee?.type === 'user' && mentionee.isSelf === true
+  ));
+}
+
+function stripLineBotMentions(message = {}) {
+  let text = String(message.text || '');
+  const ranges = (Array.isArray(message.mention?.mentionees)
+    ? message.mention.mentionees
+    : [])
+    .filter(mentionee => (
+      mentionee?.type === 'user'
+      && mentionee.isSelf === true
+      && Number.isInteger(mentionee.index)
+      && Number.isInteger(mentionee.length)
+      && mentionee.index >= 0
+      && mentionee.length > 0
+    ))
+    .sort((a, b) => b.index - a.index);
+
+  for (const range of ranges) {
+    text = `${text.slice(0, range.index)}${text.slice(range.index + range.length)}`;
+  }
+  return text.replace(/\s+/g, ' ').trim();
+}
+
 function getLineRateLimitMax(env = process.env) {
   const maxEvents = Number(env.LINE_RATE_LIMIT_MAX_EVENTS || LINE_RATE_LIMIT_DEFAULT_MAX);
   if (!Number.isFinite(maxEvents)) return LINE_RATE_LIMIT_DEFAULT_MAX;
@@ -438,6 +468,46 @@ function createLineRouter({
       let shouldStoreConversation = true;
       let webhookProcessingError = null;
       const isPartnerGroup = event.source?.type === 'group' && partnerService;
+      let partnerRoute = null;
+      if (isPartnerGroup) {
+        try {
+          partnerRoute = await partnerService.routeLineGroupMessage({
+            groupId: event.source.groupId,
+            text: userText,
+          });
+        } catch (err) {
+          console.error('LINE B2B routing error:', err.message);
+        }
+
+        const isBindingMessage = partnerRoute?.type === 'binding';
+        const shouldReply = isBindingMessage || isLineBotMentioned(event.message);
+        if (!shouldReply) {
+          if (partnerRoute?.type === 'partner') {
+            try {
+              await partnerService.storePartnerMessage({
+                companyId: partnerRoute.company.id,
+                lineGroupId: partnerRoute.lineGroupId,
+                sessionId,
+                role: 'user',
+                content: userText,
+              });
+            } catch (err) {
+              console.error('LINE B2B passive conversation write error:', err.message);
+              webhookProcessingError = err;
+            }
+          }
+          try {
+            await completeLineWebhookEvent(pool, webhookClaim.eventId, webhookProcessingError);
+          } catch (err) {
+            console.error('LINE webhook event completion error:', err.message);
+          }
+          continue;
+        }
+
+        if (partnerRoute?.type === 'partner' && isTextMessage) {
+          userText = stripLineBotMentions(event.message) || '你好';
+        }
+      }
       const classification = !isPartnerGroup && typeof classifyQuestion === 'function'
         ? classifyQuestion(userText)
         : null;
@@ -466,7 +536,7 @@ function createLineRouter({
       } else if (isPartnerGroup) {
         shouldStoreConversation = false;
         try {
-          const partnerRoute = await partnerService.routeLineGroupMessage({
+          partnerRoute ||= await partnerService.routeLineGroupMessage({
             groupId: event.source.groupId,
             text: userText,
           });
@@ -660,12 +730,14 @@ module.exports = {
   getLineRateLimitMax,
   getLineReplyTimeoutMs,
   getLineTimeoutReply,
+  isLineBotMentioned,
   isLineRateLimited,
   parseLineLocationMessage,
   replyToLine,
   resolveWithTimeout,
   safeCompare,
   storeLineConversation,
+  stripLineBotMentions,
   toLineText,
   verifyLineSignature,
 };
