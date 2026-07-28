@@ -50,7 +50,7 @@
 ```text
 LINE_CHANNEL_SECRET=<LINE Developers Channel Secret>
 LINE_CHANNEL_ACCESS_TOKEN=<LINE Developers Channel Access Token>
-LINE_REPLY_TIMEOUT_MS=45000
+LINE_REPLY_TIMEOUT_MS=25000
 ```
 
 其他正式上線資源仍需確認：

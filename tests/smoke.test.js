@@ -45,6 +45,7 @@ const {
   buildAiReply,
   claimLineWebhookEvent,
   cleanupLineRateBuckets,
+  deliverLineMessage,
   getLineConfig,
   getLineReplyTimeoutMs,
   getLineTimeoutReply,
@@ -1371,10 +1372,10 @@ test('LINE rate limit buckets are pruned before unbounded growth', () => {
 });
 
 test('LINE reply timeout is configurable and capped below token expiry', async () => {
-  assert.equal(getLineReplyTimeoutMs({}), 45_000);
-  assert.equal(getLineReplyTimeoutMs({ LINE_REPLY_TIMEOUT_MS: '60000' }), 55_000);
+  assert.equal(getLineReplyTimeoutMs({}), 25_000);
+  assert.equal(getLineReplyTimeoutMs({ LINE_REPLY_TIMEOUT_MS: '60000' }), 30_000);
   assert.equal(getLineReplyTimeoutMs({ LINE_REPLY_TIMEOUT_MS: '12000' }), 12_000);
-  assert.equal(getLineReplyTimeoutMs({ LINE_REPLY_TIMEOUT_MS: 'bad' }), 45_000);
+  assert.equal(getLineReplyTimeoutMs({ LINE_REPLY_TIMEOUT_MS: 'bad' }), 25_000);
   assert.equal(getLineTimeoutReply({ LINE_TIMEOUT_REPLY: '稍後回覆' }), '稍後回覆');
 
   const result = await resolveWithTimeout(new Promise(resolve => setTimeout(() => resolve('late'), 20)), 1, 'timeout');
@@ -1382,6 +1383,35 @@ test('LINE reply timeout is configurable and capped below token expiry', async (
 
   const fast = await resolveWithTimeout(Promise.resolve('ok'), 20, 'timeout');
   assert.deepEqual(fast, { timedOut: false, value: 'ok' });
+});
+
+test('LINE delivery falls back to a group push when the reply token expired', async () => {
+  const calls = [];
+  const replyError = new Error('LINE Reply API failed: 400 {"message":"Invalid reply token"}');
+  replyError.status = 400;
+  replyError.responseBody = '{"message":"Invalid reply token"}';
+
+  const result = await deliverLineMessage({
+    event: {
+      replyToken: 'expired-token',
+      source: { type: 'group', groupId: 'group-fullmart' },
+    },
+    text: '全家合作資料',
+    channelAccessToken: 'test-token',
+  }, {
+    replyFn: async params => {
+      calls.push({ type: 'reply', params });
+      throw replyError;
+    },
+    pushFn: async params => {
+      calls.push({ type: 'push', params });
+    },
+  });
+
+  assert.equal(result.deliveryMode, 'push');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].params.to, 'group-fullmart');
+  assert.equal(calls[1].params.text, '全家合作資料');
 });
 
 test('LINE reply timeout aborts the underlying request via onTimeout hook', async () => {

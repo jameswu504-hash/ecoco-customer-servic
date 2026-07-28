@@ -22,9 +22,9 @@ const {
   buildLineSessionId,
   claimLineWebhookEvent,
   completeLineWebhookEvent,
+  deliverLineMessage,
   getLineConfig,
   parseLineLocationMessage,
-  replyToLine,
   verifyLineSignature,
 } = lineShared;
 
@@ -138,13 +138,16 @@ function createLineRouter({
       }
 
       try {
-        await replyToLine({
-          replyToken: event.replyToken,
+        const delivery = await deliverLineMessage({
+          event,
           text: stripKnowledgeGapMarker(outcome.reply),
           channelAccessToken: config.channelAccessToken,
         });
+        if (delivery.deliveryMode === 'push') {
+          console.warn('LINE reply token expired; delivered response with Push API.');
+        }
       } catch (err) {
-        console.error('LINE Reply API error:', err.message);
+        console.error('LINE message delivery error:', err.message);
         webhookProcessingError = err;
       }
 

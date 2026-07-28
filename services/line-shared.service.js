@@ -4,6 +4,7 @@ const { normalizeCoords } = require('./iot-status.service');
 const { compareSecret } = require('./secret.service');
 
 const LINE_REPLY_ENDPOINT = 'https://api.line.me/v2/bot/message/reply';
+const LINE_PUSH_ENDPOINT = 'https://api.line.me/v2/bot/message/push';
 const LINE_TEXT_LIMIT = 4900;
 const LINE_MAX_INPUT_CHARS = 2000;
 const LINE_FALLBACK_REPLY = '抱歉，AI 回覆暫時失敗，請稍後再試，或改由人工客服協助。';
@@ -13,8 +14,8 @@ const LINE_RATE_LIMIT_MAX_BUCKETS = 1000;
 const LINE_RATE_LIMIT_CLEANUP_INTERVAL_MS = 60 * 1000;
 const LINE_RATE_LIMIT_REPLY = '訊息有點密集，請稍後再試一次。';
 const LINE_INVALID_LOCATION_REPLY = '無法讀取這個位置，請重新傳送 LINE 位置資訊，或改用文字告訴我附近的縣市、路名或地標。';
-const LINE_REPLY_TIMEOUT_DEFAULT_MS = 45_000;
-const LINE_REPLY_TIMEOUT_MAX_MS = 55_000;
+const LINE_REPLY_TIMEOUT_DEFAULT_MS = 25_000;
+const LINE_REPLY_TIMEOUT_MAX_MS = 30_000;
 const LINE_TIMEOUT_REPLY = '目前正在查詢資料，若問題需要人工確認，客服會再協助處理。';
 
 // Single Render instance is fine with an in-memory bucket; move this to Redis/PostgreSQL before horizontal scaling.
@@ -95,7 +96,65 @@ async function replyToLine({ replyToken, text, channelAccessToken }) {
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`LINE Reply API failed: ${response.status} ${body}`);
+    const error = new Error(`LINE Reply API failed: ${response.status} ${body}`);
+    error.status = response.status;
+    error.responseBody = body;
+    throw error;
+  }
+}
+
+async function pushToLine({ to, text, channelAccessToken }) {
+  const response = await fetch(LINE_PUSH_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${channelAccessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      to,
+      messages: [{ type: 'text', text: toLineText(text) }],
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    const error = new Error(`LINE Push API failed: ${response.status} ${body}`);
+    error.status = response.status;
+    error.responseBody = body;
+    throw error;
+  }
+}
+
+function getLineMessageDestination(event = {}) {
+  const source = event.source || {};
+  return source.groupId || source.roomId || source.userId || '';
+}
+
+function isInvalidLineReplyTokenError(error) {
+  const details = `${error?.message || ''} ${error?.responseBody || ''}`;
+  return Number(error?.status) === 400 && /invalid reply token/i.test(details);
+}
+
+async function deliverLineMessage({
+  event,
+  text,
+  channelAccessToken,
+}, {
+  replyFn = replyToLine,
+  pushFn = pushToLine,
+} = {}) {
+  try {
+    await replyFn({
+      replyToken: event?.replyToken,
+      text,
+      channelAccessToken,
+    });
+    return { deliveryMode: 'reply' };
+  } catch (replyError) {
+    const to = getLineMessageDestination(event);
+    if (!to || !isInvalidLineReplyTokenError(replyError)) throw replyError;
+    await pushFn({ to, text, channelAccessToken });
+    return { deliveryMode: 'push', replyError };
   }
 }
 
@@ -240,6 +299,7 @@ module.exports = {
   LINE_FALLBACK_REPLY,
   LINE_INVALID_LOCATION_REPLY,
   LINE_MAX_INPUT_CHARS,
+  LINE_PUSH_ENDPOINT,
   LINE_RATE_LIMIT_CLEANUP_INTERVAL_MS,
   LINE_RATE_LIMIT_DEFAULT_MAX,
   LINE_RATE_LIMIT_MAX_BUCKETS,
@@ -247,6 +307,7 @@ module.exports = {
   LINE_RATE_LIMIT_WINDOW_MS,
   LINE_REPLY_TIMEOUT_DEFAULT_MS,
   LINE_REPLY_TIMEOUT_MAX_MS,
+  LINE_REPLY_ENDPOINT,
   LINE_TEXT_LIMIT,
   LINE_TIMEOUT_REPLY,
   buildLineRateLimitKey,
@@ -254,12 +315,16 @@ module.exports = {
   claimLineWebhookEvent,
   cleanupLineRateBuckets,
   completeLineWebhookEvent,
+  deliverLineMessage,
   getLineConfig,
+  getLineMessageDestination,
   getLineRateLimitMax,
   getLineReplyTimeoutMs,
   getLineTimeoutReply,
   isLineRateLimited,
+  isInvalidLineReplyTokenError,
   parseLineLocationMessage,
+  pushToLine,
   replyToLine,
   resolveWithTimeout,
   safeCompare,

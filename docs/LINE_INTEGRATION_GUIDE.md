@@ -39,7 +39,7 @@ LINE Developers 後台要把這個 URL 填到 Messaging API 的 Webhook URL。
 | --- | --- | --- |
 | Channel Secret | 驗證 LINE 傳來的 webhook 是否可信 | Render `LINE_CHANNEL_SECRET` |
 | Channel Access Token | 讓後端呼叫 LINE Reply API 回覆訊息 | Render `LINE_CHANNEL_ACCESS_TOKEN` |
-| Reply timeout | AI 回覆過慢時，先用 Reply API 回保守訊息，避免 reply token 過期 | Render `LINE_REPLY_TIMEOUT_MS`，預設 `45000` |
+| Reply timeout | AI 回覆過慢時，先用 Reply API 回保守訊息，避免 reply token 過期 | Render `LINE_REPLY_TIMEOUT_MS`，預設 `25000`、最高 `30000` |
 | Webhook 設定權限 | 將 Render URL 填入 LINE Developers | LINE Developers Console |
 
 上述金鑰不可放進 GitHub、GitLab、文件或截圖公開處，只能放在 Render Environment Variables。
@@ -53,7 +53,7 @@ LINE Developers 後台要把這個 URL 填到 Messaging API 的 Webhook URL。
 5. 到 Render 的 Environment Variables 加入：
    - `LINE_CHANNEL_SECRET`
    - `LINE_CHANNEL_ACCESS_TOKEN`
-   - `LINE_REPLY_TIMEOUT_MS=45000`（選填；不設定也會使用 45 秒預設值）
+   - `LINE_REPLY_TIMEOUT_MS=25000`（選填；不設定也會使用 25 秒預設值，最高 30 秒）
    - `LINE_TIMEOUT_REPLY=目前正在查詢資料，若問題需要人工確認，客服會再協助處理。`（選填）
 6. Redeploy Render 服務。
 7. 回到 LINE Developers 的 Messaging API 分頁。
@@ -101,7 +101,8 @@ LINE Developers 後台要把這個 URL 填到 Messaging API 的 Webhook URL。
 
 - Render 已設定 `DATABASE_URL`、`ANTHROPIC_API_KEY`、`ADMIN_KEY`。
 - Render 已設定 `LINE_CHANNEL_SECRET`、`LINE_CHANNEL_ACCESS_TOKEN`。
-- Render 可設定 `LINE_REPLY_TIMEOUT_MS=45000`，讓 AI 過慢時仍能在 reply token 時效內先回覆。
+- Render 可設定 `LINE_REPLY_TIMEOUT_MS=25000`，讓 AI 過慢時仍能在 reply token 時效內先回覆；即使舊設定較高，程式也會限制在 30 秒內。
+- 如果 Reply API 明確回報 reply token 已失效，系統會改用原群組／聊天室的 Push API 補送同一則訊息。
 - Render logs 沒有 `LINE integration is not configured`。
 - LINE Developers Webhook `Verify` 成功。
 - 使用 LINE 傳「點數多久到期」能收到 AI 回覆。
