@@ -93,6 +93,12 @@ function createPartnersRouter({ partnerService, requireAdminKey, pool }) {
     res.json(await partnerService.listKnowledge(req.params.companyId));
   }));
 
+  router.get('/:companyId/conversations', asyncHandler(async (req, res) => {
+    const company = await partnerService.getCompany(req.params.companyId);
+    if (!company) return res.status(404).json({ error: 'Partner company not found.' });
+    res.json(await partnerService.listLineConversationDays(company.id, req.query.days));
+  }));
+
   router.post('/:companyId/knowledge', asyncHandler(async (req, res) => {
     try {
       const section = await partnerService.addKnowledge(req.params.companyId, req.body || {});

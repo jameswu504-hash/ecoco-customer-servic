@@ -96,6 +96,12 @@ B2B 檢索會移除「目前、有哪些、為什麼、的問題」等問句外�
 
 管理頁的公司專屬資料預設顯示摘要；具備 `ADMIN_KEY` 權限的使用者可逐筆展開完整內容。展開內容保留原始換行，長紀錄在項目內捲動，不會將專屬資料公開到未授權頁面。
 
+## LINE 對話自動紀錄
+
+已綁定合作公司的真實 LINE 群組每次完成問答後，使用者問題與 ECOCO AI 回覆都會自動寫入 `partner_conversations`，不需要再匯出或手動匯入 LINE TXT。儲存前會以 `maskSensitiveText` 遮蔽電話、Email、身分證字號與長編號，並保留 `company_id`、群組資料、角色與時間。
+
+管理者可在 `/partners.html` 的「LINE 對話紀錄」查看最近 7、30 或 90 天紀錄。後端以 `company_id` 限定公司範圍、排除 `line_group_id IS NULL` 的後台測試對話，再依 `Asia/Taipei` 日期分組；同一天內依時間由舊到新顯示。資料仍受既有對話保留天數與清理排程管理。
+
 ## 管理 API
 
 所有 API 都需要 `x-admin-key`：
@@ -105,6 +111,7 @@ B2B 檢索會移除「目前、有哪些、為什麼、的問題」等問句外�
 | `GET` | `/api/partners` | 公司清單 |
 | `POST` | `/api/partners` | 建立公司 |
 | `GET` | `/api/partners/:companyId` | 公司、群組與知識 |
+| `GET` | `/api/partners/:companyId/conversations?days=30` | 真實 LINE 群組對話，依台灣日期分組 |
 | `PATCH` | `/api/partners/:companyId/status` | 啟用或停用公司 |
 | `POST` | `/api/partners/:companyId/binding-code` | 產生一次性綁定碼 |
 | `POST` | `/api/partners/:companyId/knowledge` | 新增公司專屬資料 |
@@ -124,11 +131,12 @@ B2B 檢索會移除「目前、有哪些、為什麼、的問題」等問句外�
 - B2B 自然語句拆詞、片語加權與公司資料總覽檢索。
 - B2B 公司總覽優先使用已授權專屬資料，不受一般 B2C 合作洽談內容干擾。
 - 管理頁可逐筆展開與收合公司專屬資料全文。
+- 真實 LINE 群組問答自動寫入後台，並在管理頁依台灣日期檢視。
 
 後續有正式合作資料時再做：
 
 - 批次 CSV / Excel 匯入與欄位映射。
 - 公司知識編輯、封存與版本紀錄。
 - 群組重新指派、停用與管理介面。
-- B2B 對話稽核與公司範圍的知識缺口待辦。
+- 公司範圍的知識缺口待辦與更進階的對話稽核工具。
 - 依公司設定不同回覆語氣、聯絡窗口與人工轉接流程。

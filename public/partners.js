@@ -2,6 +2,7 @@ const partnerState = {
   companies: [],
   selectedCompanyId: null,
   detail: null,
+  conversationLog: null,
   testSessionId: '',
   pendingLineImport: null,
 };
@@ -52,6 +53,30 @@ function formatTime(value) {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
+  });
+}
+
+function formatConversationDate(value) {
+  const date = new Date(`${value}T00:00:00+08:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('zh-TW', {
+    timeZone: 'Asia/Taipei',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'short',
+  });
+}
+
+function formatConversationTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('zh-TW', {
+    timeZone: 'Asia/Taipei',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
   });
 }
 
@@ -171,6 +196,67 @@ function renderKnowledge(rows) {
   });
 }
 
+function renderConversationLog(payload) {
+  const log = document.getElementById('conversationLog');
+  const summary = document.getElementById('conversationSummary');
+  log.replaceChildren();
+  const days = Array.isArray(payload?.days) ? payload.days : [];
+
+  if (!days.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-row';
+    empty.textContent = '目前沒有真實 LINE 群組對話紀錄。後台測試對話不會顯示在這裡。';
+    log.appendChild(empty);
+    summary.textContent = `最近 ${Number(payload?.selectedDays || 30)} 天沒有 LINE 群組訊息。`;
+    return;
+  }
+
+  summary.textContent = [
+    `最近 ${Number(payload.selectedDays || 30)} 天`,
+    `共 ${Number(payload.totalDays || days.length)} 天`,
+    `${Number(payload.totalMessages || 0)} 則訊息`,
+    payload.truncated ? '（紀錄較多，僅顯示最新資料）' : '',
+  ].filter(Boolean).join(' · ');
+
+  days.forEach((day, dayIndex) => {
+    const section = document.createElement('details');
+    section.className = 'conversation-day';
+    section.open = dayIndex === 0;
+
+    const heading = document.createElement('summary');
+    heading.className = 'conversation-day-heading';
+    const date = document.createElement('strong');
+    date.textContent = formatConversationDate(day.date);
+    const count = document.createElement('span');
+    count.textContent = `${Number(day.messageCount || 0)} 則`;
+    heading.append(date, count);
+
+    const messages = document.createElement('div');
+    messages.className = 'conversation-messages';
+    (Array.isArray(day.messages) ? day.messages : []).forEach(item => {
+      const message = document.createElement('article');
+      const isAssistant = item.role === 'assistant';
+      message.className = `conversation-message ${isAssistant ? 'assistant' : 'user'}`;
+
+      const meta = document.createElement('div');
+      meta.className = 'conversation-message-meta';
+      const role = document.createElement('strong');
+      role.textContent = isAssistant ? 'ECOCO AI' : 'LINE 使用者';
+      const context = document.createElement('span');
+      context.textContent = `${item.groupLabel || 'LINE 群組'} · ${formatConversationTime(item.timestamp)}`;
+      meta.append(role, context);
+
+      const content = document.createElement('p');
+      content.textContent = String(item.content || '');
+      message.append(meta, content);
+      messages.appendChild(message);
+    });
+
+    section.append(heading, messages);
+    log.appendChild(section);
+  });
+}
+
 function renderDetail() {
   const detail = partnerState.detail;
   const workspace = document.getElementById('partnerWorkspace');
@@ -201,6 +287,7 @@ function renderDetail() {
 
   renderLineGroups(detail.lineGroups);
   renderKnowledge(detail.knowledge);
+  renderConversationLog(partnerState.conversationLog);
 }
 
 async function loadCompanies(selectFirst = true) {
@@ -222,15 +309,46 @@ async function loadCompanies(selectFirst = true) {
 }
 
 async function loadCompanyDetail(companyId) {
-  partnerState.detail = await partnerFetch(`/api/partners/${companyId}`);
+  const days = Number(document.getElementById('conversationDays')?.value || 30);
+  const [detail, conversationResult] = await Promise.all([
+    partnerFetch(`/api/partners/${companyId}`),
+    partnerFetch(`/api/partners/${companyId}/conversations?days=${days}`)
+      .then(data => ({ data, error: null }))
+      .catch(error => ({ data: null, error })),
+  ]);
+  partnerState.detail = detail;
+  partnerState.conversationLog = conversationResult.data;
   partnerState.selectedCompanyId = Number(companyId);
   renderCompanies();
   renderDetail();
+  document.getElementById('conversationError').textContent =
+    conversationResult.error?.message || '';
+}
+
+async function refreshConversationLog() {
+  const companyId = partnerState.selectedCompanyId;
+  if (!companyId) return;
+  const button = document.getElementById('refreshConversationsBtn');
+  const error = document.getElementById('conversationError');
+  const days = Number(document.getElementById('conversationDays').value || 30);
+  error.textContent = '';
+  setBusy(button, true, '更新中...');
+  try {
+    partnerState.conversationLog = await partnerFetch(
+      `/api/partners/${companyId}/conversations?days=${days}`
+    );
+    renderConversationLog(partnerState.conversationLog);
+  } catch (err) {
+    error.textContent = err.message;
+  } finally {
+    setBusy(button, false);
+  }
 }
 
 async function selectCompany(companyId) {
   if (Number(companyId) === Number(partnerState.selectedCompanyId)) return;
   partnerState.testSessionId = '';
+  partnerState.conversationLog = null;
   clearLineImport();
   document.getElementById('bindingResult').hidden = true;
   const chat = document.getElementById('testChat');
@@ -519,6 +637,8 @@ async function sendTestQuestion(event) {
 function bindEvents() {
   document.getElementById('loginForm').addEventListener('submit', submitLogin);
   document.getElementById('openCreateCompanyBtn').addEventListener('click', openCreateCompanyDialog);
+  document.getElementById('refreshConversationsBtn').addEventListener('click', refreshConversationLog);
+  document.getElementById('conversationDays').addEventListener('change', refreshConversationLog);
   document.getElementById('emptyCreateCompanyBtn').addEventListener('click', openCreateCompanyDialog);
   document.getElementById('closeCreateCompanyBtn').addEventListener('click', () => document.getElementById('createCompanyDialog').close());
   document.getElementById('cancelCreateCompanyBtn').addEventListener('click', () => document.getElementById('createCompanyDialog').close());

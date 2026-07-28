@@ -166,6 +166,9 @@ const SCHEMA = [
     )`,
   `CREATE INDEX IF NOT EXISTS idx_partner_conversations_scope ON partner_conversations(company_id, session_id, timestamp)`,
   `CREATE INDEX IF NOT EXISTS idx_partner_conversations_group ON partner_conversations(line_group_id, timestamp)`,
+  `CREATE INDEX IF NOT EXISTS idx_partner_conversations_company_day
+     ON partner_conversations(company_id, timestamp DESC)
+     WHERE line_group_id IS NOT NULL`,
   `CREATE TABLE IF NOT EXISTS internal_wiki_entries (
       id          SERIAL PRIMARY KEY,
       department  TEXT NOT NULL DEFAULT 'general',

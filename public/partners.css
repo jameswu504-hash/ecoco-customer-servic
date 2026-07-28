@@ -440,6 +440,121 @@ button:disabled {
   margin-top: 16px;
 }
 
+.conversation-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.conversation-controls label,
+.conversation-summary {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.conversation-controls select {
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.conversation-summary {
+  margin: -8px 0 14px;
+}
+
+.conversation-log {
+  display: grid;
+  gap: 12px;
+}
+
+.conversation-day {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+
+.conversation-day-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.conversation-day-heading::-webkit-details-marker {
+  display: none;
+}
+
+.conversation-day-heading::marker {
+  content: "";
+}
+
+.conversation-day-heading span {
+  color: var(--green);
+  font-family: "Space Mono", monospace;
+  font-size: 12px;
+}
+
+.conversation-messages {
+  display: grid;
+  gap: 10px;
+  max-height: 520px;
+  padding: 14px;
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+  background: #f2f6f3;
+}
+
+.conversation-message {
+  width: min(82%, 720px);
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.conversation-message.assistant {
+  justify-self: start;
+  border-left: 4px solid var(--green);
+}
+
+.conversation-message.user {
+  justify-self: end;
+  border-right: 4px solid var(--amber);
+}
+
+.conversation-message-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+
+.conversation-message-meta strong {
+  color: var(--green-dark);
+  font-size: 12px;
+}
+
+.conversation-message-meta span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.conversation-message p {
+  margin: 0;
+  color: var(--ink);
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .data-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -897,5 +1012,20 @@ dialog::backdrop {
 
   .chat-message {
     max-width: 94%;
+  }
+
+  .conversation-controls {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .conversation-message {
+    width: 94%;
+  }
+
+  .conversation-message-meta {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
   }
 }
