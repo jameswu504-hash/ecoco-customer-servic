@@ -138,6 +138,65 @@ test('partner overview questions retrieve recent knowledge within the same compa
   assert.match(queries[0].sql, /WHERE company_id = \$1/);
 });
 
+test('partner overview answers use authorized private data without B2C RAG interference', async () => {
+  let sharedRagCalls = 0;
+  let capturedContext = '';
+  const pool = {
+    async query(sql) {
+      if (/SELECT id, slug, name\s+FROM partner_companies/.test(sql)) {
+        return { rows: [{ id: 7, slug: 'familymart-test', name: '全家便利商店（測試）' }] };
+      }
+      if (/FROM partner_knowledge_sections/.test(sql)) {
+        return {
+          rows: [{
+            id: 8,
+            company_id: 7,
+            category: 'LINE 歷史｜2026-07',
+            content: '2026/7/27 09:00\t專案窗口\t確認合作排程',
+            sort_order: 8,
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+  };
+  const service = createPartnerService({
+    pool,
+    client: {
+      messages: {
+        create: async () => ({
+          content: [{ type: 'text', text: '已整理合作紀錄。' }],
+        }),
+      },
+    },
+    retrieveKnowledgeForQuestion: async () => {
+      sharedRagCalls += 1;
+      return { context: '一般 B2C 合作洽談表單', chunks: [], retrievalMode: 'keyword' };
+    },
+    buildRuntimeGuardrails: () => '',
+    buildSystemPrompt: context => {
+      capturedContext = context;
+      return context;
+    },
+    buildSystemPromptBlocks: null,
+    defaultAnthropicModel: 'test-model',
+    classifyQuestion: () => null,
+    retrieveLiveStationContext: null,
+  });
+
+  const result = await service.answerPartnerQuestion({
+    company: { id: 7, slug: 'familymart-test', name: '全家便利商店（測試）', status: 'active' },
+    sessionId: 'partner_test_7_overview',
+    question: '全家目前有哪些合作紀錄？',
+  });
+
+  assert.equal(sharedRagCalls, 0);
+  assert.equal(result.privateKnowledgeCount, 1);
+  assert.match(capturedContext, /已授權的內部合作資料/);
+  assert.match(capturedContext, /可以整理與引用日期、發言者及內容/);
+  assert.doesNotMatch(capturedContext, /一般 B2C 合作洽談表單/);
+});
+
 test('partner context contains only the selected company private rows', () => {
   const context = buildPartnerKnowledgeContext(
     { id: 1, name: '測試甲公司' },
