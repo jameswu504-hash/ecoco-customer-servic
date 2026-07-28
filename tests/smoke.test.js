@@ -42,6 +42,7 @@ const {
   getLineTimeoutReply,
   isLineRateLimited,
   LINE_RATE_LIMIT_MAX_BUCKETS,
+  parseLineLocationMessage,
   resolveWithTimeout,
   safeCompare,
   toLineText,
@@ -1193,6 +1194,26 @@ test('LINE webhook rate limits a single sender before API calls', () => {
   assert.equal(isLineRateLimited(sessionId, now + 61_000, env), false);
 });
 
+test('LINE location messages return a usable query or an explicit validation error', () => {
+  const valid = parseLineLocationMessage({
+    type: 'location',
+    latitude: 24.1219,
+    longitude: 120.6748,
+    title: '國立中興大學',
+  });
+  assert.equal(valid.errorReply, '');
+  assert.equal(valid.text, '查詢「國立中興大學」附近的 ECOCO 站點');
+  assert.equal(valid.coords.lat, 24.1219);
+
+  const invalid = parseLineLocationMessage({
+    type: 'location',
+    latitude: 35.6762,
+    longitude: 139.6503,
+  });
+  assert.equal(invalid.coords, null);
+  assert.match(invalid.errorReply, /無法讀取這個位置/);
+});
+
 test('LINE rate limit and timeout replies are not stored as conversation history', () => {
   const lineRoute = fs.readFileSync(path.join(__dirname, '..', 'routes', 'line.routes.js'), 'utf8');
 
@@ -1474,4 +1495,48 @@ test('dashboard search escapes ILIKE wildcard characters', () => {
   assert.equal(escapeIlikePattern('APP_100%\\test'), 'APP\\_100\\%\\\\test');
   assert.match(route, /ESCAPE '\\\\'/);
   assert.match(route, /escapeIlikePattern/);
+});
+
+test('informational questions with high-risk keywords route to RAG', () => {
+  // 「可以…嗎」「需要…嗎」是規則問法，不是個案；退費/付款字眼不應直接轉人工。
+  for (const q of ['優惠券可以退費嗎', '可以用信用卡付款嗎', '優惠券兌換需要付款嗎']) {
+    const r = classifyQuestion(q);
+    assert.equal(r.shouldUseRag, true, q);
+    assert.equal(r.category, 'high_risk_policy', q);
+  }
+});
+
+test('personal high-risk cases still escalate to human support', () => {
+  for (const q of ['我要退款', '幫我退費', '我沒有收到退款', '我的帳號被盜了']) {
+    const r = classifyQuestion(q);
+    assert.equal(r.shouldUseRag, false, q);
+    assert.equal(r.shouldEscalate, true, q);
+  }
+});
+
+test('customer-service info questions route to RAG instead of the canned reply', () => {
+  for (const q of ['客服時間是幾點到幾點', '你們有客服電話嗎', '個資保護政策是什麼']) {
+    const r = classifyQuestion(q);
+    assert.equal(r.shouldUseRag, true, q);
+    assert.equal(r.category, 'customer_service_info', q);
+  }
+});
+
+test('explicit human requests still short-circuit to the escalation reply', () => {
+  for (const q of ['我要找真人客服', '轉接人工']) {
+    const r = classifyQuestion(q);
+    assert.equal(r.shouldUseRag, false, q);
+    assert.equal(r.shouldEscalate, true, q);
+  }
+});
+
+test('small talk requires the whole message to be a greeting', () => {
+  for (const q of ['你好', '哈囉！', 'hi']) {
+    assert.equal(classifyQuestion(q).category, 'small_talk', q);
+  }
+  for (const q of ['測試投遞失敗怎麼辦', 'hello kitty 聯名商品還有嗎']) {
+    const r = classifyQuestion(q);
+    assert.notEqual(r.category, 'small_talk', q);
+    assert.equal(r.shouldUseRag, true, q);
+  }
 });

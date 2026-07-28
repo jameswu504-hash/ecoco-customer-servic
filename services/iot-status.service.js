@@ -7,6 +7,24 @@ const DEFAULT_LIMIT = 5;
 const MAX_LIMIT = 8;
 const DEFAULT_CONNECT_TIMEOUT_MS = 10000;
 const DEFAULT_STATION_DATA_MAX_AGE_MS = 30 * 60 * 1000;
+// 台灣本島與離島的座標合理範圍；超出者視為無效輸入。
+const TAIWAN_BOUNDS = { minLat: 21.5, maxLat: 26.5, minLng: 118.0, maxLng: 122.5 };
+// 最近站點查詢的矩形粗篩範圍（度）。0.15 度在台灣緯度約 16 km；
+// 第一輪查無時放寬到 0.5 度（約 55 km）再試一次。
+const NEAREST_BOUNDING_DEGREES = [0.15, 0.5];
+
+function normalizeCoords(coords) {
+  const lat = Number(coords?.lat);
+  const lng = Number(coords?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < TAIWAN_BOUNDS.minLat || lat > TAIWAN_BOUNDS.maxLat) return null;
+  if (lng < TAIWAN_BOUNDS.minLng || lng > TAIWAN_BOUNDS.maxLng) return null;
+  return {
+    lat,
+    lng,
+    label: String(coords?.label || '').trim().slice(0, 80),
+  };
+}
 const DEFAULT_SNAPSHOT_PATH = path.join(__dirname, '..', 'data', 'iot-station-snapshot.json');
 
 function normalizeText(value) {
@@ -88,7 +106,6 @@ function escapePostgresLike(value) {
 }
 
 function shouldUseLiveStationContext(question, classification = null) {
-  if (classification?.category === 'station_machine') return true;
   return stationQueryIntent.isStationDataQuestion(question);
 }
 
@@ -366,6 +383,112 @@ function createIotStatusService({
     };
   }
 
+  // 依經緯度找最近站點。先用矩形粗篩讓索引生效，查無時放寬範圍重試一次。
+  // Haversine 純 SQL 實作；752 筆規模不需要 PostGIS。
+  async function retrieveNearestStations(coords, { limit = DEFAULT_LIMIT } = {}) {
+    const safeCoords = normalizeCoords(coords);
+    if (!pgPool || !safeCoords) {
+      return { retrievalMode: 'postgres_iot_disabled', terms: [], rows: [], context: '' };
+    }
+
+    const cappedLimit = Math.min(Math.max(Number(limit) || DEFAULT_LIMIT, 1), MAX_LIMIT);
+    let rows = [];
+    for (const boundingDegrees of NEAREST_BOUNDING_DEGREES) {
+      const result = await pgPool.query(
+        `SELECT *
+         FROM (
+           SELECT DISTINCT ON (station_code)
+             station_code,
+             station_name,
+             address,
+             area_name,
+             district_name,
+             place_name,
+             longitude,
+             latitude,
+             service_hours,
+             station_status,
+             station_status_updated_at,
+             asset_id,
+             machine_type,
+             machine_kind,
+             machine_status,
+             machine_status_at,
+             last_conn_status,
+             last_conn_status_at,
+             last_heartbeat_at,
+             alarm_code,
+             alarm_description,
+             bin1_count,
+             bin1_max_capacity,
+             bin1_remain_capacity,
+             bin1_full_at,
+             bin2_count,
+             bin2_max_capacity,
+             bin2_remain_capacity,
+             bin2_full_at,
+             source_synced_at,
+             6371 * 2 * ASIN(SQRT(
+               POWER(SIN(RADIANS(lat_num - $1) / 2), 2) +
+               COS(RADIANS($1)) * COS(RADIANS(lat_num)) *
+               POWER(SIN(RADIANS(lng_num - $2) / 2), 2)
+             )) AS distance_km
+           FROM iot_station_statuses
+           WHERE lat_num IS NOT NULL AND lng_num IS NOT NULL
+             AND lat_num BETWEEN $1 - $4 AND $1 + $4
+             AND lng_num BETWEEN $2 - $4 AND $2 + $4
+           ORDER BY station_code, distance_km, source_synced_at DESC
+         ) nearest_stations
+         ORDER BY distance_km ASC
+         LIMIT $3`,
+        [safeCoords.lat, safeCoords.lng, cappedLimit, boundingDegrees]
+      );
+      rows = result.rows;
+      if (rows.length > 0) break;
+    }
+
+    // DISTINCT ON 需以 station_code 排序，這裡再依距離排序取前 N 筆。
+    rows.sort((a, b) => Number(a.distance_km) - Number(b.distance_km));
+    rows = rows.slice(0, cappedLimit);
+
+    const safeRows = rows.map(row => ({
+      ...sanitizeRow(row),
+      distanceKm: Number.isFinite(Number(row.distance_km))
+        ? Math.round(Number(row.distance_km) * 100) / 100
+        : null,
+    }));
+
+    const syncedDates = safeRows
+      .map(row => new Date(row.sourceSyncedAt))
+      .filter(date => !Number.isNaN(date.getTime()));
+    let checkedAt = syncedDates.length > 0
+      ? new Date(Math.max(...syncedDates.map(date => date.getTime())))
+      : null;
+    if (!checkedAt) {
+      const syncStatus = await pgPool.query(
+        'SELECT MAX(source_synced_at) AS last_synced_at FROM iot_station_statuses'
+      );
+      const lastSyncedAt = syncStatus.rows[0]?.last_synced_at;
+      const parsed = lastSyncedAt ? new Date(lastSyncedAt) : null;
+      checkedAt = parsed && !Number.isNaN(parsed.getTime()) ? parsed : null;
+    }
+    const freshness = getStationDataFreshness(checkedAt, env, now());
+
+    return {
+      retrievalMode: safeRows.length > 0 ? 'postgres_iot_nearest' : 'postgres_iot_nearest_miss',
+      terms: safeCoords.label ? [safeCoords.label] : [],
+      coords: { lat: safeCoords.lat, lng: safeCoords.lng, label: safeCoords.label },
+      rows: safeRows,
+      ...freshness,
+      context: formatLiveStationContext(
+        safeRows,
+        checkedAt || new Date(now()),
+        'Neon PostgreSQL station sync',
+        freshness
+      ),
+    };
+  }
+
   async function retrievePostgresStationContext(terms, { limit = DEFAULT_LIMIT, includeCount = false } = {}) {
     if (!pgPool || !Array.isArray(terms) || terms.length === 0) {
       return { retrievalMode: 'postgres_iot_disabled', terms, rows: [], context: '' };
@@ -488,11 +611,24 @@ function createIotStatusService({
     };
   }
 
-  async function retrieveLiveStationContext(question, { classification = null, limit = DEFAULT_LIMIT } = {}) {
+  async function retrieveLiveStationContext(question, { classification = null, limit = DEFAULT_LIMIT, coords = null } = {}) {
+    const safeCoords = normalizeCoords(coords);
     const queryIntent = {
       asksCount: isStationCountQuestion(question),
+      isHowTo: stationQueryIntent.isStationHowToQuestion(question),
+      hasLocationTerms: stationQueryIntent.hasMeaningfulLocationTerms(question),
+      hasCoords: Boolean(safeCoords),
     };
     const withQueryIntent = result => ({ ...result, queryIntent });
+
+    // 有真實座標時直接走距離查詢，不需要文字地點解析。
+    if (safeCoords && pgPool) {
+      try {
+        return withQueryIntent(await retrieveNearestStations(safeCoords, { limit }));
+      } catch (err) {
+        console.warn(`PostgreSQL nearest station lookup error: ${err.message}`);
+      }
+    }
 
     if (!shouldUseLiveStationContext(question, classification)) {
       return withQueryIntent({ retrievalMode: 'none', terms: [], rows: [], context: '' });
@@ -623,6 +759,7 @@ function createIotStatusService({
     getFreshness: value => getStationDataFreshness(value, env, now()),
     isConfigured: () => isIotMysqlConfigured(env),
     retrieveLiveStationContext,
+    retrieveNearestStations,
     retrieveSnapshotStationContext,
     testConnection,
   };
@@ -637,6 +774,8 @@ module.exports = {
   formatLiveStationContext,
   getIotMysqlConfig,
   getStationDataFreshness,
+  normalizeCoords,
+  TAIWAN_BOUNDS,
   getStationDataMaxAgeMs,
   isStationCountQuestion,
   isIotMysqlConfigured,

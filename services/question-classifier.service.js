@@ -95,7 +95,18 @@ const INFORMATIONAL_POLICY_KEYWORDS = [
   '多久',
   '說明',
   '什麼情況',
+  '時間',
+  '幾點',
+  '電話',
+  '怎麼聯絡',
+  '如何聯絡',
+  '聯絡方式',
+  '管道',
 ];
+
+// 中文最常見的規則問法：「可以…嗎」「能不能…」「需要…嗎」「會不會…」。
+// 這類句型問的是通則，不是個案，應交給知識庫回答（回答時仍套保守話術）。
+const RULE_QUESTION_PATTERN = /(可以|可不可以|能不能|能否|需要|需不需要|會不會|要不要|是不是|有沒有)[^。！？!?]{0,15}(嗎|吗|呢|？|\?)/;
 
 const PERSONAL_CASE_KEYWORDS = [
   '我要',
@@ -111,9 +122,16 @@ const PERSONAL_CASE_KEYWORDS = [
 ];
 
 function isInformationalHighRiskQuestion(text) {
+  if (hasAny(text, PERSONAL_CASE_KEYWORDS)) return false;
   return hasAny(text, INFORMATIONAL_POLICY_KEYWORDS)
-    && !hasAny(text, PERSONAL_CASE_KEYWORDS);
+    || RULE_QUESTION_PATTERN.test(text);
 }
+
+// 整句只有招呼語（含結尾標點）才算 small_talk。
+const SMALL_TALK_WHOLE_MESSAGE_PATTERN = /^(hi|hello|hey|哈囉|哈啰|嗨+|你好|您好|安安|早安|午安|晚安|test|測試|测试)[\s!！。.、~〜？?]*$/i;
+
+// 明確要求真人客服（招呼語以外唯一該直接轉人工的措辭）。
+const EXPLICIT_HUMAN_REQUEST_PATTERN = /(真人|人工|轉接|专人|專人)/;
 
 function confidenceFor(text, category) {
   const hits = category.keywords.filter(keyword => text.includes(normalizeQuestionText(keyword))).length;
@@ -202,6 +220,40 @@ function classifyQuestion(question) {
 
   const matched = QUESTION_CATEGORIES.find(category => hasAny(text, category.keywords));
   if (matched) {
+    // small_talk 只在整句就是招呼語時成立；
+    // 「hello kitty 聯名商品」「測試投遞失敗」含招呼詞但不是招呼。
+    if (matched.category === 'small_talk' && !SMALL_TALK_WHOLE_MESSAGE_PATTERN.test(text)) {
+      return {
+        category: 'unknown',
+        label: '無法判斷',
+        confidence: 'low',
+        ragScope: [],
+        shouldUseRag: true,
+        shouldEscalate: false,
+        reason: 'greeting keyword inside a longer question; routed to RAG',
+        directReply: '',
+      };
+    }
+
+    // customer_service 的罐頭回覆只適合「個案請求」或「明確要求真人」。
+    // 「客服時間幾點」「怎麼聯絡客服」是資訊問題，知識庫有答案，交給 RAG。
+    if (
+      matched.category === 'customer_service'
+      && !hasAny(text, PERSONAL_CASE_KEYWORDS)
+      && !EXPLICIT_HUMAN_REQUEST_PATTERN.test(text)
+    ) {
+      return {
+        category: 'customer_service_info',
+        label: '客服資訊 / 一般說明',
+        confidence: confidenceFor(text, matched),
+        ragScope: matched.ragScope,
+        shouldUseRag: true,
+        shouldEscalate: false,
+        reason: 'informational customer-service question; routed to RAG',
+        directReply: '',
+      };
+    }
+
     return {
       category: matched.category,
       label: matched.label,

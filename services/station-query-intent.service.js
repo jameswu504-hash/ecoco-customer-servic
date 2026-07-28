@@ -360,6 +360,50 @@ function isStationDataQuestion(question) {
   return false;
 }
 
+const GENERIC_STATION_TERMS = new Set([
+  'ecoco',
+  '\u7ad9\u9ede', // 站點
+  '\u7ad9\u70b9', // 站点
+  '\u7ad9', // 站
+  '\u64da\u9ede', // 據點
+  '\u636e\u70b9', // 据点
+  '\u6a5f\u53f0', // 機台
+  '\u673a\u53f0', // 机台
+  '\u56de\u6536\u7ad9', // 回收站
+  '\u56de\u6536\u6a5f', // 回收機
+  '\u56de\u6536\u673a', // 回收机
+  '\u56de\u6536\u9ede', // 回收點
+  '\u56de\u6536\u70b9', // 回收点
+  'ecoco\u7ad9', // ecoco站
+  'ecoco\u7ad9\u9ede', // ecoco站點
+]);
+
+const STATION_HOW_TO_PATTERN = new RegExp(
+  '(\u600e\u9ebc|\u600e\u4e48|\u600e\u6a23|\u600e\u6837|\u5982\u4f55|\u54ea\u88e1\u53ef\u4ee5|\u54ea\u91cc\u53ef\u4ee5|\u8981\u5f9e\u54ea|\u8981\u4ece\u54ea)' // 怎麼/如何/哪裡可以…
+  + '.{0,6}'
+  + '(\u67e5\u8a62|\u67e5\u8be2|\u67e5|\u627e|\u770b|\u4f7f\u7528|\u641c\u5c0b|\u641c\u7d22)' // 查詢/找/看/使用/搜尋
+);
+
+function isStationHowToQuestion(question) {
+  const text = normalizeStationQueryText(question);
+  return STATION_HOW_TO_PATTERN.test(text);
+}
+
+function isGenericStationTerm(value) {
+  return GENERIC_STATION_TERMS.has(
+    String(value || '').normalize('NFKC').trim().toLowerCase()
+  );
+}
+
+function hasMeaningfulLocationTerms(question) {
+  const text = normalizeStationQueryText(question);
+  if (getAdministrativeAreaTerms(text).length > 0) return true;
+  if (getLocationAliasTerms(text).length > 0) return true;
+  if (/es\d{3,6}(?:_[a-z0-9]+)?/i.test(text)) return true;
+  if (/\b\d{8,22}\b/.test(text)) return true;
+  return buildStationSearchTerms(text).some(term => !isGenericStationTerm(term));
+}
+
 function isStationCountQuestion(question) {
   const text = normalizeStationQueryText(question);
   return hasAny(text, STATION_COUNT_WORDS)
@@ -427,8 +471,10 @@ module.exports = {
   getAdministrativeAreaTerms,
   getLocationAliasTerms,
   hasLikelyStationEntity,
+  hasMeaningfulLocationTerms,
   isStationDataQuestion,
   isStationCountQuestion,
+  isStationHowToQuestion,
   normalizeStationQueryText,
   stripCommonStationWords,
 };

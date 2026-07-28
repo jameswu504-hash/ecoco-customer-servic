@@ -245,6 +245,21 @@ const SCHEMA = [
    END $$`,
   `ALTER TABLE iot_station_statuses ADD COLUMN IF NOT EXISTS longitude TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE iot_station_statuses ADD COLUMN IF NOT EXISTS latitude TEXT NOT NULL DEFAULT ''`,
+  // 由文字座標衍生的數值欄位。CASE + regex 守衛讓髒資料（非數字字串）
+  // 產生 NULL 而不是讓整個啟動遷移失敗；GENERATED 讓它永遠跟同步寫入的文字欄位一致。
+  `ALTER TABLE iot_station_statuses ADD COLUMN IF NOT EXISTS lat_num DOUBLE PRECISION
+     GENERATED ALWAYS AS (
+       CASE WHEN latitude ~ '^-?[0-9]{1,3}(\\.[0-9]+)?$'
+            THEN latitude::DOUBLE PRECISION END
+     ) STORED`,
+  `ALTER TABLE iot_station_statuses ADD COLUMN IF NOT EXISTS lng_num DOUBLE PRECISION
+     GENERATED ALWAYS AS (
+       CASE WHEN longitude ~ '^-?[0-9]{1,3}(\\.[0-9]+)?$'
+            THEN longitude::DOUBLE PRECISION END
+     ) STORED`,
+  `CREATE INDEX IF NOT EXISTS idx_iot_station_coords
+     ON iot_station_statuses (lat_num, lng_num)
+     WHERE lat_num IS NOT NULL AND lng_num IS NOT NULL`,
   `ALTER TABLE iot_station_statuses ADD COLUMN IF NOT EXISTS source_synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`,
   `CREATE INDEX IF NOT EXISTS idx_iot_station_statuses_name ON iot_station_statuses(station_name)`,
   `CREATE INDEX IF NOT EXISTS idx_iot_station_statuses_area ON iot_station_statuses(area_name, district_name)`,

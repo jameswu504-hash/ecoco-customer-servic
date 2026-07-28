@@ -452,6 +452,7 @@ test('active partner names are cached briefly for B2B scope checks', async () =>
 
 test('authorized B2B branches keep the shared live station capability', async () => {
   let modelCalls = 0;
+  let liveStationOptions = null;
   const pool = {
     async query(sql) {
       if (/SELECT id, slug, name\s+FROM partner_companies/.test(sql)) {
@@ -475,20 +476,23 @@ test('authorized B2B branches keep the shared live station capability', async ()
       chunks: [],
       retrievalMode: 'none',
     }),
-    retrieveLiveStationContext: async () => ({
-      context: '即時站點資料',
-      retrievalMode: 'postgres_iot',
-      rows: [{
-        stationCode: 'station-test',
-        stationName: '測試站',
-        address: '測試地址',
-        machineStatus: 'up',
-        lastConnectionStatus: 'online',
-        bin1Count: 10,
-        bin1MaxCapacity: 100,
-        bin1RemainCapacity: 90,
-      }],
-    }),
+    retrieveLiveStationContext: async (question, options) => {
+      liveStationOptions = options;
+      return {
+        context: '即時站點資料',
+        retrievalMode: 'postgres_iot',
+        rows: [{
+          stationCode: 'station-test',
+          stationName: '測試站',
+          address: '測試地址',
+          machineStatus: 'up',
+          lastConnectionStatus: 'online',
+          bin1Count: 10,
+          bin1MaxCapacity: 100,
+          bin1RemainCapacity: 90,
+        }],
+      };
+    },
     buildRuntimeGuardrails: () => '',
     buildSystemPrompt: () => '',
     buildSystemPromptBlocks: () => [],
@@ -500,12 +504,18 @@ test('authorized B2B branches keep the shared live station capability', async ()
     company: { id: 1, name: '測試甲公司', slug: 'alpha', status: 'active' },
     sessionId: 'partner_test_1_stationtest',
     question: '測試站目前狀態',
+    coords: { lat: 24.1219, lng: 120.6748, label: '中興大學' },
   });
 
   assert.match(result.reply, /測試站/);
   assert.match(result.reply, /機台：正常/);
   assert.equal(result.retrievalMode, 'postgres_iot+partner_authorized');
   assert.equal(modelCalls, 0);
+  assert.deepEqual(liveStationOptions.coords, {
+    lat: 24.1219,
+    lng: 120.6748,
+    label: '中興大學',
+  });
 });
 
 test('unbound LINE groups are intercepted before the B2C classifier', () => {

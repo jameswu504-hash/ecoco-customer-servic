@@ -10,6 +10,7 @@ const {
   normalizeModelMessages,
   stripKnowledgeGapMarker,
 } = require('./chat.routes');
+const { normalizeCoords } = require('../services/iot-status.service');
 const { maskSensitiveText } = require('../services/privacy.service');
 const { compareSecret } = require('../services/secret.service');
 const { saveChatTrace } = require('../services/trace.service');
@@ -23,6 +24,7 @@ const LINE_RATE_LIMIT_DEFAULT_MAX = 8;
 const LINE_RATE_LIMIT_MAX_BUCKETS = 1000;
 const LINE_RATE_LIMIT_CLEANUP_INTERVAL_MS = 60 * 1000;
 const LINE_RATE_LIMIT_REPLY = '訊息有點密集，請稍後再試一次。';
+const LINE_INVALID_LOCATION_REPLY = '無法讀取這個位置，請重新傳送 LINE 位置資訊，或改用文字告訴我附近的縣市、路名或地標。';
 const LINE_REPLY_TIMEOUT_DEFAULT_MS = 45_000;
 const LINE_REPLY_TIMEOUT_MAX_MS = 55_000;
 const LINE_TIMEOUT_REPLY = '目前正在查詢資料，若問題需要人工確認，客服會再協助處理。';
@@ -65,6 +67,28 @@ function toLineText(text) {
   if (!cleaned) return LINE_FALLBACK_REPLY;
   if (cleaned.length <= LINE_TEXT_LIMIT) return cleaned;
   return `${cleaned.slice(0, LINE_TEXT_LIMIT)}\n\n（回覆較長，已截斷）`;
+}
+
+function parseLineLocationMessage(message = {}) {
+  const coords = normalizeCoords({
+    lat: message.latitude,
+    lng: message.longitude,
+    label: message.title || message.address || '',
+  });
+  if (!coords) {
+    return {
+      coords: null,
+      text: 'LINE 位置資訊無效',
+      errorReply: LINE_INVALID_LOCATION_REPLY,
+    };
+  }
+  return {
+    coords,
+    text: coords.label
+      ? `查詢「${coords.label}」附近的 ECOCO 站點`
+      : '查詢我附近的 ECOCO 站點',
+    errorReply: '',
+  };
 }
 
 async function replyToLine({ replyToken, text, channelAccessToken }) {
@@ -200,6 +224,7 @@ async function buildAiReply({
   signal = undefined,
   classification = null,
   retrieveLiveStationContext = null,
+  coords = null,
 }) {
   const question = String(text || '').trim().slice(0, LINE_MAX_INPUT_CHARS);
   const traceStart = Date.now();
@@ -212,6 +237,7 @@ async function buildAiReply({
     question,
     classification,
     retrieveLiveStationContext,
+    coords,
   });
   const stationStatusReply = shouldUseDeterministicStationReply(question, classification, rag.liveStationContext)
     ? buildLiveStationStatusReply(rag.liveStationContext)
@@ -365,9 +391,23 @@ function createLineRouter({
     res.status(200).json({ ok: true });
 
     for (const event of events) {
-      if (event.type !== 'message' || event.message?.type !== 'text' || !event.replyToken) continue;
+      const isTextMessage = event.message?.type === 'text';
+      const isLocationMessage = event.message?.type === 'location';
+      if (event.type !== 'message' || (!isTextMessage && !isLocationMessage) || !event.replyToken) continue;
 
-      const userText = String(event.message.text || '').trim().slice(0, LINE_MAX_INPUT_CHARS);
+      // LINE 位置訊息：使用者按「＋ → 位置資訊」送出，內含精確經緯度。
+      // 座標只在本次請求記憶體中使用，對話紀錄僅落地 label。
+      let userCoords = null;
+      let userText = '';
+      let locationErrorReply = '';
+      if (isLocationMessage) {
+        const locationInput = parseLineLocationMessage(event.message);
+        userCoords = locationInput.coords;
+        userText = locationInput.text;
+        locationErrorReply = locationInput.errorReply;
+      } else {
+        userText = String(event.message.text || '').trim().slice(0, LINE_MAX_INPUT_CHARS);
+      }
       if (!userText) continue;
 
       let webhookClaim;
@@ -395,6 +435,17 @@ function createLineRouter({
           channel: 'line',
           question: userText,
           rag: { retrievalMode: 'line_rate_limited', chunks: [] },
+          latencyMs: 0,
+          questionClassification: classification,
+        });
+      } else if (locationErrorReply) {
+        reply = locationErrorReply;
+        shouldStoreConversation = false;
+        await saveChatTrace(pool, {
+          sessionId,
+          channel: isPartnerGroup ? 'line_b2b' : 'line',
+          question: userText,
+          rag: { retrievalMode: 'line_invalid_location', chunks: [] },
           latencyMs: 0,
           questionClassification: classification,
         });
@@ -430,6 +481,7 @@ function createLineRouter({
               question: userText,
               channel: 'line_b2b',
               signal: abortController.signal,
+              coords: userCoords,
             });
             const result = await resolveWithTimeout(
               partnerReplyPromise,
@@ -490,6 +542,7 @@ function createLineRouter({
           signal: abortController.signal,
           classification,
           retrieveLiveStationContext,
+          coords: userCoords,
         });
 
         try {
@@ -574,6 +627,7 @@ module.exports = {
   LINE_RATE_LIMIT_DEFAULT_MAX,
   LINE_RATE_LIMIT_MAX_BUCKETS,
   LINE_RATE_LIMIT_REPLY,
+  LINE_INVALID_LOCATION_REPLY,
   LINE_RATE_LIMIT_WINDOW_MS,
   LINE_REPLY_TIMEOUT_DEFAULT_MS,
   LINE_REPLY_TIMEOUT_MAX_MS,
@@ -592,6 +646,7 @@ module.exports = {
   getLineReplyTimeoutMs,
   getLineTimeoutReply,
   isLineRateLimited,
+  parseLineLocationMessage,
   replyToLine,
   resolveWithTimeout,
   safeCompare,

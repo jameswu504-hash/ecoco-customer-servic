@@ -177,10 +177,10 @@
       }
     }
 
-    async function sendMessage() {
+    async function sendMessage(options = {}) {
       const input = document.getElementById("inputBox");
       const sendBtn = document.getElementById("sendBtn");
-      const text = input.value.trim();
+      const text = (options.overrideText || input.value).trim();
       if (!text) return;
 
       input.value = "";
@@ -198,7 +198,11 @@
           headers: {
             "Content-Type": "application/json"
           },
-          body: JSON.stringify({ message: text })
+          body: JSON.stringify(
+            options.coords
+              ? { message: text, coords: options.coords }
+              : { message: text }
+          )
         });
 
         const data = await response.json();
@@ -226,7 +230,33 @@
       const input = document.getElementById("inputBox");
       input?.addEventListener("keydown", handleKey);
       input?.addEventListener("input", event => autoResize(event.currentTarget));
-      document.getElementById("sendBtn")?.addEventListener("click", sendMessage);
+      document.getElementById("sendBtn")?.addEventListener("click", () => sendMessage());
+
+      document.getElementById("locateBtn")?.addEventListener("click", () => {
+        const btn = document.getElementById("locateBtn");
+        if (!navigator.geolocation) {
+          appendMessage("bot", "你的瀏覽器不支援定位功能，可以改用文字告訴我縣市或地標。");
+          return;
+        }
+        btn.disabled = true;
+        btn.textContent = "定位中…";
+        navigator.geolocation.getCurrentPosition(
+          pos => {
+            btn.disabled = false;
+            btn.textContent = "\uD83D\uDCCD 查最近站點";
+            sendMessage({
+              overrideText: "查詢我附近的 ECOCO 站點",
+              coords: { lat: pos.coords.latitude, lng: pos.coords.longitude }
+            });
+          },
+          () => {
+            btn.disabled = false;
+            btn.textContent = "\uD83D\uDCCD 查最近站點";
+            appendMessage("bot", "沒有取得定位權限，可以改用文字告訴我縣市、路名或地標，我再幫你查。");
+          },
+          { timeout: 8000, maximumAge: 5 * 60 * 1000 }
+        );
+      });
     }
 
     bindUiEvents();

@@ -6,15 +6,19 @@ const path = require('node:path');
 const {
   attachLiveStationContext,
   buildLiveStationStatusReply,
+  formatDistance,
+  getRequestCoords,
   shouldUseDeterministicStationReply,
 } = require('../routes/chat.routes');
 const { dedupeStationRows, toPostgresRow, uploadStationRows } = require('../scripts/sync-iot-stations-to-postgres');
 const { classifyQuestion } = require('../services/question-classifier.service');
+const stationQueryIntent = require('../services/station-query-intent.service');
 const {
   buildStationSearchTerms,
   createIotStatusService,
   isStationCountQuestion,
   isIotMysqlConfigured,
+  normalizeCoords,
   sanitizeConnectionError,
   shouldUseLiveStationContext,
 } = require('../services/iot-status.service');
@@ -133,6 +137,14 @@ test('general recycling rule questions do not trigger live station lookup', () =
   const classification = classifyQuestion(question);
 
   assert.notEqual(classification.category, 'station_machine');
+  assert.equal(shouldUseLiveStationContext(question, classification), false);
+});
+
+test('partner policy questions mentioning machines do not trigger live station lookup', () => {
+  const question = '\u5168\u5bb6\u6709\u6a5f\u53f0\u9700\u8981\u64a4\u96e2\u55ce\uff1f';
+  const classification = classifyQuestion(question);
+
+  assert.equal(classification.category, 'station_machine');
   assert.equal(shouldUseLiveStationContext(question, classification), false);
 });
 
@@ -613,6 +625,7 @@ test('successful station miss returns an explicit customer-service reply', async
       rows: [],
       isStale: true,
       context: '',
+      queryIntent: { asksCount: false, isHowTo: false, hasLocationTerms: true },
     }),
   });
 
@@ -625,6 +638,73 @@ test('successful station miss returns an explicit customer-service reply', async
   assert.match(reply, /\u53f0\u5317\u5e02\u5927\u5b89\u5340/);
   assert.match(reply, /\u6c92\u6709\u67e5\u5230\u7ad9\u9ede/);
   assert.doesNotMatch(reply, /\d{4}-\d{2}-\d{2}T/);
+});
+
+test('how-to station questions fall through to RAG instead of the miss reply', () => {
+  // \u300c\u600e\u9ebc\u67e5\u8a62\u9644\u8fd1\u7684 ECOCO \u7ad9\u9ede\uff1f\u300d\u662f\u4f7f\u7528\u6559\u5b78\u554f\u984c\uff0c
+  // \u77e5\u8b58\u5eab\u6709\u7b54\u6848\uff0c\u4e0d\u61c9\u88ab\u56fa\u5b9a miss \u56de\u8986\u651b\u622a\u3002
+  const question = '\u600e\u9ebc\u67e5\u8a62\u9644\u8fd1\u7684 ECOCO \u7ad9\u9ede\uff1f';
+  const classification = { category: 'station_machine' };
+  const missContext = {
+    retrievalMode: 'postgres_iot_miss',
+    terms: ['\u7ad9\u9ede'],
+    rows: [],
+    context: '',
+    queryIntent: {
+      asksCount: stationQueryIntent.isStationCountQuestion(question),
+      isHowTo: stationQueryIntent.isStationHowToQuestion(question),
+      hasLocationTerms: stationQueryIntent.hasMeaningfulLocationTerms(question),
+    },
+  };
+  assert.equal(missContext.queryIntent.isHowTo, true);
+  assert.equal(
+    shouldUseDeterministicStationReply(question, classification, missContext),
+    false
+  );
+});
+
+test('generic station terms without a concrete location never trigger the miss reply', () => {
+  // terms \u53ea\u5269\u300c\u7ad9\u9ede\u300d\u9019\u985e\u901a\u7a31\u6642\uff0c
+  // \u4ee3\u8868\u554f\u984c\u88e1\u6c92\u6709\u53ef\u67e5\u7684\u5730\u9ede\uff0c\u4e0d\u5f97\u56de\u7b54\u300c\u6c92\u6709\u67e5\u5230\u7ad9\u9ede\u300d\u3002
+  const question = '\u7ad9\u9ede\u7e3d\u5171\u6709\u591a\u5c11\u500b';
+  const classification = { category: 'station_machine' };
+  const missContext = {
+    retrievalMode: 'postgres_iot_miss',
+    terms: ['\u7ad9\u9ede'],
+    rows: [],
+    context: '',
+    queryIntent: {
+      asksCount: stationQueryIntent.isStationCountQuestion(question),
+      isHowTo: stationQueryIntent.isStationHowToQuestion(question),
+      hasLocationTerms: stationQueryIntent.hasMeaningfulLocationTerms(question),
+    },
+  };
+  assert.equal(missContext.queryIntent.hasLocationTerms, false);
+  assert.equal(
+    shouldUseDeterministicStationReply(question, classification, missContext),
+    false
+  );
+});
+
+test('concrete location misses still use the deterministic miss reply', () => {
+  const question = '\u5f70\u5316\u5e02\u6709\u7ad9\u9ede\u55ce';
+  const classification = { category: 'station_machine' };
+  const missContext = {
+    retrievalMode: 'postgres_iot_miss',
+    terms: ['\u5f70\u5316\u5e02'],
+    rows: [],
+    context: '',
+    queryIntent: {
+      asksCount: false,
+      isHowTo: stationQueryIntent.isStationHowToQuestion(question),
+      hasLocationTerms: stationQueryIntent.hasMeaningfulLocationTerms(question),
+    },
+  };
+  assert.equal(missContext.queryIntent.hasLocationTerms, true);
+  assert.equal(
+    shouldUseDeterministicStationReply(question, classification, missContext),
+    true
+  );
 });
 
 test('station count reply reports the database total in customer-service format', () => {
@@ -768,4 +848,197 @@ test('stale station data never exposes status or capacity as current', () => {
   assert.match(reply, /過期資料測試站/);
   assert.match(reply, /台南市測試區/);
   assert.doesNotMatch(reply, /機台：正常|連線：正常|剩餘 0|已滿|資料同步時間/);
+});
+
+// --- 座標定位查詢 ---
+
+test('normalizeCoords accepts Taiwan coordinates and rejects out-of-range or invalid input', () => {
+  // 台中市區
+  const ok = normalizeCoords({ lat: 24.1372, lng: 120.6866, label: '  中興大學  ' });
+  assert.equal(ok.lat, 24.1372);
+  assert.equal(ok.lng, 120.6866);
+  assert.equal(ok.label, '中興大學');
+
+  // 超出台灣範圍（東京）
+  assert.equal(normalizeCoords({ lat: 35.6762, lng: 139.6503 }), null);
+  // 經緯度顛倒
+  assert.equal(normalizeCoords({ lat: 120.68, lng: 24.13 }), null);
+  // 非數值
+  assert.equal(normalizeCoords({ lat: 'abc', lng: 120.68 }), null);
+  assert.equal(normalizeCoords(null), null);
+  assert.equal(normalizeCoords({}), null);
+  // label 超長截斷
+  const long = normalizeCoords({ lat: 24.1, lng: 120.6, label: 'x'.repeat(200) });
+  assert.equal(long.label.length, 80);
+});
+
+test('getRequestCoords parses body coords and drops invalid values', () => {
+  const ok = getRequestCoords({ coords: { lat: '25.033', lng: '121.5654', label: '台北101' } });
+  assert.equal(ok.lat, 25.033);
+  assert.equal(ok.lng, 121.5654);
+  assert.equal(ok.label, '台北101');
+
+  assert.equal(getRequestCoords({}), null);
+  assert.equal(getRequestCoords({ coords: 'not-an-object' }), null);
+  assert.equal(getRequestCoords({ coords: { lat: NaN, lng: 121 } }), null);
+  assert.equal(getRequestCoords({ coords: { lat: 35.6762, lng: 139.6503 } }), null);
+});
+
+test('formatDistance renders meters under 1 km and kilometers above', () => {
+  assert.equal(formatDistance(0.42), '（約 420 公尺）');
+  assert.equal(formatDistance(0.004), '（約 10 公尺）');
+  assert.equal(formatDistance(1.26), '（約 1.3 公里）');
+  assert.equal(formatDistance(12), '（約 12 公里）');
+  assert.equal(formatDistance(null), '');
+  assert.equal(formatDistance(-1), '');
+});
+
+function buildNearestRow(overrides = {}) {
+  return {
+    station_code: 'es9001',
+    station_name: '測試最近站',
+    address: '臺中市南區興大路100號',
+    area_name: '台中',
+    district_name: '南區',
+    place_name: '測試據點',
+    longitude: '120.6748',
+    latitude: '24.1219',
+    machine_status: 'up',
+    last_conn_status: 'online',
+    source_synced_at: new Date().toISOString(),
+    distance_km: 0.42,
+    ...overrides,
+  };
+}
+
+test('retrieveNearestStations queries a bounding box then widens once on miss', async () => {
+  const calls = [];
+  const pgPool = {
+    query: async (sql, values) => {
+      calls.push({ sql, values });
+      // 第一輪（0.15 度）回空，第二輪（0.5 度）回一筆
+      if (sql.includes('distance_km') && values[3] === 0.15) return { rows: [] };
+      if (sql.includes('distance_km') && values[3] === 0.5) {
+        return { rows: [buildNearestRow()] };
+      }
+      return { rows: [{ last_synced_at: new Date().toISOString() }] };
+    },
+  };
+  const service = createIotStatusService({ env: {}, pgPool });
+  const result = await service.retrieveNearestStations({ lat: 24.1219, lng: 120.6748, label: '中興大學' });
+
+  const boxes = calls.filter(c => c.sql.includes('distance_km')).map(c => c.values[3]);
+  assert.deepEqual(boxes, [0.15, 0.5]);
+  const nearestSql = calls.find(c => c.sql.includes('distance_km')).sql;
+  assert.match(nearestSql, /FROM \(\s*SELECT DISTINCT ON \(station_code\)/);
+  assert.match(nearestSql, /\)\s+nearest_stations\s+ORDER BY distance_km ASC\s+LIMIT \$3/);
+  assert.equal(result.retrievalMode, 'postgres_iot_nearest');
+  assert.equal(result.rows[0].distanceKm, 0.42);
+  assert.equal(result.coords.label, '中興大學');
+  assert.equal(result.isStale, false);
+});
+
+test('retrieveNearestStations sorts by distance, trims to limit, and reports miss', async () => {
+  const rows = [
+    buildNearestRow({ station_code: 'far', distance_km: 3.2 }),
+    buildNearestRow({ station_code: 'near', distance_km: 0.3 }),
+    buildNearestRow({ station_code: 'mid', distance_km: 1.1 }),
+  ];
+  const pgPool = {
+    query: async sql => (sql.includes('distance_km') ? { rows } : { rows: [{ last_synced_at: new Date().toISOString() }] }),
+  };
+  const service = createIotStatusService({ env: {}, pgPool });
+  const result = await service.retrieveNearestStations({ lat: 24.12, lng: 120.67 }, { limit: 2 });
+  assert.deepEqual(result.rows.map(r => r.stationCode), ['near', 'mid']);
+
+  const emptyPool = {
+    query: async sql => (sql.includes('distance_km') ? { rows: [] } : { rows: [{ last_synced_at: null }] }),
+  };
+  const missService = createIotStatusService({ env: {}, pgPool: emptyPool });
+  const miss = await missService.retrieveNearestStations({ lat: 24.12, lng: 120.67 });
+  assert.equal(miss.retrievalMode, 'postgres_iot_nearest_miss');
+  assert.equal(miss.rows.length, 0);
+});
+
+test('retrieveLiveStationContext prefers real coordinates over text parsing', async () => {
+  const pgPool = {
+    query: async sql => (sql.includes('distance_km')
+      ? { rows: [buildNearestRow()] }
+      : { rows: [{ last_synced_at: new Date().toISOString() }] }),
+  };
+  const service = createIotStatusService({ env: {}, pgPool });
+  // 問題文字完全沒有地點，但座標存在 → 仍應走 nearest 查詢
+  const result = await service.retrieveLiveStationContext('查詢我附近的 ECOCO 站點', {
+    coords: { lat: 24.1219, lng: 120.6748, label: '中興大學' },
+  });
+  assert.equal(result.retrievalMode, 'postgres_iot_nearest');
+  assert.equal(result.queryIntent.hasCoords, true);
+});
+
+test('coordinate lookup misses stay attached and return an explicit reply', async () => {
+  const coords = { lat: 24.1219, lng: 120.6748, label: '中興大學' };
+  const merged = await attachLiveStationContext({
+    rag: { context: '', chunks: [], retrievalMode: 'none' },
+    question: '查詢我附近的 ECOCO 站點',
+    classification: null,
+    coords,
+    retrieveLiveStationContext: async () => ({
+      retrievalMode: 'postgres_iot_nearest_miss',
+      terms: ['中興大學'],
+      coords,
+      rows: [],
+      context: '',
+      queryIntent: { hasCoords: true },
+    }),
+  });
+
+  assert.equal(merged.liveStationContext.retrievalMode, 'postgres_iot_nearest_miss');
+  assert.equal(
+    shouldUseDeterministicStationReply(
+      '查詢我附近的 ECOCO 站點',
+      null,
+      merged.liveStationContext
+    ),
+    true
+  );
+  assert.match(buildLiveStationStatusReply(merged.liveStationContext), /附近沒有查到 ECOCO 站點/);
+});
+
+test('nearest-station reply shows distance and hides status when data is stale', () => {
+  const base = {
+    retrievalMode: 'postgres_iot_nearest',
+    coords: { lat: 24.1219, lng: 120.6748, label: '中興大學' },
+    rows: [{
+      stationCode: 'es9001',
+      stationName: '測試最近站',
+      address: '臺中市南區興大路100號',
+      machineStatus: 'up',
+      lastConnectionStatus: 'online',
+      distanceKm: 0.42,
+    }],
+  };
+
+  // 資料新鮮：顯示距離與狀態
+  const fresh = buildLiveStationStatusReply({ ...base, isStale: false });
+  assert.match(fresh, /離「中興大學」最近/);
+  assert.match(fresh, /約 420 公尺/);
+  assert.match(fresh, /機台正常/);
+
+  // 資料過期：距離與地址保留（站點不會移動），狀態不得揭露
+  const stale = buildLiveStationStatusReply({ ...base, isStale: true });
+  assert.match(stale, /約 420 公尺/);
+  assert.match(stale, /臺中市南區興大路100號/);
+  assert.doesNotMatch(stale, /機台正常|連線正常/);
+  assert.match(stale, /不能確認最新的機台狀態/);
+
+  // 有座標結果時，不需分類器同意即走固定回覆
+  assert.equal(shouldUseDeterministicStationReply('隨便的問題', null, { ...base, isStale: false }), true);
+});
+
+test('LINE-style location payload normalizes into query coords', () => {
+  // 模擬 LINE location message 欄位
+  const message = { latitude: 24.1219, longitude: 120.6748, title: '國立中興大學', address: '402台中市南區興大路145號' };
+  const coords = normalizeCoords({ lat: message.latitude, lng: message.longitude, label: message.title || message.address });
+  assert.equal(coords.lat, 24.1219);
+  assert.equal(coords.label, '國立中興大學');
 });

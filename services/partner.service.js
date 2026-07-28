@@ -745,6 +745,7 @@ function createPartnerService({
     question,
     channel = 'line_b2b',
     signal = undefined,
+    coords = null,
   }) {
     const resolvedCompany = company || await getCompany(companyId);
     if (!resolvedCompany || resolvedCompany.status !== 'active') {
@@ -800,6 +801,7 @@ function createPartnerService({
       question: safeQuestion,
       classification,
       retrieveLiveStationContext,
+      coords,
     });
     const stationStatusReply = shouldUseDeterministicStationReply(
       safeQuestion,

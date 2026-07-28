@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const express = require('express');
+const { normalizeCoords } = require('../services/iot-status.service');
 const { maskSensitiveText } = require('../services/privacy.service');
 const { saveChatTrace } = require('../services/trace.service');
 
@@ -147,6 +148,12 @@ function validateHistory(history) {
     return `Conversation history must be under ${MAX_TOTAL_CHARS} total characters.`;
   }
   return '';
+}
+
+// 從請求 body 取出座標。只接受數值且在台灣範圍內；
+// 座標可推定使用者位置，僅在記憶體中用於本次查詢，不落地儲存。
+function getRequestCoords(body = {}) {
+  return normalizeCoords(body?.coords);
 }
 
 function getLatestUserMessage(body = {}) {
@@ -351,14 +358,20 @@ async function attachLiveStationContext({
   question,
   classification,
   retrieveLiveStationContext,
+  coords = null,
 }) {
   if (typeof retrieveLiveStationContext !== 'function') return rag;
 
   try {
-    const live = await retrieveLiveStationContext(question, { classification });
-    const hasTrustedMiss = live.retrievalMode === 'postgres_iot_miss'
-      && Array.isArray(live.terms)
-      && live.terms.length > 0;
+    const live = await retrieveLiveStationContext(question, { classification, coords });
+    const hasTrustedMiss = (
+      live.retrievalMode === 'postgres_iot_miss'
+        && Array.isArray(live.terms)
+        && live.terms.length > 0
+    ) || (
+      live.retrievalMode === 'postgres_iot_nearest_miss'
+        && live.coords
+    );
     if (!live.context && !hasTrustedMiss) return rag;
     const retrievalModes = [rag.retrievalMode, live.retrievalMode]
       .filter(mode => mode && mode !== 'none');
@@ -386,6 +399,15 @@ function hasNumber(value) {
   return value !== null && value !== undefined && value !== '';
 }
 
+// 1 公里內以公尺（取十位數）顯示，其餘顯示公里一位小數。
+function formatDistance(distanceKm) {
+  if (distanceKm === null || distanceKm === undefined || distanceKm === '') return '';
+  const km = Number(distanceKm);
+  if (!Number.isFinite(km) || km < 0) return '';
+  if (km < 1) return `（約 ${Math.max(Math.round((km * 1000) / 10) * 10, 10)} 公尺）`;
+  return `（約 ${Math.round(km * 10) / 10} 公里）`;
+}
+
 function formatCapacity(slotName, count, max, remain) {
   if (!hasNumber(count) && !hasNumber(max) && !hasNumber(remain)) {
     return `${slotName}：目前還沒有容量數字`;
@@ -400,6 +422,16 @@ function formatCapacity(slotName, count, max, remain) {
 function buildLiveStationStatusReply(liveStationContext = null) {
   const rows = Array.isArray(liveStationContext?.rows) ? liveStationContext.rows : [];
   if (rows.length === 0) {
+    if (liveStationContext?.retrievalMode === 'postgres_iot_nearest_miss') {
+      const label = liveStationContext?.coords?.label || '';
+      return [
+        label
+          ? `可可粉，依目前同步的站點資料，在「${label}」附近沒有查到 ECOCO 站點。`
+          : '可可粉，依目前同步的站點資料，在你目前的位置附近沒有查到 ECOCO 站點。',
+        '',
+        '你可以改傳另一個位置，或先到 ECOCO App 查看完整站點地圖。',
+      ].join('\n');
+    }
     if (liveStationContext?.retrievalMode !== 'postgres_iot_miss') return '';
     const terms = Array.isArray(liveStationContext?.terms) ? liveStationContext.terms : [];
     const location = terms[0] || '\u9019\u500b\u5730\u5340';
@@ -423,6 +455,35 @@ function buildLiveStationStatusReply(liveStationContext = null) {
   }
 
   const displayedRows = uniqueRows.slice(0, 3);
+
+  // 最近站點查詢（含真實座標）：以距離為主的回覆格式。
+  // isStale 時距離與地址仍可信（站點位置不會變），但不揭露機台狀態與容量。
+  const isNearestQuery = liveStationContext?.retrievalMode === 'postgres_iot_nearest';
+  if (isNearestQuery) {
+    const label = liveStationContext?.coords?.label || '';
+    const lines = [
+      label
+        ? `可可粉，離「${label}」最近的 ECOCO 站點是：`
+        : '可可粉，離你最近的 ECOCO 站點是：',
+    ];
+    displayedRows.forEach((row, index) => {
+      const name = row.stationName || row.stationCode || `站點 ${index + 1}`;
+      lines.push(
+        '',
+        `${index + 1}. ${name}${formatDistance(row.distanceKm)}`,
+        `地址：${row.address || '未知'}`
+      );
+      if (liveStationContext?.isStale !== true) {
+        lines.push(`目前狀態：機台${formatStatus(row.machineStatus || row.stationStatus)}、連線${formatStatus(row.lastConnectionStatus)}`);
+      }
+    });
+    if (liveStationContext?.isStale === true) {
+      lines.push('', '站點資料目前沒有在預期時間內更新，所以我暫時不能確認最新的機台狀態或回收槽容量，建議出發前先查看 ECOCO App。');
+    } else {
+      lines.push('', '如果你到現場看到的狀態和這裡不一樣，可以透過 App 或客服表單回報，我們會協助確認。');
+    }
+    return lines.join('\n');
+  }
   const matchedStationCount = Number(liveStationContext?.matchedStationCount);
   if (liveStationContext?.queryIntent?.asksCount && Number.isFinite(matchedStationCount)) {
     const terms = Array.isArray(liveStationContext?.terms) ? liveStationContext.terms : [];
@@ -496,9 +557,21 @@ function buildLiveStationStatusReply(liveStationContext = null) {
 
 function shouldUseDeterministicStationReply(question, classification = null, liveStationContext = null) {
   const rows = Array.isArray(liveStationContext?.rows) ? liveStationContext.rows : [];
+  // 使用者傳了真實座標 = 明確的找站點意圖，不需要分類器同意。
+  if (liveStationContext?.retrievalMode === 'postgres_iot_nearest' && rows.length > 0) {
+    return true;
+  }
+  if (liveStationContext?.retrievalMode === 'postgres_iot_nearest_miss') {
+    return true;
+  }
   if (classification?.category !== 'station_machine') return false;
+  // 「怎麼查詢站點」這類使用教學問題交給 RAG 回答，不走固定站點回覆。
+  if (liveStationContext?.queryIntent?.isHowTo === true) return false;
   if (rows.length === 0) {
+    // Miss 回覆只在問題含有具體地點（行政區、地標、站碼）時才成立；
+    // terms 只剩「站點」「機台」這類通稱時，代表沒有可查的地點，應交給 RAG。
     return liveStationContext?.retrievalMode === 'postgres_iot_miss'
+      && liveStationContext?.queryIntent?.hasLocationTerms === true
       && Array.isArray(liveStationContext?.terms)
       && liveStationContext.terms.length > 0;
   }
@@ -585,6 +658,7 @@ function createChatRouter({
         question: userMsg.content,
         classification,
         retrieveLiveStationContext,
+        coords: getRequestCoords(req.body),
       });
       const stationStatusReply = shouldUseDeterministicStationReply(userMsg.content, classification, rag.liveStationContext)
         ? buildLiveStationStatusReply(rag.liveStationContext)
@@ -782,6 +856,8 @@ module.exports = {
   FRIENDLY_AI_ERROR_REPLY,
   getClientSessionId,
   getLatestUserMessage,
+  getRequestCoords,
+  formatDistance,
   getSafeSessionId,
   getWebChatTimeoutMs,
   loadExchangeByMessageId,
