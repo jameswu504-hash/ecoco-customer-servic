@@ -34,7 +34,7 @@ const { getKnowledgeEmbeddingStatus } = require('../services/health.service');
 const { scanFile } = require('../scripts/scan-pii');
 const { cleanKnowledgeInput } = require('../routes/knowledge.routes');
 const { requireStaffKey } = require('../middleware/staff-auth');
-const { maskSensitiveText } = require('../services/privacy.service');
+const { getRetentionDays, maskSensitiveText } = require('../services/privacy.service');
 const { classifyQuestion } = require('../services/question-classifier.service');
 const { compareSecret } = require('../services/secret.service');
 const { summarizeQuestionClassification, summarizeRagChunks } = require('../services/trace.service');
@@ -45,6 +45,7 @@ const {
   buildAiReply,
   claimLineWebhookEvent,
   cleanupLineRateBuckets,
+  createInFlightTaskTracker,
   deliverLineMessage,
   getLineConfig,
   getLineReplyTimeoutMs,
@@ -861,6 +862,14 @@ test('rating question and reply are looked up by session and message id', async 
   assert.deepEqual(empty, { question: '', reply: '' });
 });
 
+test('conversation retention requires an explicit enable switch', () => {
+  assert.equal(getRetentionDays({ CONVERSATION_RETENTION_DAYS: '180' }), 0);
+  assert.equal(getRetentionDays({
+    CONVERSATION_RETENTION_ENABLED: 'true',
+    CONVERSATION_RETENTION_DAYS: '180',
+  }), 180);
+});
+
 test('chat trace and conversation writes start in parallel', async () => {
   const pendingResolvers = [];
   const queries = [];
@@ -1373,7 +1382,7 @@ test('LINE rate limit buckets are pruned before unbounded growth', () => {
 
 test('LINE reply timeout is configurable and capped below token expiry', async () => {
   assert.equal(getLineReplyTimeoutMs({}), 25_000);
-  assert.equal(getLineReplyTimeoutMs({ LINE_REPLY_TIMEOUT_MS: '60000' }), 30_000);
+  assert.equal(getLineReplyTimeoutMs({ LINE_REPLY_TIMEOUT_MS: '60000' }), 25_000);
   assert.equal(getLineReplyTimeoutMs({ LINE_REPLY_TIMEOUT_MS: '12000' }), 12_000);
   assert.equal(getLineReplyTimeoutMs({ LINE_REPLY_TIMEOUT_MS: 'bad' }), 25_000);
   assert.equal(getLineTimeoutReply({ LINE_TIMEOUT_REPLY: '稍後回覆' }), '稍後回覆');
@@ -1412,6 +1421,30 @@ test('LINE delivery falls back to a group push when the reply token expired', as
   assert.equal(calls.length, 2);
   assert.equal(calls[1].params.to, 'group-fullmart');
   assert.equal(calls[1].params.text, '全家合作資料');
+});
+
+test('graceful shutdown waits for in-flight LINE webhook work', async () => {
+  const tracker = createInFlightTaskTracker();
+  const finish = tracker.begin();
+  let drained = false;
+  const draining = tracker.waitForIdle(100).then(result => {
+    drained = result;
+  });
+
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(drained, false);
+  assert.equal(tracker.size(), 1);
+
+  finish();
+  await draining;
+  assert.equal(drained, true);
+  assert.equal(tracker.size(), 0);
+
+  const serverSource = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  assert.match(
+    serverSource,
+    /httpServer\.close[\s\S]*lineWebhookTaskTracker\.waitForIdle[\s\S]*pool\.end/
+  );
 });
 
 test('LINE reply timeout aborts the underlying request via onTimeout hook', async () => {

@@ -39,7 +39,8 @@ Service -> Environment -> Environment Variables
 | `STATION_DATA_MAX_AGE_MS` | 選填 | 站點狀態時效門檻，預設 30 分鐘 | 使用預設值 |
 | `KNOWLEDGE_AUTO_SYNC` | 選填 | 控制 Git JSON 是否在啟動時同步到 DB | 設錯可能覆蓋後台編輯 |
 | `REBUILD_KNOWLEDGE_CHUNKS_ON_START` | 選填 | 設為 `always` 時，啟動時強制重建 RAG chunks | 只在換 embedding key、修復 chunks 或大改知識庫時使用 |
-| `CONVERSATION_RETENTION_DAYS` | 選填 | 對話資料保存天數，`0` 代表不自動清除 | 未設定時對話會持續保存 |
+| `CONVERSATION_RETENTION_ENABLED` | 選填 | 必須明確設為 `true` 才會自動刪除舊對話 | 預設 `false`，不刪除 |
+| `CONVERSATION_RETENTION_DAYS` | 選填 | 啟用清理後的對話資料保存天數 | 未啟用時只保留設定、不執行刪除 |
 | `PGSSL` | 選填 | 雲端預設 `verify-full`，加密並驗證憑證 | `require` 只加密不驗證憑證；`disable` 僅限本機可信環境 |
 
 應用程式會移除 `DATABASE_URL` 內的 `sslmode`、憑證路徑等 SSL query，再由 `PGSSL` 統一決定 TLS 行為，避免連線字串覆蓋安全設定。`channel_binding` 等非 SSL 參數會保留。

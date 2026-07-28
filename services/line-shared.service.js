@@ -15,7 +15,7 @@ const LINE_RATE_LIMIT_CLEANUP_INTERVAL_MS = 60 * 1000;
 const LINE_RATE_LIMIT_REPLY = '訊息有點密集，請稍後再試一次。';
 const LINE_INVALID_LOCATION_REPLY = '無法讀取這個位置，請重新傳送 LINE 位置資訊，或改用文字告訴我附近的縣市、路名或地標。';
 const LINE_REPLY_TIMEOUT_DEFAULT_MS = 25_000;
-const LINE_REPLY_TIMEOUT_MAX_MS = 30_000;
+const LINE_REPLY_TIMEOUT_MAX_MS = 25_000;
 const LINE_TIMEOUT_REPLY = '目前正在查詢資料，若問題需要人工確認，客服會再協助處理。';
 
 // Single Render instance is fine with an in-memory bucket; move this to Redis/PostgreSQL before horizontal scaling.
@@ -233,6 +233,45 @@ function resolveWithTimeout(promise, timeoutMs, timeoutValue, onTimeout = null) 
   ]).finally(() => clearTimeout(timer));
 }
 
+function createInFlightTaskTracker() {
+  const activeTasks = new Set();
+
+  function begin() {
+    let finished = false;
+    let resolveTask;
+    const task = new Promise(resolve => {
+      resolveTask = resolve;
+    });
+    activeTasks.add(task);
+
+    return () => {
+      if (finished) return;
+      finished = true;
+      activeTasks.delete(task);
+      resolveTask();
+    };
+  }
+
+  async function waitForIdle(timeoutMs = 30_000) {
+    const pendingTasks = [...activeTasks];
+    if (pendingTasks.length === 0) return true;
+
+    let timer;
+    const completed = Promise.allSettled(pendingTasks).then(() => true);
+    const timedOut = new Promise(resolve => {
+      timer = setTimeout(() => resolve(false), Math.max(1, Number(timeoutMs) || 30_000));
+      timer.unref?.();
+    });
+    return Promise.race([completed, timedOut]).finally(() => clearTimeout(timer));
+  }
+
+  return {
+    begin,
+    size: () => activeTasks.size,
+    waitForIdle,
+  };
+}
+
 function isLineRateLimited(sessionId, now = Date.now(), env = process.env) {
   const maxEvents = getLineRateLimitMax(env);
   if (!maxEvents || maxEvents < 1) return false;
@@ -315,6 +354,7 @@ module.exports = {
   claimLineWebhookEvent,
   cleanupLineRateBuckets,
   completeLineWebhookEvent,
+  createInFlightTaskTracker,
   deliverLineMessage,
   getLineConfig,
   getLineMessageDestination,

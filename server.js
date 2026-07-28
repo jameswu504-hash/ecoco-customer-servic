@@ -17,7 +17,7 @@ const { createChatRouter } = require('./routes/chat.routes');
 const { createDashboardRouter } = require('./routes/dashboard.routes');
 const { createInternalRouter } = require('./routes/internal.routes');
 const { createKnowledgeRouter } = require('./routes/knowledge.routes');
-const { createLineRouter } = require('./routes/line.routes');
+const { createInFlightTaskTracker, createLineRouter } = require('./routes/line.routes');
 const { createPartnersRouter } = require('./routes/partners.routes');
 const { createReportsRouter } = require('./routes/reports.routes');
 const { createUnansweredRouter } = require('./routes/unanswered.routes');
@@ -32,6 +32,7 @@ const { purgeExpiredConversationData } = require('./services/privacy.service');
 const { anonymizeText } = require('./scripts/anonymize-pii');
 
 const app = express();
+const lineWebhookTaskTracker = createInFlightTaskTracker();
 app.set('trust proxy', 1);
 app.use(helmet({
   contentSecurityPolicy: {
@@ -549,6 +550,7 @@ app.use('/api', createLineRouter({
   classifyQuestion,
   retrieveLiveStationContext: iotStatusService.retrieveLiveStationContext,
   partnerService,
+  webhookTaskTracker: lineWebhookTaskTracker,
 }));
 app.use('/api/partners', createPartnersRouter({
   partnerService,
@@ -633,6 +635,10 @@ async function shutdown(signal) {
   }
   if (httpServer) {
     await new Promise(resolve => httpServer.close(resolve));
+  }
+  const lineWebhooksDrained = await lineWebhookTaskTracker.waitForIdle(30_000);
+  if (!lineWebhooksDrained) {
+    console.warn(`Shutdown timed out with ${lineWebhookTaskTracker.size()} LINE webhook task(s) still active.`);
   }
   await iotStatusService.end();
   await pool.end();

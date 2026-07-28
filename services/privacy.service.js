@@ -30,6 +30,9 @@ function maskSensitiveText(value) {
 }
 
 function getRetentionDays(env = process.env) {
+  if (String(env.CONVERSATION_RETENTION_ENABLED || '').trim().toLowerCase() !== 'true') {
+    return 0;
+  }
   const days = Number(env.CONVERSATION_RETENTION_DAYS || 0);
   if (!Number.isFinite(days) || days <= 0) return 0;
   return Math.floor(days);
@@ -38,7 +41,7 @@ function getRetentionDays(env = process.env) {
 async function purgeExpiredConversationData(pool, env = process.env) {
   const retentionDays = getRetentionDays(env);
   if (!retentionDays) {
-    console.log('Conversation retention cleanup skipped: CONVERSATION_RETENTION_DAYS is not set');
+    console.log('Conversation retention cleanup skipped: explicit enable switch is off');
     return {
       enabled: false,
       deletedConversations: 0,

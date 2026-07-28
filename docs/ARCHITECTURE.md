@@ -52,4 +52,4 @@ Claude 負責將 RAG 找到的公司知識轉成客服可讀的回覆。Prompt �
 - 知識庫以後台與 PostgreSQL 為主，Git JSON 匯出只作交接與備份。
 - 修改客服回覆邏輯後需跑 `npm run lint`、`npm test`，並確認 GitHub Actions 通過。
 - LINE webhook 若超過 reply token 時效，系統會回覆保守訊息並記錄 trace；如需主動追補訊息，需另評估 push message 成本與權限。
-- 依 `CONVERSATION_RETENTION_DAYS` 在啟動時與每 24 小時清理過期原始資料；聚合報表不應依賴永久保留個人對話。
+- 只有 `CONVERSATION_RETENTION_ENABLED=true` 時，才依 `CONVERSATION_RETENTION_DAYS` 在啟動時與每 24 小時清理過期原始資料；預設保留全部資料。

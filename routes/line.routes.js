@@ -39,6 +39,7 @@ function createLineRouter({
   classifyQuestion,
   retrieveLiveStationContext = null,
   partnerService = null,
+  webhookTaskTracker = null,
 }) {
   const router = express.Router();
   const handleLineB2BMessage = partnerService
@@ -70,9 +71,11 @@ function createLineRouter({
     if (!isValid) return res.status(401).json({ error: 'Invalid LINE signature.' });
 
     const events = Array.isArray(req.body?.events) ? req.body.events : [];
-    res.status(200).json({ ok: true });
+    const finishWebhookTask = webhookTaskTracker?.begin();
+    try {
+      res.status(200).json({ ok: true });
 
-    for (const event of events) {
+      for (const event of events) {
       const isTextMessage = event.message?.type === 'text';
       const isLocationMessage = event.message?.type === 'location';
       if (event.type !== 'message' || (!isTextMessage && !isLocationMessage) || !event.replyToken) continue;
@@ -172,6 +175,9 @@ function createLineRouter({
       } catch (err) {
         console.error('LINE webhook event completion error:', err.message);
       }
+      }
+    } finally {
+      finishWebhookTask?.();
     }
   });
 
