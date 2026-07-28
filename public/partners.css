@@ -469,6 +469,111 @@ button:disabled {
   font-weight: 700;
 }
 
+.knowledge-row {
+  border-bottom: 1px solid var(--line);
+}
+
+.knowledge-row:last-child {
+  border-bottom: 0;
+}
+
+.knowledge-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 13px 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.knowledge-summary::-webkit-details-marker {
+  display: none;
+}
+
+.knowledge-summary::marker {
+  content: "";
+}
+
+.knowledge-summary:hover strong,
+.knowledge-summary:focus-visible strong {
+  color: var(--green-dark);
+}
+
+.knowledge-summary:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 4px;
+}
+
+.knowledge-summary-info {
+  min-width: 0;
+}
+
+.knowledge-summary strong,
+.knowledge-summary small {
+  display: block;
+}
+
+.knowledge-summary small {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.knowledge-summary-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.knowledge-summary .row-state {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.knowledge-toggle-label::before {
+  display: inline-block;
+  margin-right: 6px;
+  content: "›";
+  font-size: 18px;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: transform 160ms ease;
+  vertical-align: -1px;
+}
+
+.knowledge-row[open] .knowledge-toggle-label::before {
+  transform: rotate(90deg);
+}
+
+.knowledge-content-panel {
+  margin: 0 0 14px;
+  padding: 16px;
+  border-left: 3px solid var(--green);
+  background: var(--soft);
+}
+
+.knowledge-content-label {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--green-dark);
+  font-size: 12px;
+}
+
+.knowledge-full-content {
+  max-height: min(520px, 60vh);
+  margin: 0;
+  overflow: auto;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .empty-row {
   padding: 18px 0;
   color: var(--muted);
@@ -776,6 +881,18 @@ dialog::backdrop {
 
   .line-import-actions {
     justify-content: flex-end;
+  }
+
+  .knowledge-summary {
+    gap: 10px;
+  }
+
+  .knowledge-summary-actions {
+    gap: 8px;
+  }
+
+  .knowledge-content-panel {
+    padding: 14px 12px;
   }
 
   .chat-message {

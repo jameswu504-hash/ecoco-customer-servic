@@ -127,19 +127,46 @@ function renderKnowledge(rows) {
   }
 
   rows.forEach(item => {
-    const row = document.createElement('div');
-    row.className = 'data-row';
+    const row = document.createElement('details');
+    row.className = 'knowledge-row';
+    const summary = document.createElement('summary');
+    summary.className = 'knowledge-summary';
     const info = document.createElement('div');
+    info.className = 'knowledge-summary-info';
     const category = document.createElement('strong');
     category.textContent = item.category;
     const preview = document.createElement('small');
+    preview.className = 'knowledge-preview';
     const content = String(item.content || '').replace(/\s+/g, ' ').trim();
     preview.textContent = content.length > 140 ? `${content.slice(0, 140)}...` : content;
     info.append(category, preview);
+
+    const actions = document.createElement('span');
+    actions.className = 'knowledge-summary-actions';
     const state = document.createElement('span');
     state.className = 'row-state';
     state.textContent = '專屬';
-    row.append(info, state);
+    const toggleLabel = document.createElement('span');
+    toggleLabel.className = 'knowledge-toggle-label';
+    toggleLabel.textContent = '展開';
+    actions.append(state, toggleLabel);
+    summary.append(info, actions);
+
+    const contentPanel = document.createElement('div');
+    contentPanel.className = 'knowledge-content-panel';
+    const contentLabel = document.createElement('strong');
+    contentLabel.className = 'knowledge-content-label';
+    contentLabel.textContent = '完整資料內容';
+    const fullContent = document.createElement('pre');
+    fullContent.className = 'knowledge-full-content';
+    fullContent.textContent = String(item.content || '').trim();
+    contentPanel.append(contentLabel, fullContent);
+
+    row.addEventListener('toggle', () => {
+      toggleLabel.textContent = row.open ? '收合' : '展開';
+      preview.hidden = row.open;
+    });
+    row.append(summary, contentPanel);
     list.appendChild(row);
   });
 }

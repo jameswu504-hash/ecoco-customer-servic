@@ -534,6 +534,10 @@ test('partner admin page exposes company-scoped test chat behind admin API', () 
   assert.match(html, /lineImportPreservePersonalData/);
   assert.match(js, /file\.text\(\)/);
   assert.match(js, /preservePersonalData/);
+  assert.match(js, /document\.createElement\('details'\)/);
+  assert.match(js, /document\.createElement\('summary'\)/);
+  assert.match(js, /knowledge-full-content/);
+  assert.match(js, /fullContent\.textContent = String\(item\.content/);
   assert.match(routes, /knowledge\/import-line/);
   assert.match(js, /x-admin-key/);
   assert.match(routes, /router\.use\(requireAdminKey\)/);
