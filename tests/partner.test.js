@@ -7,6 +7,7 @@ const { SCHEMA } = require('../db/schema');
 const {
   buildLineRateLimitKey,
   buildLineSessionId,
+  isLineBotAddressed,
   isLineBotMentioned,
   stripLineBotMentions,
 } = require('../routes/line.routes');
@@ -120,6 +121,24 @@ test('LINE group replies require an official self mention and remove it from the
     mention: { mentionees: [{ ...message.mention.mentionees[0], isSelf: false }] },
   }), false);
   assert.equal(isLineBotMentioned({ type: 'text', text: '@ECOCO客服系統 請問' }), false);
+});
+
+test('LINE group wake prefixes work when the client cannot create official mention metadata', () => {
+  for (const text of [
+    '@ECOCO客服系統 請問機台正常嗎？',
+    '@ECOCO客服 請問機台正常嗎？',
+    '@ECOCO 請問機台正常嗎？',
+    '/ecoco 請問機台正常嗎？',
+  ]) {
+    const message = { type: 'text', text };
+    assert.equal(isLineBotAddressed(message), true, text);
+    assert.equal(stripLineBotMentions(message), '請問機台正常嗎？', text);
+  }
+
+  assert.equal(isLineBotAddressed({
+    type: 'text',
+    text: '我們正在討論 ECOCO客服系統 的使用方式',
+  }), false);
 });
 
 test('partner retrieval always scopes SQL by company_id', async () => {
@@ -670,7 +689,7 @@ test('unbound LINE groups are intercepted before the B2C classifier', () => {
   assert.match(lineRoute, /event\.source\?\.type === 'group' && handleLineB2BMessage/);
   assert.match(lineRoute, /await handleLineB2BMessage\(context\)[\s\S]*await handleLineB2CMessage\(context\)/);
   assert.match(b2bService, /partnerService\.routeLineGroupMessage/);
-  assert.match(b2bService, /isLineBotMentioned\(event\.message\)/);
+  assert.match(b2bService, /isLineBotAddressed\(event\.message\)/);
   assert.match(b2bService, /partnerService\.storePartnerMessage/);
   assert.match(b2bService, /partnerRoute\.type === 'binding'[\s\S]*'partner_unbound'/);
   assert.match(b2cService, /classifyQuestion\(userText\)/);

@@ -3,6 +3,7 @@ const express = require('express');
 const { stripKnowledgeGapMarker } = require('../services/knowledge-gap.util');
 const {
   createLineB2BHandler,
+  isLineBotAddressed,
   isLineBotMentioned,
   stripLineBotMentions,
 } = require('../services/line-b2b.service');
@@ -181,6 +182,7 @@ module.exports = {
   createLineB2BHandler,
   createLineB2CHandler,
   createLineRouter,
+  isLineBotAddressed,
   isLineBotMentioned,
   storeLineConversation,
   stripLineBotMentions,

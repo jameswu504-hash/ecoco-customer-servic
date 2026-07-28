@@ -8,6 +8,8 @@ const {
   resolveWithTimeout,
 } = require('./line-shared.service');
 
+const LINE_B2B_WAKE_PREFIX_PATTERN = /^\s*(?:\/ecoco\b|@ecoco(?:\s*(?:智慧\s*)?客服(?:\s*系統)?)?|ecoco\s*(?:智慧\s*)?客服(?:\s*系統)?)\s*(?:[:：,，]\s*)?/i;
+
 function isLineBotMentioned(message = {}) {
   const mentionees = Array.isArray(message.mention?.mentionees)
     ? message.mention.mentionees
@@ -15,6 +17,11 @@ function isLineBotMentioned(message = {}) {
   return mentionees.some(mentionee => (
     mentionee?.type === 'user' && mentionee.isSelf === true
   ));
+}
+
+function isLineBotAddressed(message = {}) {
+  return isLineBotMentioned(message)
+    || LINE_B2B_WAKE_PREFIX_PATTERN.test(String(message.text || ''));
 }
 
 function stripLineBotMentions(message = {}) {
@@ -35,7 +42,10 @@ function stripLineBotMentions(message = {}) {
   for (const range of ranges) {
     text = `${text.slice(0, range.index)}${text.slice(range.index + range.length)}`;
   }
-  return text.replace(/\s+/g, ' ').trim();
+  return text
+    .replace(LINE_B2B_WAKE_PREFIX_PATTERN, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function createLineB2BHandler({ pool, partnerService }) {
@@ -62,7 +72,7 @@ function createLineB2BHandler({ pool, partnerService }) {
     }
 
     const isBindingMessage = partnerRoute?.type === 'binding';
-    const shouldReply = isBindingMessage || isLineBotMentioned(event.message);
+    const shouldReply = isBindingMessage || isLineBotAddressed(event.message);
     if (!shouldReply) {
       if (partnerRoute?.type === 'partner') {
         try {
@@ -191,7 +201,9 @@ function createLineB2BHandler({ pool, partnerService }) {
 }
 
 module.exports = {
+  LINE_B2B_WAKE_PREFIX_PATTERN,
   createLineB2BHandler,
+  isLineBotAddressed,
   isLineBotMentioned,
   stripLineBotMentions,
 };

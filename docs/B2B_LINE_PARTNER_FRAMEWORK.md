@@ -76,6 +76,15 @@ flowchart TD
 
 綁定碼只能使用一次；重新產生時，同公司的舊未使用代碼會立即失效。
 
+## 在群組喚醒客服 Bot
+
+已綁定群組預設只記錄對話，不會對每則訊息回覆。需要 Bot 回覆時可使用：
+
+- LINE App 的正式 mention：從 `@` 候選名單選擇 ECOCO Bot。
+- 若使用的 LINE 客戶端無法 mention Bot，將 `@ECOCO客服系統`、`@ECOCO客服`、`@ECOCO` 或 `/ecoco` 放在訊息開頭。
+
+喚醒詞只在訊息開頭有效；一般對話中間提到 ECOCO 客服不會誤觸發。系統送給 AI 前會移除 mention 或喚醒詞。
+
 ## 快速匯入公司聊天紀錄
 
 管理者可在公司頁按「匯入 LINE TXT」，一次選擇 LINE 匯出的完整聊天 `.txt`。不需要手動拆成 20,000 字一筆，後端會：
@@ -98,7 +107,7 @@ B2B 檢索會移除「目前、有哪些、為什麼、的問題」等問句外�
 
 ## LINE 對話自動紀錄
 
-已綁定合作公司的真實 LINE 群組每次完成問答後，使用者問題與 ECOCO AI 回覆都會自動寫入 `partner_conversations`，不需要再匯出或手動匯入 LINE TXT。儲存前會以 `maskSensitiveText` 遮蔽電話、Email、身分證字號與長編號，並保留 `company_id`、群組資料、角色與時間。
+已綁定合作公司的真實 LINE 群組會自動將一般群聊寫入 `partner_conversations`，但 Bot 只在被正式 mention 或訊息以支援的喚醒詞開頭時回覆。Bot 完成問答後，使用者問題與 ECOCO AI 回覆也會寫入同一公司紀錄，不需要再匯出或手動匯入 LINE TXT。儲存前會以 `maskSensitiveText` 遮蔽電話、Email、身分證字號與長編號，並保留 `company_id`、群組資料、角色與時間。
 
 管理者可在 `/partners.html` 的「LINE 對話紀錄」查看最近 7、30 或 90 天紀錄。後端以 `company_id` 限定公司範圍、排除 `line_group_id IS NULL` 的後台測試對話，再依 `Asia/Taipei` 日期分組；同一天內依時間由舊到新顯示。資料仍受既有對話保留天數與清理排程管理。
 
