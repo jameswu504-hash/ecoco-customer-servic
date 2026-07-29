@@ -47,6 +47,8 @@ const {
   cleanupLineRateBuckets,
   createInFlightTaskTracker,
   deliverLineMessage,
+  ensureLineWebhookEndpoint,
+  getExpectedLineWebhookUrl,
   getLineConfig,
   getLineReplyTimeoutMs,
   getLineTimeoutReply,
@@ -1324,6 +1326,124 @@ test('LINE webhook events are claimed once and completed events are skipped', as
   assert.deepEqual(duplicate, { claimed: false, eventId: 'evt-123' });
   assert.match(calls[0].sql, /ON CONFLICT \(event_id\)/);
   assert.deepEqual(calls[0].params, ['evt-123', true]);
+});
+
+test('LINE webhook URL defaults to the current Render service', () => {
+  assert.equal(
+    getExpectedLineWebhookUrl({
+      RENDER: 'true',
+      RENDER_EXTERNAL_URL: 'https://ecoco-customer-servic.onrender.com/',
+    }),
+    'https://ecoco-customer-servic.onrender.com/api/line/webhook'
+  );
+  assert.equal(
+    getExpectedLineWebhookUrl({
+      LINE_WEBHOOK_URL: 'https://example.com/custom-line',
+      RENDER_EXTERNAL_URL: 'https://ignored.onrender.com',
+    }),
+    'https://example.com/custom-line'
+  );
+});
+
+test('production startup repairs a LINE webhook that points to an old Render service', async () => {
+  const calls = [];
+  const responses = [
+    { status: 200, body: { endpoint: 'https://ecoco-linebot.onrender.com/api/line/webhook', active: true } },
+    { status: 200, body: {} },
+    { status: 200, body: { endpoint: 'https://ecoco-customer-servic.onrender.com/api/line/webhook', active: true } },
+  ];
+  const fetchFn = async (url, options = {}) => {
+    calls.push({ url, options });
+    const response = responses.shift();
+    return {
+      ok: response.status >= 200 && response.status < 300,
+      status: response.status,
+      json: async () => response.body,
+      text: async () => JSON.stringify(response.body),
+    };
+  };
+
+  const result = await ensureLineWebhookEndpoint({
+    env: {
+      RENDER: 'true',
+      IS_PULL_REQUEST: 'false',
+      RENDER_EXTERNAL_URL: 'https://ecoco-customer-servic.onrender.com',
+      LINE_CHANNEL_ACCESS_TOKEN: 'test-token',
+    },
+    fetchFn,
+  });
+
+  assert.equal(result.endpointMatches, true);
+  assert.equal(result.active, true);
+  assert.equal(result.autoConfigured, true);
+  assert.equal(calls.length, 3);
+  assert.equal(calls[1].options.method, 'PUT');
+  assert.deepEqual(JSON.parse(calls[1].options.body), {
+    endpoint: 'https://ecoco-customer-servic.onrender.com/api/line/webhook',
+  });
+});
+
+test('production startup creates the LINE webhook when the channel has no endpoint', async () => {
+  const calls = [];
+  const responses = [
+    { status: 404, body: { message: 'Not found' } },
+    { status: 200, body: {} },
+    { status: 200, body: { endpoint: 'https://ecoco-customer-servic.onrender.com/api/line/webhook', active: true } },
+  ];
+  const fetchFn = async (url, options = {}) => {
+    calls.push({ url, options });
+    const response = responses.shift();
+    return {
+      ok: response.status >= 200 && response.status < 300,
+      status: response.status,
+      json: async () => response.body,
+      text: async () => JSON.stringify(response.body),
+    };
+  };
+
+  const result = await ensureLineWebhookEndpoint({
+    env: {
+      RENDER: 'true',
+      IS_PULL_REQUEST: 'false',
+      RENDER_EXTERNAL_URL: 'https://ecoco-customer-servic.onrender.com',
+      LINE_CHANNEL_ACCESS_TOKEN: 'test-token',
+    },
+    fetchFn,
+  });
+
+  assert.equal(result.endpointMatches, true);
+  assert.equal(result.autoConfigured, true);
+  assert.equal(calls[1].options.method, 'PUT');
+});
+
+test('LINE webhook auto-configuration never mutates pull request previews', async () => {
+  const calls = [];
+  const fetchFn = async (url, options = {}) => {
+    calls.push({ url, options });
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        endpoint: 'https://old.example.com/api/line/webhook',
+        active: true,
+      }),
+      text: async () => '',
+    };
+  };
+
+  const result = await ensureLineWebhookEndpoint({
+    env: {
+      RENDER: 'true',
+      IS_PULL_REQUEST: 'true',
+      RENDER_EXTERNAL_URL: 'https://preview.onrender.com',
+      LINE_CHANNEL_ACCESS_TOKEN: 'test-token',
+    },
+    fetchFn,
+  });
+
+  assert.equal(result.endpointMatches, false);
+  assert.equal(result.autoConfigured, false);
+  assert.equal(calls.length, 1);
 });
 
 test('LINE webhook emits privacy-safe operational checkpoints', () => {

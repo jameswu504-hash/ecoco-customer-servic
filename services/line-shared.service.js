@@ -5,6 +5,9 @@ const { compareSecret } = require('./secret.service');
 
 const LINE_REPLY_ENDPOINT = 'https://api.line.me/v2/bot/message/reply';
 const LINE_PUSH_ENDPOINT = 'https://api.line.me/v2/bot/message/push';
+const LINE_WEBHOOK_SETTINGS_ENDPOINT = 'https://api.line.me/v2/bot/channel/webhook/endpoint';
+const LINE_WEBHOOK_PATH = '/api/line/webhook';
+const LINE_WEBHOOK_OWNER_REPOSITORY = 'jameswu504-hash/ecoco-customer-servic';
 const LINE_TEXT_LIMIT = 4900;
 const LINE_MAX_INPUT_CHARS = 2000;
 const LINE_FALLBACK_REPLY = '抱歉，AI 回覆暫時失敗，請稍後再試，或改由人工客服協助。';
@@ -26,6 +29,117 @@ function getLineConfig(env = process.env) {
   return {
     channelSecret: env.LINE_CHANNEL_SECRET || '',
     channelAccessToken: env.LINE_CHANNEL_ACCESS_TOKEN || '',
+  };
+}
+
+function normalizeLineWebhookUrl(value) {
+  const candidate = String(value || '').trim();
+  if (!candidate) return '';
+  try {
+    const url = new URL(candidate);
+    if (url.protocol !== 'https:') return '';
+    url.hash = '';
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return '';
+  }
+}
+
+function getExpectedLineWebhookUrl(env = process.env) {
+  const explicitUrl = normalizeLineWebhookUrl(env.LINE_WEBHOOK_URL);
+  if (explicitUrl) return explicitUrl;
+
+  const renderUrl = normalizeLineWebhookUrl(env.RENDER_EXTERNAL_URL);
+  if (!renderUrl) return '';
+  return `${renderUrl}${LINE_WEBHOOK_PATH}`;
+}
+
+function isLineWebhookAutoConfigureEnabled(env = process.env) {
+  const explicitSetting = String(env.LINE_WEBHOOK_AUTO_CONFIGURE || '').trim().toLowerCase();
+  if (['false', '0', 'off', 'disable', 'disabled'].includes(explicitSetting)) return false;
+  if (String(env.RENDER || '').trim().toLowerCase() !== 'true') return false;
+  if (String(env.IS_PULL_REQUEST || '').trim().toLowerCase() === 'true') return false;
+
+  const repository = String(env.RENDER_GIT_REPO_SLUG || '').trim().toLowerCase();
+  if (repository && repository !== LINE_WEBHOOK_OWNER_REPOSITORY) return false;
+  return Boolean(getExpectedLineWebhookUrl(env));
+}
+
+async function readLineWebhookEndpoint({ channelAccessToken, fetchFn = fetch }) {
+  const response = await fetchFn(LINE_WEBHOOK_SETTINGS_ENDPOINT, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${channelAccessToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    const error = new Error(`LINE webhook settings read failed: ${response.status} ${body}`);
+    error.status = response.status;
+    throw error;
+  }
+  return response.json();
+}
+
+async function updateLineWebhookEndpoint({ channelAccessToken, endpoint, fetchFn = fetch }) {
+  const response = await fetchFn(LINE_WEBHOOK_SETTINGS_ENDPOINT, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${channelAccessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ endpoint }),
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    const error = new Error(`LINE webhook settings update failed: ${response.status} ${body}`);
+    error.status = response.status;
+    throw error;
+  }
+}
+
+async function ensureLineWebhookEndpoint({
+  env = process.env,
+  fetchFn = fetch,
+} = {}) {
+  const channelAccessToken = String(env.LINE_CHANNEL_ACCESS_TOKEN || '').trim();
+  const expectedEndpoint = getExpectedLineWebhookUrl(env);
+  if (!channelAccessToken || !expectedEndpoint) {
+    return {
+      active: false,
+      autoConfigured: false,
+      endpointMatches: false,
+      skipped: true,
+    };
+  }
+
+  let settings;
+  try {
+    settings = await readLineWebhookEndpoint({ channelAccessToken, fetchFn });
+  } catch (err) {
+    if (err.status !== 404) throw err;
+    settings = { endpoint: '', active: false };
+  }
+  let endpointMatches = normalizeLineWebhookUrl(settings.endpoint) === expectedEndpoint;
+  let autoConfigured = false;
+
+  if (!endpointMatches && isLineWebhookAutoConfigureEnabled(env)) {
+    await updateLineWebhookEndpoint({
+      channelAccessToken,
+      endpoint: expectedEndpoint,
+      fetchFn,
+    });
+    settings = await readLineWebhookEndpoint({ channelAccessToken, fetchFn });
+    endpointMatches = normalizeLineWebhookUrl(settings.endpoint) === expectedEndpoint;
+    autoConfigured = true;
+  }
+
+  return {
+    active: settings.active === true,
+    autoConfigured,
+    endpointMatches,
+    skipped: false,
   };
 }
 
@@ -349,6 +463,7 @@ module.exports = {
   LINE_REPLY_ENDPOINT,
   LINE_TEXT_LIMIT,
   LINE_TIMEOUT_REPLY,
+  LINE_WEBHOOK_SETTINGS_ENDPOINT,
   buildLineRateLimitKey,
   buildLineSessionId,
   claimLineWebhookEvent,
@@ -356,11 +471,14 @@ module.exports = {
   completeLineWebhookEvent,
   createInFlightTaskTracker,
   deliverLineMessage,
+  ensureLineWebhookEndpoint,
+  getExpectedLineWebhookUrl,
   getLineConfig,
   getLineMessageDestination,
   getLineRateLimitMax,
   getLineReplyTimeoutMs,
   getLineTimeoutReply,
+  isLineWebhookAutoConfigureEnabled,
   isLineRateLimited,
   isInvalidLineReplyTokenError,
   parseLineLocationMessage,

@@ -23,6 +23,7 @@ const { createReportsRouter } = require('./routes/reports.routes');
 const { createUnansweredRouter } = require('./routes/unanswered.routes');
 const { createIotStatusService } = require('./services/iot-status.service');
 const { getKnowledgeEmbeddingStatus } = require('./services/health.service');
+const { ensureLineWebhookEndpoint } = require('./services/line-shared.service');
 const { isInternalMode } = require('./services/internal-wiki.service');
 const { createPromptService } = require('./services/prompt.service');
 const { createPartnerService } = require('./services/partner.service');
@@ -619,6 +620,24 @@ async function start() {
     scheduleRetentionCleanup();
     httpServer = app.listen(PORT, () => {
       console.log(`ECOCO customer service server started: http://localhost:${PORT}`);
+      ensureLineWebhookEndpoint()
+        .then(result => {
+          if (result.skipped) return;
+          console.log(
+            `LINE webhook configuration: active=${result.active}`
+            + ` endpointMatches=${result.endpointMatches}`
+            + ` autoConfigured=${result.autoConfigured}`
+          );
+          if (!result.active) {
+            console.warn('LINE webhook is configured but disabled; enable Use webhook in LINE Developers.');
+          }
+          if (!result.endpointMatches) {
+            console.warn('LINE webhook endpoint does not match this Render service.');
+          }
+        })
+        .catch(err => {
+          console.error('LINE webhook configuration check failed:', err.message);
+        });
     });
   } catch (err) {
     console.error('Server startup failed:', err.message);
