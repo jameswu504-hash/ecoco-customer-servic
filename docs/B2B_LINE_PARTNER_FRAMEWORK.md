@@ -124,7 +124,7 @@ B2B 檢索會移除「目前、有哪些、為什麼、的問題」等問句外�
 | `PATCH` | `/api/partners/:companyId/status` | 啟用或停用公司 |
 | `POST` | `/api/partners/:companyId/binding-code` | 產生一次性綁定碼 |
 | `POST` | `/api/partners/:companyId/knowledge` | 新增公司專屬資料 |
-| `POST` | `/api/partners/:companyId/knowledge/import-line` | 去識別、分段並批次匯入 LINE TXT |
+| `POST` | `/api/partners/:companyId/knowledge/import-cleaned` | 匯入已在瀏覽器本機清洗並經人工確認的 TXT／MD 資料包 |
 | `POST` | `/api/partners/:companyId/test-chat` | 模擬該公司 LINE 問答 |
 
 ## 目前範圍
@@ -136,7 +136,9 @@ B2B 檢索會移除「目前、有哪些、為什麼、的問題」等問句外�
 - 未綁定群組拒絕存取。
 - 管理者模擬測試。
 - 跨公司問題的後端拒答。
-- LINE 聊天 TXT 去識別、自動分段與重複匯入防護。
+- TXT／MD 在瀏覽器本機依 `ecoco-clean-brand-knowledge` Skill 清洗、預覽與分段。
+- 原始檔不傳至伺服器或外部 AI；姓名、電話及 Email 保留於核准後的 B2B 知識。
+- B2B 來源、清洗工作、文件與 RAG Chunk 依 `company_id` 隔離，並具重複匯入防護。
 - B2B 自然語句拆詞、片語加權與公司資料總覽檢索。
 - B2B 公司總覽優先使用已授權專屬資料，不受一般 B2C 合作洽談內容干擾。
 - 管理頁可逐筆展開與收合公司專屬資料全文。

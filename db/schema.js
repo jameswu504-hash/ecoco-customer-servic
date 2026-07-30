@@ -144,6 +144,38 @@ const SCHEMA = [
       created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`,
   `CREATE INDEX IF NOT EXISTS idx_partner_binding_codes_company ON partner_binding_codes(company_id, expires_at)`,
+  `CREATE TABLE IF NOT EXISTS partner_source_documents (
+      id                     SERIAL PRIMARY KEY,
+      company_id             INTEGER NOT NULL REFERENCES partner_companies(id) ON DELETE CASCADE,
+      source_type            TEXT NOT NULL,
+      original_filename      TEXT NOT NULL,
+      content_hash           TEXT NOT NULL,
+      original_size          INTEGER NOT NULL DEFAULT 0,
+      storage_mode           TEXT NOT NULL DEFAULT 'browser_local_only',
+      preserve_personal_data BOOLEAN NOT NULL DEFAULT TRUE,
+      raw_content_stored     BOOLEAN NOT NULL DEFAULT FALSE,
+      status                 TEXT NOT NULL DEFAULT 'uploaded',
+      created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      imported_at            TIMESTAMPTZ,
+      UNIQUE(company_id, content_hash)
+    )`,
+  `CREATE INDEX IF NOT EXISTS idx_partner_source_documents_company
+     ON partner_source_documents(company_id, created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS partner_cleaning_jobs (
+      id                 SERIAL PRIMARY KEY,
+      company_id         INTEGER NOT NULL REFERENCES partner_companies(id) ON DELETE CASCADE,
+      source_document_id INTEGER NOT NULL REFERENCES partner_source_documents(id) ON DELETE CASCADE,
+      skill_name         TEXT NOT NULL,
+      skill_version      TEXT NOT NULL,
+      status             TEXT NOT NULL DEFAULT 'pending_review',
+      report             JSONB NOT NULL DEFAULT '{}'::jsonb,
+      approved_by        TEXT NOT NULL DEFAULT '',
+      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      completed_at       TIMESTAMPTZ,
+      approved_at        TIMESTAMPTZ
+    )`,
+  `CREATE INDEX IF NOT EXISTS idx_partner_cleaning_jobs_company
+     ON partner_cleaning_jobs(company_id, created_at DESC)`,
   `CREATE TABLE IF NOT EXISTS partner_knowledge_sections (
       id          SERIAL PRIMARY KEY,
       company_id  INTEGER NOT NULL REFERENCES partner_companies(id) ON DELETE CASCADE,
@@ -154,7 +186,37 @@ const SCHEMA = [
       created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`,
+  `ALTER TABLE partner_knowledge_sections
+     ADD COLUMN IF NOT EXISTS source_document_id INTEGER REFERENCES partner_source_documents(id) ON DELETE SET NULL`,
+  `ALTER TABLE partner_knowledge_sections
+     ADD COLUMN IF NOT EXISTS cleaning_job_id INTEGER REFERENCES partner_cleaning_jobs(id) ON DELETE SET NULL`,
+  `ALTER TABLE partner_knowledge_sections ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE partner_knowledge_sections ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb`,
+  `ALTER TABLE partner_knowledge_sections ADD COLUMN IF NOT EXISTS content_hash TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE partner_knowledge_sections ADD COLUMN IF NOT EXISTS review_status TEXT NOT NULL DEFAULT 'approved'`,
+  `ALTER TABLE partner_knowledge_sections ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ`,
   `CREATE INDEX IF NOT EXISTS idx_partner_knowledge_company ON partner_knowledge_sections(company_id, archived_at, sort_order)`,
+  `CREATE TABLE IF NOT EXISTS partner_knowledge_chunks (
+      id                 SERIAL PRIMARY KEY,
+      company_id         INTEGER NOT NULL REFERENCES partner_companies(id) ON DELETE CASCADE,
+      section_id         INTEGER NOT NULL REFERENCES partner_knowledge_sections(id) ON DELETE CASCADE,
+      source_document_id INTEGER REFERENCES partner_source_documents(id) ON DELETE SET NULL,
+      chunk_index        INTEGER NOT NULL DEFAULT 0,
+      topic              TEXT NOT NULL DEFAULT '',
+      content            TEXT NOT NULL DEFAULT '',
+      search_text        TEXT NOT NULL DEFAULT '',
+      content_hash       TEXT NOT NULL DEFAULT '',
+      metadata           JSONB NOT NULL DEFAULT '{}'::jsonb,
+      source_references  JSONB NOT NULL DEFAULT '[]'::jsonb,
+      embedding_model    TEXT NOT NULL DEFAULT '',
+      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(section_id, chunk_index)
+    )`,
+  `CREATE INDEX IF NOT EXISTS idx_partner_knowledge_chunks_company
+     ON partner_knowledge_chunks(company_id, topic, id)`,
+  `CREATE INDEX IF NOT EXISTS idx_partner_knowledge_chunks_section
+     ON partner_knowledge_chunks(section_id, chunk_index)`,
   `CREATE TABLE IF NOT EXISTS partner_conversations (
       id            SERIAL PRIMARY KEY,
       company_id    INTEGER NOT NULL REFERENCES partner_companies(id) ON DELETE CASCADE,

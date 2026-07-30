@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ECOCO B2B 合作夥伴</title>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;800&family=Space+Mono&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="partners.css?v=20260728-3" />
+  <link rel="stylesheet" href="partners.css?v=20260730-1" />
 </head>
 <body>
   <div class="login-overlay" id="loginOverlay">
@@ -111,23 +111,6 @@
               <span class="section-index">02</span>
               <h3>公司專屬資料</h3>
             </div>
-            <button class="secondary-button" id="selectLineTxtBtn" type="button">匯入 LINE TXT</button>
-          </div>
-          <input id="lineTxtFileInput" type="file" accept=".txt,text/plain" hidden />
-          <div class="line-import-panel" id="lineImportPanel" hidden>
-            <div>
-              <strong id="lineImportFileName">尚未選擇檔案</strong>
-              <small id="lineImportSummary"></small>
-              <label class="line-import-privacy">
-                <input id="lineImportPreservePersonalData" type="checkbox" checked />
-                <span>保留原始發言者與聯絡資料</span>
-              </label>
-              <span class="form-error" id="lineImportError" role="alert"></span>
-            </div>
-            <div class="line-import-actions">
-              <button class="secondary-button" id="cancelLineImportBtn" type="button">取消</button>
-              <button id="confirmLineImportBtn" type="button">開始匯入</button>
-            </div>
           </div>
           <form class="knowledge-form" id="knowledgeForm">
             <label>
@@ -150,6 +133,49 @@
           <div class="section-heading">
             <div>
               <span class="section-index">03</span>
+              <h3>AI 資料清洗</h3>
+            </div>
+            <button id="selectCleanerFileBtn" type="button">選擇 TXT／MD</button>
+          </div>
+          <input
+            id="cleanerFileInput"
+            type="file"
+            accept=".txt,.md,text/plain,text/markdown"
+            hidden
+          />
+          <div class="cleaner-intro">
+            <strong>Local-only 清洗</strong>
+            <p>原始檔只在此瀏覽器處理，不會上傳，也不會傳送給 Claude、OpenAI 或外部 Embedding API。</p>
+            <p>內部姓名、電話與 Email 會保留；只有人工確認後的清洗結果會寫入目前公司的 SQL 知識庫。</p>
+          </div>
+          <div class="cleaner-panel" id="cleanerPanel" hidden>
+            <div class="cleaner-file-row">
+              <div>
+                <span class="cleaner-label">本機來源</span>
+                <strong id="cleanerFileName">尚未選擇檔案</strong>
+                <small id="cleanerSourceHash"></small>
+              </div>
+              <span class="local-badge">未上傳原始檔</span>
+            </div>
+            <div class="cleaner-metrics" id="cleanerMetrics"></div>
+            <div class="cleaner-warning-list" id="cleanerWarnings"></div>
+            <details class="cleaner-preview" open>
+              <summary>清洗結果預覽</summary>
+              <pre id="cleanerPreview"></pre>
+            </details>
+            <p class="form-error" id="cleanerError" role="alert"></p>
+            <div class="cleaner-actions">
+              <button class="secondary-button" id="cancelCleanerBtn" type="button">取消</button>
+              <button class="secondary-button" id="downloadCleanerPackageBtn" type="button">下載備份資料包</button>
+              <button id="confirmCleanerImportBtn" type="button">確認並匯入知識庫</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="workspace-section">
+          <div class="section-heading">
+            <div>
+              <span class="section-index">04</span>
               <h3>LINE 對話紀錄</h3>
             </div>
             <div class="conversation-controls">
@@ -172,7 +198,7 @@
         <section class="workspace-section test-section">
           <div class="section-heading">
             <div>
-              <span class="section-index">04</span>
+              <span class="section-index">05</span>
               <h3>LINE 分支測試</h3>
             </div>
             <span class="test-company-label" id="testCompanyLabel"></span>
@@ -198,7 +224,7 @@
       </div>
       <label>
         公司名稱
-        <input id="newCompanyName" type="text" maxlength="160" placeholder="例如：小北百貨" required />
+        <input id="newCompanyName" type="text" maxlength="160" placeholder="例如：合作公司名稱" required />
       </label>
       <label>
         公司代碼
@@ -212,6 +238,7 @@
     </form>
   </dialog>
 
-  <script src="partners.js?v=20260728-3" defer></script>
+  <script src="partner-data-cleaner.js?v=20260730-1" defer></script>
+  <script src="partners.js?v=20260730-1" defer></script>
 </body>
 </html>

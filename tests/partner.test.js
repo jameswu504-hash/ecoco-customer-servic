@@ -153,9 +153,13 @@ test('partner retrieval always scopes SQL by company_id', async () => {
 
   await service.retrievePartnerKnowledge(27, '門市回收合作規則');
 
-  assert.equal(queries.length, 1);
-  assert.match(queries[0].sql, /WHERE company_id = \$1/);
-  assert.equal(queries[0].params[0], 27);
+  assert.equal(queries.length, 2);
+  for (const query of queries) {
+    assert.match(query.sql, /company_id = \$1/);
+    assert.equal(query.params[0], 27);
+  }
+  assert.ok(queries.some(({ sql }) => /partner_knowledge_chunks/.test(sql)));
+  assert.ok(queries.some(({ sql }) => /partner_knowledge_sections/.test(sql)));
 });
 
 test('partner LINE conversation logs are company-scoped and grouped by Taipei day', async () => {
@@ -760,6 +764,10 @@ test('unbound LINE groups are intercepted before the B2C classifier', () => {
 test('partner admin page exposes company-scoped test chat behind admin API', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'partners.html'), 'utf8');
   const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'partners.js'), 'utf8');
+  const cleaner = fs.readFileSync(
+    path.join(__dirname, '..', 'public', 'partner-data-cleaner.js'),
+    'utf8'
+  );
   const routes = fs.readFileSync(path.join(__dirname, '..', 'routes', 'partners.routes.js'), 'utf8');
 
   assert.match(html, /LINE 分支測試/);
@@ -768,15 +776,17 @@ test('partner admin page exposes company-scoped test chat behind admin API', () 
   assert.match(js, /\/api\/partners\/\$\{company\.id\}\/test-chat/);
   assert.match(js, /\/api\/partners\/\$\{companyId\}\/conversations\?days=\$\{days\}/);
   assert.match(js, /conversation-day/);
-  assert.match(html, /lineTxtFileInput/);
-  assert.match(html, /lineImportPreservePersonalData/);
-  assert.match(js, /file\.text\(\)/);
-  assert.match(js, /preservePersonalData/);
+  assert.match(html, /cleanerFileInput/);
+  assert.match(html, /AI 資料清洗/);
+  assert.match(html, /accept="\.txt,\.md,text\/plain,text\/markdown"/);
+  assert.match(js, /cleanPartnerKnowledgeFile/);
+  assert.match(cleaner, /preservePersonalData:\s*true/);
   assert.match(js, /document\.createElement\('details'\)/);
   assert.match(js, /document\.createElement\('summary'\)/);
   assert.match(js, /knowledge-full-content/);
   assert.match(js, /fullContent\.textContent = String\(item\.content/);
-  assert.match(routes, /knowledge\/import-line/);
+  assert.match(routes, /knowledge\/import-cleaned/);
+  assert.doesNotMatch(routes, /knowledge\/import-line/);
   assert.match(routes, /:companyId\/conversations/);
   assert.match(js, /x-admin-key/);
   assert.match(routes, /router\.use\(requireAdminKey\)/);

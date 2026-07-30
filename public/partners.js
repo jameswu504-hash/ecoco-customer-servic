@@ -4,11 +4,10 @@ const partnerState = {
   detail: null,
   conversationLog: null,
   testSessionId: '',
-  pendingLineImport: null,
+  pendingCleanPackage: null,
 };
 
-const LINE_TXT_MAX_CHARACTERS = 250000;
-const LINE_TXT_MAX_BYTES = 1000000;
+const CLEANER_MAX_BYTES = 2_000_000;
 
 function getAdminKey() {
   return sessionStorage.getItem('adminKey') || '';
@@ -284,6 +283,7 @@ function renderDetail() {
   document.getElementById('toggleCompanyStatusBtn').textContent = isActive ? '停用公司' : '重新啟用';
   document.getElementById('generateBindingCodeBtn').disabled = !isActive;
   document.getElementById('sendTestBtn').disabled = !isActive;
+  document.getElementById('selectCleanerFileBtn').disabled = !isActive;
 
   renderLineGroups(detail.lineGroups);
   renderKnowledge(detail.knowledge);
@@ -349,7 +349,7 @@ async function selectCompany(companyId) {
   if (Number(companyId) === Number(partnerState.selectedCompanyId)) return;
   partnerState.testSessionId = '';
   partnerState.conversationLog = null;
-  clearLineImport();
+  clearCleaner();
   document.getElementById('bindingResult').hidden = true;
   const chat = document.getElementById('testChat');
   chat.replaceChildren();
@@ -481,107 +481,168 @@ async function addKnowledge(event) {
   }
 }
 
-function clearLineImport() {
-  partnerState.pendingLineImport = null;
-  const input = document.getElementById('lineTxtFileInput');
-  const panel = document.getElementById('lineImportPanel');
-  const confirmButton = document.getElementById('confirmLineImportBtn');
-  const preserveInput = document.getElementById('lineImportPreservePersonalData');
+function clearCleaner() {
+  partnerState.pendingCleanPackage = null;
+  const input = document.getElementById('cleanerFileInput');
+  const panel = document.getElementById('cleanerPanel');
+  const confirmButton = document.getElementById('confirmCleanerImportBtn');
   if (input) input.value = '';
   if (panel) panel.hidden = true;
   if (confirmButton) confirmButton.disabled = false;
-  if (preserveInput) preserveInput.checked = true;
-  const error = document.getElementById('lineImportError');
+  if (confirmButton) confirmButton.textContent = '確認並匯入知識庫';
+  const error = document.getElementById('cleanerError');
   if (error) error.textContent = '';
 }
 
-function openLineTxtPicker() {
-  const input = document.getElementById('lineTxtFileInput');
+function openCleanerFilePicker() {
+  const input = document.getElementById('cleanerFileInput');
   input.value = '';
   input.click();
 }
 
-function updateLineImportSummary() {
-  const pending = partnerState.pendingLineImport;
-  if (!pending) return;
-  const preservePersonalData = document.getElementById('lineImportPreservePersonalData').checked;
-  const privacyText = preservePersonalData
-    ? '保留原始發言者與聯絡資料'
-    : '遮蔽電話、Email 與長編號';
-  document.getElementById('lineImportSummary').textContent = [
-    `${pending.content.length.toLocaleString('zh-TW')} 字`,
-    '系統會移除附件占位並自動切成多筆公司資料',
-    privacyText,
-  ].join('；');
+function appendCleanerMetric(label, value) {
+  const metrics = document.getElementById('cleanerMetrics');
+  const item = document.createElement('div');
+  const name = document.createElement('span');
+  const data = document.createElement('strong');
+  name.textContent = label;
+  data.textContent = String(value);
+  item.append(name, data);
+  metrics.appendChild(item);
 }
 
-async function prepareLineTxtImport(event) {
+function renderCleanerPackage(cleanedPackage) {
+  const report = cleanedPackage.report;
+  document.getElementById('cleanerFileName').textContent = cleanedPackage.source.name;
+  document.getElementById('cleanerSourceHash').textContent =
+    `SHA-256 ${cleanedPackage.source.contentHash.slice(0, 16)}…`;
+  const metrics = document.getElementById('cleanerMetrics');
+  metrics.replaceChildren();
+  appendCleanerMetric(
+    '格式',
+    cleanedPackage.source.type === 'line_txt' ? 'LINE TXT' : 'Markdown'
+  );
+  appendCleanerMetric('原始字數', report.sourceCharacters.toLocaleString('zh-TW'));
+  appendCleanerMetric('知識文件', report.sectionCount);
+  appendCleanerMetric('RAG Chunks', report.chunkCount);
+  appendCleanerMetric('外部 AI', '未使用');
+  appendCleanerMetric('內部聯絡資料', '保留');
+
+  const warnings = document.getElementById('cleanerWarnings');
+  warnings.replaceChildren();
+  if (!report.warnings.length) {
+    const item = document.createElement('p');
+    item.className = 'cleaner-ok';
+    item.textContent = '格式檢查完成，沒有需要人工注意的警告。';
+    warnings.appendChild(item);
+  } else {
+    report.warnings.forEach(warning => {
+      const item = document.createElement('p');
+      item.textContent = warning;
+      warnings.appendChild(item);
+    });
+  }
+  document.getElementById('cleanerPreview').textContent =
+    cleanedPackage.markdown.length > 16_000
+      ? `${cleanedPackage.markdown.slice(0, 16_000)}\n\n（預覽僅顯示前 16,000 字）`
+      : cleanedPackage.markdown;
+}
+
+async function prepareCleanerFile(event) {
   const file = event.target.files?.[0];
   if (!file) return;
-  const panel = document.getElementById('lineImportPanel');
-  const error = document.getElementById('lineImportError');
-  const summary = document.getElementById('lineImportSummary');
-  const confirmButton = document.getElementById('confirmLineImportBtn');
-  document.getElementById('lineImportFileName').textContent = file.name;
+  const company = partnerState.detail?.company;
+  const panel = document.getElementById('cleanerPanel');
+  const error = document.getElementById('cleanerError');
+  const confirmButton = document.getElementById('confirmCleanerImportBtn');
+  document.getElementById('cleanerFileName').textContent = file.name;
   panel.hidden = false;
   error.textContent = '';
-  summary.textContent = '讀取檔案中...';
-  confirmButton.textContent = '開始匯入';
+  document.getElementById('cleanerPreview').textContent = '本機清洗中...';
+  document.getElementById('cleanerMetrics').replaceChildren();
+  document.getElementById('cleanerWarnings').replaceChildren();
+  confirmButton.textContent = '確認並匯入知識庫';
   confirmButton.disabled = false;
-  partnerState.pendingLineImport = null;
+  partnerState.pendingCleanPackage = null;
 
   try {
-    if (!file.name.toLowerCase().endsWith('.txt')) {
-      throw new Error('請選擇 LINE 匯出的 TXT 檔。');
+    if (!/\.(?:txt|md)$/i.test(file.name)) {
+      throw new Error('第一版只支援 .txt 與 .md 檔案。');
     }
-    if (file.size > LINE_TXT_MAX_BYTES) {
-      throw new Error('TXT 檔案過大，請控制在 1 MB 以內。');
+    if (file.size > CLEANER_MAX_BYTES) {
+      throw new Error('檔案過大，請控制在 2 MB 以內。');
     }
     const content = await file.text();
-    if (!content.trim()) throw new Error('TXT 檔案沒有內容。');
-    if (content.length > LINE_TXT_MAX_CHARACTERS) {
-      throw new Error(`TXT 內容需少於 ${LINE_TXT_MAX_CHARACTERS.toLocaleString('zh-TW')} 字。`);
+    const cleaner = window.EcocoPartnerDataCleaner;
+    if (!cleaner?.cleanPartnerKnowledgeFile) {
+      throw new Error('本機資料清洗模組尚未載入，請重新整理頁面。');
     }
-    partnerState.pendingLineImport = {
+    const cleanedPackage = await cleaner.cleanPartnerKnowledgeFile({
+      company,
       sourceName: file.name,
       content,
-    };
-    updateLineImportSummary();
+    });
+    partnerState.pendingCleanPackage = cleanedPackage;
+    renderCleanerPackage(cleanedPackage);
   } catch (err) {
-    summary.textContent = '';
     error.textContent = err.message;
+    document.getElementById('cleanerPreview').textContent = '';
     confirmButton.disabled = true;
   }
 }
 
-async function importLineTxt() {
+function downloadCleanerPackage() {
+  const cleanedPackage = partnerState.pendingCleanPackage;
+  if (!cleanedPackage) return;
+  const blob = new Blob(
+    [JSON.stringify(cleanedPackage, null, 2)],
+    { type: 'application/json;charset=utf-8' }
+  );
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  const base = cleanedPackage.source.name.replace(/\.(?:txt|md)$/i, '');
+  link.href = url;
+  link.download = `${base}-ai-cleaned.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function importCleanedPackage() {
   const company = partnerState.detail?.company;
-  const pending = partnerState.pendingLineImport;
-  if (!company || !pending) return;
-  const button = document.getElementById('confirmLineImportBtn');
-  const error = document.getElementById('lineImportError');
-  const summary = document.getElementById('lineImportSummary');
+  const cleanedPackage = partnerState.pendingCleanPackage;
+  if (!company || !cleanedPackage) return;
+  const button = document.getElementById('confirmCleanerImportBtn');
+  const error = document.getElementById('cleanerError');
   let succeeded = false;
   error.textContent = '';
   setBusy(button, true, '匯入中...');
 
   try {
-    const result = await partnerFetch(`/api/partners/${company.id}/knowledge/import-line`, {
+    const result = await partnerFetch(`/api/partners/${company.id}/knowledge/import-cleaned`, {
       method: 'POST',
       body: JSON.stringify({
-        ...pending,
-        preservePersonalData: document.getElementById('lineImportPreservePersonalData').checked,
+        format: cleanedPackage.format,
+        source: cleanedPackage.source,
+        policy: cleanedPackage.policy,
+        skill: cleanedPackage.skill,
+        report: cleanedPackage.report,
+        sections: cleanedPackage.sections,
+        chunks: cleanedPackage.chunks,
       }),
     });
-    partnerState.pendingLineImport = null;
-    document.getElementById('lineTxtFileInput').value = '';
-    summary.textContent = [
-      `完成：新增 ${result.createdCount} 筆`,
-      `略過 ${result.skippedDuplicateCount} 筆重複`,
-      `忽略 ${result.ignoredAttachmentCount} 個附件占位`,
-      result.preservePersonalData ? '已保留原始發言者與聯絡資料' : '已遮蔽聯絡資料',
+    const success = document.createElement('p');
+    success.className = 'cleaner-ok';
+    success.textContent = [
+      `匯入完成：${result.createdSectionCount} 份知識文件`,
+      `${result.createdChunkCount} 個 RAG Chunks`,
+      '姓名、電話與 Email 已保留',
+      '原始檔未上傳',
     ].join('；');
+    document.getElementById('cleanerWarnings').prepend(success);
     succeeded = true;
+    await loadCompanyDetail(company.id);
     await loadCompanies(false);
   } catch (err) {
     error.textContent = err.message;
@@ -647,11 +708,11 @@ function bindEvents() {
   document.getElementById('generateBindingCodeBtn').addEventListener('click', generateBindingCode);
   document.getElementById('copyBindingCodeBtn').addEventListener('click', copyBindingCode);
   document.getElementById('knowledgeForm').addEventListener('submit', addKnowledge);
-  document.getElementById('selectLineTxtBtn').addEventListener('click', openLineTxtPicker);
-  document.getElementById('lineTxtFileInput').addEventListener('change', prepareLineTxtImport);
-  document.getElementById('lineImportPreservePersonalData').addEventListener('change', updateLineImportSummary);
-  document.getElementById('cancelLineImportBtn').addEventListener('click', clearLineImport);
-  document.getElementById('confirmLineImportBtn').addEventListener('click', importLineTxt);
+  document.getElementById('selectCleanerFileBtn').addEventListener('click', openCleanerFilePicker);
+  document.getElementById('cleanerFileInput').addEventListener('change', prepareCleanerFile);
+  document.getElementById('cancelCleanerBtn').addEventListener('click', clearCleaner);
+  document.getElementById('downloadCleanerPackageBtn').addEventListener('click', downloadCleanerPackage);
+  document.getElementById('confirmCleanerImportBtn').addEventListener('click', importCleanedPackage);
   document.getElementById('testForm').addEventListener('submit', sendTestQuestion);
   document.getElementById('refreshBtn').addEventListener('click', () => loadCompanies(false));
 }

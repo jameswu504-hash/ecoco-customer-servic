@@ -745,6 +745,44 @@ function createPartnerService({
       .slice(0, 24);
     if (terms.length === 0) return [];
 
+    const chunkValues = [Number(companyId)];
+    const chunkScoreExpressions = [];
+    const chunkClauses = terms.map(term => {
+      chunkValues.push(`%${escapeIlikePattern(term)}%`);
+      const param = `$${chunkValues.length}`;
+      chunkScoreExpressions.push(
+        `(CASE WHEN pkc.topic ILIKE ${param} ESCAPE '\\' `
+        + `OR pkc.search_text ILIKE ${param} ESCAPE '\\' `
+        + `OR pkc.content ILIKE ${param} ESCAPE '\\' `
+        + `THEN ${[...term].length} ELSE 0 END)`
+      );
+      return `(pkc.topic ILIKE ${param} ESCAPE '\\' `
+        + `OR pkc.search_text ILIKE ${param} ESCAPE '\\' `
+        + `OR pkc.content ILIKE ${param} ESCAPE '\\')`;
+    });
+    const { rows: chunkRows } = await pool.query(
+      `SELECT
+         pkc.id,
+         pkc.company_id,
+         COALESCE(NULLIF(pkc.topic, ''), pks.category) AS category,
+         pkc.content,
+         pks.sort_order
+       FROM partner_knowledge_chunks pkc
+       JOIN partner_knowledge_sections pks
+         ON pks.id = pkc.section_id
+        AND pks.company_id = pkc.company_id
+       WHERE pkc.company_id = $1
+         AND pks.archived_at IS NULL
+         AND pks.review_status = 'approved'
+         AND (${chunkClauses.join(' OR ')})
+       ORDER BY (${chunkScoreExpressions.join(' + ')}) DESC,
+                pks.sort_order DESC,
+                pkc.chunk_index ASC
+       LIMIT 8`,
+      chunkValues
+    );
+    if (chunkRows.length > 0) return chunkRows;
+
     const values = [Number(companyId)];
     const scoreExpressions = [];
     const clauses = terms.map(term => {

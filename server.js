@@ -26,6 +26,7 @@ const { getKnowledgeEmbeddingStatus } = require('./services/health.service');
 const { ensureLineWebhookEndpoint } = require('./services/line-shared.service');
 const { isInternalMode } = require('./services/internal-wiki.service');
 const { createPromptService } = require('./services/prompt.service');
+const { createPartnerCleaningService } = require('./services/partner-cleaning.service');
 const { createPartnerService } = require('./services/partner.service');
 const { classifyQuestion } = require('./services/question-classifier.service');
 const { createRagService } = require('./services/rag.service');
@@ -63,7 +64,17 @@ app.use(express.json({
   },
 }));
 app.use((req, res, next) => {
-  if (['/dashboard.html', '/dashboard.css', '/dashboard.js', '/dashboard-v2.html', '/dashboard-v2.css', '/partners.html', '/partners.css', '/partners.js'].includes(req.path)) {
+  if ([
+    '/dashboard.html',
+    '/dashboard.css',
+    '/dashboard.js',
+    '/dashboard-v2.html',
+    '/dashboard-v2.css',
+    '/partners.html',
+    '/partners.css',
+    '/partners.js',
+    '/partner-data-cleaner.js',
+  ].includes(req.path)) {
     res.setHeader('Cache-Control', 'no-store');
   }
   next();
@@ -377,6 +388,7 @@ const partnerService = createPartnerService({
   classifyQuestion,
   retrieveLiveStationContext: iotStatusService.retrieveLiveStationContext,
 });
+const partnerCleaningService = createPartnerCleaningService({ pool });
 
 async function buildHealthStatus({ includeDetails = false, includeIotCheck = false } = {}) {
   const health = {
@@ -555,6 +567,7 @@ app.use('/api', createLineRouter({
 }));
 app.use('/api/partners', createPartnersRouter({
   partnerService,
+  partnerCleaningService,
   requireAdminKey: adminGuard,
   pool,
 }));

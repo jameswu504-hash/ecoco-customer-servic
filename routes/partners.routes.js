@@ -12,7 +12,12 @@ function getPartnerTestSessionId(companyId, value) {
   return `partner_test_${companyId}_${crypto.randomUUID().replace(/-/g, '')}`;
 }
 
-function createPartnersRouter({ partnerService, requireAdminKey, pool }) {
+function createPartnersRouter({
+  partnerService,
+  partnerCleaningService,
+  requireAdminKey,
+  pool,
+}) {
   const router = express.Router();
   router.use(requireAdminKey);
 
@@ -118,38 +123,34 @@ function createPartnersRouter({ partnerService, requireAdminKey, pool }) {
     }
   }));
 
-  router.post('/:companyId/knowledge/import-line', asyncHandler(async (req, res) => {
+  router.post('/:companyId/knowledge/import-cleaned', asyncHandler(async (req, res) => {
+    const company = await partnerService.getCompany(req.params.companyId);
+    if (!company) return res.status(404).json({ error: 'Partner company not found.' });
     try {
-      const result = await partnerService.importLineChatKnowledge(
-        req.params.companyId,
+      const result = await partnerCleaningService.importApprovedPackage(
+        company.id,
         req.body || {}
       );
-      if (!result) return res.status(404).json({ error: 'Partner company not found.' });
       await saveAdminAudit(pool, {
-        action: 'partner_line_knowledge_imported',
+        action: 'partner_cleaned_knowledge_imported',
         targetType: 'partner_company',
-        targetId: String(result.company.id),
+        targetId: String(company.id),
         details: {
-          sourceName: result.sourceName,
-          sourceCharacters: result.sourceCharacters,
-          preservePersonalData: result.preservePersonalData,
-          totalSectionCount: result.totalSectionCount,
-          createdCount: result.createdCount,
-          skippedDuplicateCount: result.skippedDuplicateCount,
-          ignoredAttachmentCount: result.ignoredAttachmentCount,
+          sourceDocumentId: result.sourceDocumentId,
+          cleaningJobId: result.cleaningJobId,
+          createdSectionCount: result.createdSectionCount,
+          createdChunkCount: result.createdChunkCount,
+          preservePersonalData: true,
+          externalAiUsed: false,
+          rawContentUploaded: false,
         },
       });
-      res.status(result.createdCount > 0 ? 201 : 200).json({
-        sourceName: result.sourceName,
-        sourceCharacters: result.sourceCharacters,
-        preservePersonalData: result.preservePersonalData,
-        totalSectionCount: result.totalSectionCount,
-        createdCount: result.createdCount,
-        skippedDuplicateCount: result.skippedDuplicateCount,
-        ignoredAttachmentCount: result.ignoredAttachmentCount,
-      });
+      res.status(201).json(result);
     } catch (err) {
-      if (/required|must be under|does not contain usable|creates more than/i.test(err.message)) {
+      if (err.code === 'PARTNER_SOURCE_DUPLICATE') {
+        return res.status(409).json({ error: err.message });
+      }
+      if (/required|supported|must|cannot|incomplete|invalid|exceeds/i.test(err.message)) {
         return res.status(400).json({ error: err.message });
       }
       throw err;
