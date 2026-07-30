@@ -484,6 +484,43 @@ async function addKnowledge(event) {
   }
 }
 
+async function clearCompanyKnowledge() {
+  const company = partnerState.detail?.company;
+  if (!company) return;
+  const confirmation = window.prompt(
+    `這會永久刪除「${company.name}」的知識、RAG 切片與清洗紀錄。\n\n請輸入公司代號 ${company.slug} 確認：`,
+    ''
+  );
+  if (confirmation === null) return;
+
+  const status = document.getElementById('clearCompanyKnowledgeStatus');
+  status.textContent = '';
+  if (confirmation.trim() !== company.slug) {
+    status.textContent = `公司代號不符，未刪除。請輸入 ${company.slug}。`;
+    return;
+  }
+
+  const button = document.getElementById('clearCompanyKnowledgeBtn');
+  setBusy(button, true, '清除中...');
+  try {
+    const result = await partnerFetch(`/api/partners/${company.id}/knowledge`, {
+      method: 'DELETE',
+      body: JSON.stringify({ confirmSlug: confirmation.trim() }),
+    });
+    await loadCompanyDetail(company.id);
+    await loadCompanies(false);
+    document.getElementById('clearCompanyKnowledgeStatus').textContent =
+      `已清空：${result.deleted.knowledgeSections} 份知識、`
+      + `${result.deleted.knowledgeChunks} 個 RAG 切片、`
+      + `${result.deleted.sourceDocuments} 份來源與 `
+      + `${result.deleted.cleaningJobs} 筆清洗紀錄。`;
+  } catch (err) {
+    status.textContent = err.message;
+  } finally {
+    setBusy(document.getElementById('clearCompanyKnowledgeBtn'), false);
+  }
+}
+
 function clearCleaner() {
   partnerState.pendingCleanPackage = null;
   const input = document.getElementById('cleanerFileInput');
@@ -751,6 +788,7 @@ function bindEvents() {
   document.getElementById('generateBindingCodeBtn').addEventListener('click', generateBindingCode);
   document.getElementById('copyBindingCodeBtn').addEventListener('click', copyBindingCode);
   document.getElementById('knowledgeForm').addEventListener('submit', addKnowledge);
+  document.getElementById('clearCompanyKnowledgeBtn').addEventListener('click', clearCompanyKnowledge);
   document.getElementById('selectCleanerFileBtn').addEventListener('click', openCleanerFilePicker);
   document.getElementById('cleanerFileInput').addEventListener('change', event => {
     prepareCleanerFile(event.target.files?.[0]);

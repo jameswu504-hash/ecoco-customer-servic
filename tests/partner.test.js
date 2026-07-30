@@ -640,6 +640,63 @@ test('LINE TXT batch import writes only new company-scoped sections in one trans
   assert.ok(inserts.every(({ params }) => params[2].length <= PARTNER_LINE_IMPORT_CHUNK_CHARS));
 });
 
+test('company knowledge clear removes only scoped knowledge data in one transaction', async () => {
+  const transactionQueries = [];
+  const connection = {
+    async query(sql, params = []) {
+      transactionQueries.push({ sql, params });
+      if (/FROM partner_companies[\s\S]*FOR UPDATE/.test(sql)) {
+        return { rows: [{ id: 9, slug: 'familymart-test', name: '全家便利商店（測試）' }] };
+      }
+      if (/DELETE FROM partner_knowledge_chunks/.test(sql)) {
+        return { rows: [{ id: 1 }, { id: 2 }, { id: 3 }] };
+      }
+      if (/DELETE FROM partner_knowledge_sections/.test(sql)) {
+        return { rows: [{ id: 10 }, { id: 11 }] };
+      }
+      if (/DELETE FROM partner_cleaning_jobs/.test(sql)) {
+        return { rows: [{ id: 20 }] };
+      }
+      if (/DELETE FROM partner_source_documents/.test(sql)) {
+        return { rows: [{ id: 30 }] };
+      }
+      if (/FROM partner_line_groups/.test(sql)) {
+        return { rows: [{ line_group_count: 1, conversation_count: 51 }] };
+      }
+      return { rows: [] };
+    },
+    release() {},
+  };
+  const pool = {
+    async connect() {
+      return connection;
+    },
+  };
+  const service = createService(pool);
+
+  const result = await service.clearCompanyKnowledge(9, 'familymart-test');
+
+  assert.deepEqual(result.deleted, {
+    knowledgeSections: 2,
+    knowledgeChunks: 3,
+    cleaningJobs: 1,
+    sourceDocuments: 1,
+  });
+  assert.deepEqual(result.preserved, {
+    lineGroups: 1,
+    conversations: 51,
+  });
+  assert.ok(transactionQueries.some(({ sql }) => sql === 'BEGIN'));
+  assert.ok(transactionQueries.some(({ sql }) => sql === 'COMMIT'));
+  assert.equal(transactionQueries.some(({ sql }) => /DELETE FROM partner_conversations/.test(sql)), false);
+  assert.equal(transactionQueries.some(({ sql }) => /DELETE FROM partner_line_groups/.test(sql)), false);
+  assert.ok(
+    transactionQueries
+      .filter(({ sql }) => /DELETE FROM partner_/.test(sql))
+      .every(({ params }) => params[0] === 9)
+  );
+});
+
 test('active partner names are cached briefly for B2B scope checks', async () => {
   let companyListQueries = 0;
   const pool = {

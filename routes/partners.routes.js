@@ -123,6 +123,32 @@ function createPartnersRouter({
     }
   }));
 
+  router.delete('/:companyId/knowledge', asyncHandler(async (req, res) => {
+    try {
+      const result = await partnerService.clearCompanyKnowledge(
+        req.params.companyId,
+        req.body?.confirmSlug
+      );
+      if (!result) return res.status(404).json({ error: 'Partner company not found.' });
+      await saveAdminAudit(pool, {
+        action: 'partner_company_knowledge_cleared',
+        targetType: 'partner_company',
+        targetId: String(result.company.id),
+        details: {
+          companySlug: result.company.slug,
+          deleted: result.deleted,
+          preserved: result.preserved,
+        },
+      });
+      res.json(result);
+    } catch (err) {
+      if (err.code === 'PARTNER_CONFIRMATION_MISMATCH') {
+        return res.status(400).json({ error: err.message });
+      }
+      throw err;
+    }
+  }));
+
   router.post('/:companyId/knowledge/import-cleaned', asyncHandler(async (req, res) => {
     const company = await partnerService.getCompany(req.params.companyId);
     if (!company) return res.status(404).json({ error: 'Partner company not found.' });

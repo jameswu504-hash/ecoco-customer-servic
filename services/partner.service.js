@@ -659,6 +659,85 @@ function createPartnerService({
     return rows[0];
   }
 
+  async function clearCompanyKnowledge(companyId, confirmSlug) {
+    const id = Number(companyId);
+    if (!Number.isInteger(id) || id < 1) return null;
+    const confirmation = String(confirmSlug || '').trim();
+    const db = await pool.connect();
+
+    try {
+      await db.query('BEGIN');
+      await db.query(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [`partner_knowledge_clear:${id}`]
+      );
+      const { rows: companyRows } = await db.query(
+        `SELECT id, slug, name
+         FROM partner_companies
+         WHERE id = $1
+         FOR UPDATE`,
+        [id]
+      );
+      const company = companyRows[0];
+      if (!company) {
+        await db.query('ROLLBACK');
+        return null;
+      }
+      if (!confirmation || confirmation !== company.slug) {
+        const error = new Error(`Type ${company.slug} to confirm clearing this company's knowledge.`);
+        error.code = 'PARTNER_CONFIRMATION_MISMATCH';
+        throw error;
+      }
+
+      const { rows: deletedChunkRows } = await db.query(
+        'DELETE FROM partner_knowledge_chunks WHERE company_id = $1 RETURNING id',
+        [id]
+      );
+      const { rows: deletedSectionRows } = await db.query(
+        'DELETE FROM partner_knowledge_sections WHERE company_id = $1 RETURNING id',
+        [id]
+      );
+      const { rows: deletedJobRows } = await db.query(
+        'DELETE FROM partner_cleaning_jobs WHERE company_id = $1 RETURNING id',
+        [id]
+      );
+      const { rows: deletedSourceRows } = await db.query(
+        'DELETE FROM partner_source_documents WHERE company_id = $1 RETURNING id',
+        [id]
+      );
+      const { rows: preservedRows } = await db.query(
+        `SELECT
+           (SELECT COUNT(*)::int
+              FROM partner_line_groups
+             WHERE company_id = $1) AS line_group_count,
+           (SELECT COUNT(*)::int
+              FROM partner_conversations
+             WHERE company_id = $1) AS conversation_count`,
+        [id]
+      );
+
+      await db.query('COMMIT');
+      return {
+        company,
+        deleted: {
+          knowledgeSections: deletedSectionRows.length,
+          knowledgeChunks: deletedChunkRows.length,
+          cleaningJobs: deletedJobRows.length,
+          sourceDocuments: deletedSourceRows.length,
+        },
+        preserved: {
+          lineGroups: Number(preservedRows[0]?.line_group_count || 0),
+          conversations: Number(preservedRows[0]?.conversation_count || 0),
+        },
+      };
+    } catch (err) {
+      await db.query('ROLLBACK');
+      throw err;
+    } finally {
+      db.release();
+    }
+  }
+
   async function importLineChatKnowledge(companyId, payload = {}) {
     const company = await getCompany(companyId);
     if (!company) return null;
@@ -1059,6 +1138,7 @@ function createPartnerService({
     addKnowledge,
     answerPartnerQuestion,
     bindLineGroup,
+    clearCompanyKnowledge,
     createCompany,
     generateBindingCode,
     getCompany,

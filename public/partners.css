@@ -67,6 +67,18 @@ button:disabled {
   background: var(--soft);
 }
 
+.danger-button {
+  color: var(--danger);
+  border-color: rgba(184, 58, 50, 0.45);
+  background: var(--surface);
+}
+
+.danger-button:hover {
+  color: #fff;
+  border-color: var(--danger);
+  background: var(--danger);
+}
+
 .icon-button {
   width: 36px;
   min-height: 36px;
