@@ -250,6 +250,12 @@ test('partner page exposes local TXT and Markdown cleaning before approved SQL i
   );
 
   assert.match(html, /AI 資料清洗/);
+  assert.ok(
+    html.indexOf('AI 資料清洗') < html.indexOf('公司專屬資料'),
+    'AI 資料清洗應顯示在公司專屬資料之前'
+  );
+  assert.match(html, /<span class="section-index">02<\/span>\s*<h3>AI 資料清洗<\/h3>/);
+  assert.match(html, /<span class="section-index">03<\/span>\s*<h3>公司專屬資料<\/h3>/);
   assert.match(html, /accept="\.txt,\.md,text\/plain,text\/markdown"/);
   assert.match(html, /partner-data-cleaner\.js/);
   assert.match(html, /原始檔只在此瀏覽器處理，不會上傳/);

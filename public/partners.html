@@ -109,30 +109,6 @@
           <div class="section-heading">
             <div>
               <span class="section-index">02</span>
-              <h3>公司專屬資料</h3>
-            </div>
-          </div>
-          <form class="knowledge-form" id="knowledgeForm">
-            <label>
-              資料分類
-              <input id="knowledgeCategory" type="text" maxlength="160" placeholder="例如：門市回收合作規則" required />
-            </label>
-            <label>
-              資料內容
-              <textarea id="knowledgeContent" maxlength="20000" rows="5" placeholder="先放測試內容，之後可再灌入正式資料。" required></textarea>
-            </label>
-            <div class="form-actions">
-              <span class="form-error" id="knowledgeError" role="alert"></span>
-              <button type="submit">新增資料</button>
-            </div>
-          </form>
-          <div class="knowledge-list" id="knowledgeList"></div>
-        </section>
-
-        <section class="workspace-section">
-          <div class="section-heading">
-            <div>
-              <span class="section-index">03</span>
               <h3>AI 資料清洗</h3>
             </div>
             <button id="selectCleanerFileBtn" type="button">選擇 TXT／MD</button>
@@ -180,6 +156,30 @@
               <button id="confirmCleanerImportBtn" type="button">確認並匯入知識庫</button>
             </div>
           </div>
+        </section>
+
+        <section class="workspace-section">
+          <div class="section-heading">
+            <div>
+              <span class="section-index">03</span>
+              <h3>公司專屬資料</h3>
+            </div>
+          </div>
+          <form class="knowledge-form" id="knowledgeForm">
+            <label>
+              資料分類
+              <input id="knowledgeCategory" type="text" maxlength="160" placeholder="例如：門市回收合作規則" required />
+            </label>
+            <label>
+              資料內容
+              <textarea id="knowledgeContent" maxlength="20000" rows="5" placeholder="先放測試內容，之後可再灌入正式資料。" required></textarea>
+            </label>
+            <div class="form-actions">
+              <span class="form-error" id="knowledgeError" role="alert"></span>
+              <button type="submit">新增資料</button>
+            </div>
+          </form>
+          <div class="knowledge-list" id="knowledgeList"></div>
         </section>
 
         <section class="workspace-section">
