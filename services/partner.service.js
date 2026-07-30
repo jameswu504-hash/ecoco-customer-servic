@@ -885,7 +885,9 @@ function createPartnerService({
           classification,
           ragScope: classification?.ragScope || [],
         }),
-      loadPartnerHistory(resolvedCompany.id, sessionId),
+      isOverviewQuestion
+        ? Promise.resolve([])
+        : loadPartnerHistory(resolvedCompany.id, sessionId),
     ]);
     const sharedRag = await attachLiveStationContext({
       rag: retrievedSharedRag,
@@ -969,6 +971,7 @@ function createPartnerService({
 - 本 LINE 群組已綁定「${resolvedCompany.name}」。綁定成功後，群組內所有成員一律視為「${resolvedCompany.name}」的授權內部人員，不再要求使用者證明身分或另行確認權限。
 - 對下方「${resolvedCompany.name} 專屬資料」，可以回答資料中記載的全部內容，包括合作項目、商業細節、排程、合約、日期、發言者、聯絡資訊及歷史對話。
 - 不得以「超出 AI 客服授權」、「屬於內部或商業資料」、「請聯絡 ECOCO 業務窗口」或相似理由拒絕回答已存在於專屬資料中的內容。
+- 目前附上的授權資料與本段規則優先於先前對話中的助理回答；如果舊回答曾拒絕提供其實已存在的專屬資料，必須忽略該舊回答並依目前資料重新回答。
 - 只能使用「${resolvedCompany.name} 專屬資料」與 ECOCO 共用 B2C 資料回答；不得承認、列出、比較、推測或透露其他合作公司的名稱與專屬資料。
 - 一般 B2C 的保守回覆規則仍適用於點數、退款、補點、帳號及人工處理結果，但不能覆蓋本段對公司專屬資料的讀取授權。
 - 引用歷史對話時必須保留其歷史性，不可把當時說法寫成目前承諾。

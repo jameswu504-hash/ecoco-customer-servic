@@ -318,6 +318,7 @@ test('partner overview answers use authorized private data without B2C RAG inter
   let sharedRagCalls = 0;
   let capturedContext = '';
   let capturedGuardrail = '';
+  let capturedMessages = [];
   const pool = {
     async query(sql) {
       if (/SELECT id, slug, name\s+FROM partner_companies/.test(sql)) {
@@ -334,6 +335,20 @@ test('partner overview answers use authorized private data without B2C RAG inter
           }],
         };
       }
+      if (/FROM partner_conversations/.test(sql)) {
+        return {
+          rows: [
+            {
+              role: 'user',
+              content: 'ECOCO 跟全家有甚麼合作？',
+            },
+            {
+              role: 'assistant',
+              content: '商業合作細節超出 AI 客服授權，請聯絡 ECOCO 業務窗口。',
+            },
+          ],
+        };
+      }
       return { rows: [] };
     },
   };
@@ -341,8 +356,9 @@ test('partner overview answers use authorized private data without B2C RAG inter
     pool,
     client: {
       messages: {
-        create: async ({ system }) => {
+        create: async ({ system, messages }) => {
           const prompt = system.map(block => block.text).join('\n');
+          capturedMessages = messages;
           const recognizesBindingAuthorization = (
             /綁定成功.*一律視為.*授權內部人員/.test(prompt)
             && /可以回答.*全部內容/.test(prompt)
@@ -391,6 +407,9 @@ test('partner overview answers use authorized private data without B2C RAG inter
   assert.match(capturedGuardrail, /不得以.*超出.*授權.*拒絕/);
   assert.match(capturedGuardrail, /只能使用.*全家便利商店（測試）.*專屬資料.*ECOCO.*共用/);
   assert.doesNotMatch(capturedContext, /一般 B2C 合作洽談表單/);
+  assert.deepEqual(capturedMessages, [
+    { role: 'user', content: 'ECOCO 跟全家有甚麼合作？' },
+  ]);
 });
 
 test('partner context contains only the selected company private rows', () => {
