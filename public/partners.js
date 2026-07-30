@@ -7,9 +7,13 @@ const partnerState = {
   testSessionId: '',
   pendingCleanPackage: null,
   pendingDeleteAction: null,
+  knowledgePage: 0,
+  knowledgePageSize: 10,
+  knowledgeQuery: '',
 };
 
 const CLEANER_MAX_BYTES = 2_000_000;
+const KNOWLEDGE_PAGE_SIZES = new Set([10, 15, 20, 50, 100]);
 
 function getAdminKey() {
   return sessionStorage.getItem('adminKey') || '';
@@ -150,27 +154,76 @@ function createCompactButton(label, className, onClick) {
   return button;
 }
 
+function normalizeKnowledgeSearch(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .toLocaleLowerCase('zh-Hant')
+    .replace(/\s+/g, '');
+}
+
 function renderKnowledge(rows) {
   const list = document.getElementById('knowledgeList');
   list.replaceChildren();
   const selectedStatus = document.getElementById('knowledgeStatus')?.value || 'active';
-  const filteredRows = rows.filter(item => (
-    selectedStatus === 'archived' ? Boolean(item.archived_at) : !item.archived_at
-  ));
-  if (!filteredRows.length) {
+  const activeCount = rows.filter(item => !item.archived_at).length;
+  const archivedCount = rows.length - activeCount;
+  const normalizedQuery = normalizeKnowledgeSearch(partnerState.knowledgeQuery);
+  const filteredRows = rows.filter(item => {
+    const isArchived = Boolean(item.archived_at);
+    const matchesStatus = selectedStatus === 'all'
+      || (selectedStatus === 'archived' ? isArchived : !isArchived);
+    if (!matchesStatus) return false;
+    if (!normalizedQuery) return true;
+    return normalizeKnowledgeSearch([
+      item.category,
+      item.title,
+      item.content,
+    ].filter(Boolean).join(' ')).includes(normalizedQuery);
+  });
+
+  const pageSizeValue = Number(document.getElementById('knowledgePageSize')?.value);
+  partnerState.knowledgePageSize = KNOWLEDGE_PAGE_SIZES.has(pageSizeValue)
+    ? pageSizeValue
+    : 10;
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / partnerState.knowledgePageSize));
+  partnerState.knowledgePage = Math.min(
+    Math.max(0, partnerState.knowledgePage),
+    pageCount - 1
+  );
+  const pageStart = partnerState.knowledgePage * partnerState.knowledgePageSize;
+  const pageRows = filteredRows.slice(pageStart, pageStart + partnerState.knowledgePageSize);
+
+  const resultInfo = document.getElementById('knowledgeResultInfo');
+  resultInfo.textContent = [
+    `使用中 ${activeCount} 筆`,
+    `已封存 ${archivedCount} 筆`,
+    `${normalizedQuery ? '搜尋結果' : '目前顯示'} ${filteredRows.length} 筆`,
+    selectedStatus === 'archived' ? '展開資料即可恢復使用' : '',
+  ].filter(Boolean).join(' · ');
+  document.getElementById('knowledgePageInfo').textContent =
+    `${partnerState.knowledgePage + 1} / ${pageCount}`;
+  document.getElementById('knowledgePrevBtn').disabled =
+    partnerState.knowledgePage === 0 || filteredRows.length === 0;
+  document.getElementById('knowledgeNextBtn').disabled =
+    partnerState.knowledgePage >= pageCount - 1 || filteredRows.length === 0;
+
+  if (!pageRows.length) {
     const empty = document.createElement('div');
     empty.className = 'empty-row';
-    empty.textContent = selectedStatus === 'archived'
-      ? '目前沒有已封存的公司專屬資料。'
-      : '尚未加入公司專屬資料。';
+    empty.textContent = normalizedQuery
+      ? '找不到符合搜尋條件的公司專屬資料。'
+      : selectedStatus === 'archived'
+        ? '目前沒有已封存的公司專屬資料。'
+        : '尚未加入公司專屬資料。';
     list.appendChild(empty);
     return;
   }
 
-  filteredRows.forEach(item => {
+  pageRows.forEach((item, index) => {
     const isArchived = Boolean(item.archived_at);
     const row = document.createElement('details');
     row.className = 'knowledge-row';
+    row.open = selectedStatus === 'archived' && index === 0;
     const summary = document.createElement('summary');
     summary.className = 'knowledge-summary';
     const info = document.createElement('div');
@@ -187,10 +240,14 @@ function renderKnowledge(rows) {
     actions.className = 'knowledge-summary-actions';
     const state = document.createElement('span');
     state.className = `row-state${isArchived ? ' archived' : ''}`;
-    state.textContent = isArchived ? '已封存' : '使用中';
+    state.textContent = isArchived ? '已封存 · 可恢復' : '使用中';
     const toggleLabel = document.createElement('span');
     toggleLabel.className = 'knowledge-toggle-label';
-    toggleLabel.textContent = '展開';
+    toggleLabel.textContent = row.open
+      ? '收合'
+      : isArchived
+        ? '展開以恢復'
+        : '展開';
     actions.append(state, toggleLabel);
     summary.append(info, actions);
 
@@ -222,9 +279,14 @@ function renderKnowledge(rows) {
     contentPanel.append(contentLabel, fullContent, itemActions);
 
     row.addEventListener('toggle', () => {
-      toggleLabel.textContent = row.open ? '收合' : '展開';
+      toggleLabel.textContent = row.open
+        ? '收合'
+        : isArchived
+          ? '展開以恢復'
+          : '展開';
       preview.hidden = row.open;
     });
+    preview.hidden = row.open;
     row.append(summary, contentPanel);
     list.appendChild(row);
   });
@@ -665,6 +727,10 @@ async function selectCompany(companyId) {
   partnerState.testSessionId = '';
   partnerState.conversationLog = null;
   partnerState.knowledgeCandidates = null;
+  partnerState.knowledgePage = 0;
+  partnerState.knowledgeQuery = '';
+  document.getElementById('knowledgeSearch').value = '';
+  document.getElementById('knowledgeStatus').value = 'active';
   clearCleaner();
   document.getElementById('bindingResult').hidden = true;
   const chat = document.getElementById('testChat');
@@ -807,9 +873,16 @@ async function updateKnowledgeArchive(item, shouldArchive) {
       method: 'PATCH',
       body: JSON.stringify({ status: shouldArchive ? 'archived' : 'active' }),
     });
+    const targetStatus = shouldArchive ? 'archived' : 'active';
+    document.getElementById('knowledgeStatus').value = targetStatus;
+    document.getElementById('knowledgeSearch').value = item.category;
+    partnerState.knowledgeQuery = item.category;
+    partnerState.knowledgePage = 0;
     await loadCompanies(false);
     document.getElementById('clearCompanyKnowledgeStatus').textContent =
-      shouldArchive ? `已封存「${item.category}」。` : `已恢復「${item.category}」。`;
+      shouldArchive
+        ? `已封存「${item.category}」，目前已切換到「已封存（可恢復）」。`
+        : `已恢復「${item.category}」，目前已切換到「使用中」。`;
   } catch (err) {
     status.textContent = err.message;
   }
@@ -1222,6 +1295,26 @@ function bindEvents() {
     () => generateKnowledgeCandidates(7)
   );
   document.getElementById('knowledgeStatus').addEventListener('change', () => {
+    partnerState.knowledgePage = 0;
+    renderKnowledge(partnerState.detail?.knowledge || []);
+  });
+  document.getElementById('knowledgeSearch').addEventListener('input', event => {
+    partnerState.knowledgeQuery = event.target.value;
+    partnerState.knowledgePage = 0;
+    renderKnowledge(partnerState.detail?.knowledge || []);
+  });
+  document.getElementById('knowledgePageSize').addEventListener('change', event => {
+    const pageSize = Number(event.target.value);
+    partnerState.knowledgePageSize = KNOWLEDGE_PAGE_SIZES.has(pageSize) ? pageSize : 10;
+    partnerState.knowledgePage = 0;
+    renderKnowledge(partnerState.detail?.knowledge || []);
+  });
+  document.getElementById('knowledgePrevBtn').addEventListener('click', () => {
+    partnerState.knowledgePage = Math.max(0, partnerState.knowledgePage - 1);
+    renderKnowledge(partnerState.detail?.knowledge || []);
+  });
+  document.getElementById('knowledgeNextBtn').addEventListener('click', () => {
+    partnerState.knowledgePage += 1;
     renderKnowledge(partnerState.detail?.knowledge || []);
   });
   document.getElementById('emptyCreateCompanyBtn').addEventListener('click', openCreateCompanyDialog);

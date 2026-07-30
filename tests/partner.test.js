@@ -960,9 +960,21 @@ test('partner admin page exposes company-scoped test chat behind admin API', () 
   assert.match(js, /\/api\/partners\/\$\{companyId\}\/conversations\?days=\$\{days\}&status=/);
   assert.match(js, /conversation-day/);
   assert.match(html, /knowledgeStatus/);
+  assert.match(html, /id="knowledgeSearch"/);
+  assert.match(html, /已封存（可恢復）/);
+  assert.match(
+    html,
+    /id="knowledgePageSize"[\s\S]*value="10"[\s\S]*value="15"[\s\S]*value="20"[\s\S]*value="50"[\s\S]*value="100"/
+  );
+  assert.match(html, /id="knowledgePrevBtn"/);
+  assert.match(html, /id="knowledgeNextBtn"/);
   assert.match(html, /conversationStatus/);
   assert.match(html, /deletePartnerDataDialog/);
   assert.match(js, /updateKnowledgeArchive/);
+  assert.match(js, /normalizeKnowledgeSearch/);
+  assert.match(js, /filteredRows\.slice/);
+  assert.match(js, /knowledgePageInfo/);
+  assert.match(js, /目前已切換到「已封存（可恢復）」/);
   assert.match(js, /updateConversationDayArchive/);
   assert.match(routes, /conversations\/:day\/status/);
   assert.match(routes, /knowledge\/:sectionId\/status/);

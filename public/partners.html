@@ -165,11 +165,6 @@
               <h3>公司專屬資料</h3>
             </div>
             <div class="knowledge-controls">
-              <label for="knowledgeStatus">顯示</label>
-              <select id="knowledgeStatus">
-                <option value="active" selected>使用中</option>
-                <option value="archived">已封存</option>
-              </select>
               <button class="danger-button" id="clearCompanyKnowledgeBtn" type="button">清空公司知識</button>
             </div>
           </div>
@@ -188,6 +183,40 @@
               <button type="submit">新增資料</button>
             </div>
           </form>
+          <div class="knowledge-management-toolbar" aria-label="公司知識清單工具">
+            <input
+              id="knowledgeSearch"
+              type="search"
+              placeholder="搜尋分類、標題或內容"
+              autocomplete="off"
+              aria-label="搜尋公司專屬資料"
+            />
+            <label for="knowledgeStatus">
+              顯示
+              <select id="knowledgeStatus">
+                <option value="active" selected>使用中</option>
+                <option value="archived">已封存（可恢復）</option>
+                <option value="all">全部</option>
+              </select>
+            </label>
+            <label for="knowledgePageSize">
+              每頁
+              <select id="knowledgePageSize">
+                <option value="10" selected>10</option>
+                <option value="15">15</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+              筆
+            </label>
+            <div class="knowledge-pager">
+              <button class="secondary-button" id="knowledgePrevBtn" type="button">‹ 上一頁</button>
+              <span id="knowledgePageInfo" aria-live="polite"></span>
+              <button class="secondary-button" id="knowledgeNextBtn" type="button">下一頁 ›</button>
+            </div>
+          </div>
+          <p class="knowledge-result-info" id="knowledgeResultInfo" aria-live="polite"></p>
           <div class="knowledge-list" id="knowledgeList"></div>
         </section>
 
@@ -334,6 +363,6 @@
   </dialog>
 
   <script src="partner-data-cleaner.js?v=20260730-2" defer></script>
-  <script src="partners.js?v=20260730-6" defer></script>
+  <script src="partners.js?v=20260730-7" defer></script>
 </body>
 </html>

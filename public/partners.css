@@ -484,6 +484,71 @@ button:disabled {
   margin: -8px 0 14px;
 }
 
+.knowledge-management-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8faf8;
+}
+
+.knowledge-management-toolbar > input {
+  flex: 1 1 300px;
+  min-width: 180px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.knowledge-management-toolbar label,
+.knowledge-result-info,
+.knowledge-pager {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.knowledge-management-toolbar label,
+.knowledge-pager {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.knowledge-management-toolbar select {
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.knowledge-pager {
+  margin-left: auto;
+}
+
+.knowledge-pager button {
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+.knowledge-pager button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.knowledge-result-info {
+  min-height: 18px;
+  margin: 8px 0 -6px;
+}
+
 .operation-status {
   min-height: 18px;
   margin: -8px 0 10px;
@@ -1422,6 +1487,25 @@ dialog::backdrop {
   .candidate-controls {
     width: 100%;
     flex-wrap: wrap;
+  }
+
+  .knowledge-management-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .knowledge-management-toolbar > input {
+    flex-basis: auto;
+    width: 100%;
+  }
+
+  .knowledge-management-toolbar label {
+    justify-content: space-between;
+  }
+
+  .knowledge-pager {
+    justify-content: space-between;
+    margin-left: 0;
   }
 
   .candidate-actions {
