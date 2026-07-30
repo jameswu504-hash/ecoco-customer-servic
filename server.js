@@ -27,6 +27,9 @@ const { ensureLineWebhookEndpoint } = require('./services/line-shared.service');
 const { isInternalMode } = require('./services/internal-wiki.service');
 const { createPromptService } = require('./services/prompt.service');
 const { createPartnerCleaningService } = require('./services/partner-cleaning.service');
+const {
+  createPartnerConversationKnowledgeService,
+} = require('./services/partner-conversation-knowledge.service');
 const { createPartnerService } = require('./services/partner.service');
 const { classifyQuestion } = require('./services/question-classifier.service');
 const { createRagService } = require('./services/rag.service');
@@ -389,6 +392,8 @@ const partnerService = createPartnerService({
   retrieveLiveStationContext: iotStatusService.retrieveLiveStationContext,
 });
 const partnerCleaningService = createPartnerCleaningService({ pool });
+const partnerConversationKnowledgeService =
+  createPartnerConversationKnowledgeService({ pool });
 
 async function buildHealthStatus({ includeDetails = false, includeIotCheck = false } = {}) {
   const health = {
@@ -568,6 +573,7 @@ app.use('/api', createLineRouter({
 app.use('/api/partners', createPartnersRouter({
   partnerService,
   partnerCleaningService,
+  partnerConversationKnowledgeService,
   requireAdminKey: adminGuard,
   pool,
 }));

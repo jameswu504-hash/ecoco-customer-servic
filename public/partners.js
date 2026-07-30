@@ -3,6 +3,7 @@ const partnerState = {
   selectedCompanyId: null,
   detail: null,
   conversationLog: null,
+  knowledgeCandidates: null,
   testSessionId: '',
   pendingCleanPackage: null,
   pendingDeleteAction: null,
@@ -312,6 +313,154 @@ function renderConversationLog(payload) {
   });
 }
 
+function candidateStatusLabel(status) {
+  return {
+    pending_review: '待審核',
+    approved: '已核准',
+    rejected: '已退回',
+    archived: '已封存',
+  }[status] || status;
+}
+
+function candidateRiskLabel(flag) {
+  return {
+    commercial_terms: '商務條件',
+    time_sensitive: '時效資料',
+    operational_status: '即時營運狀態',
+  }[flag] || flag;
+}
+
+function renderKnowledgeCandidates(payload) {
+  const list = document.getElementById('candidateList');
+  list.replaceChildren();
+  const candidates = Array.isArray(payload?.candidates) ? payload.candidates : [];
+  const selectedStatus = payload?.status
+    || document.getElementById('candidateStatus')?.value
+    || 'pending_review';
+
+  if (!candidates.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-row';
+    empty.textContent = selectedStatus === 'pending_review'
+      ? '目前沒有待審知識。可先整理今天或最近 7 天的 LINE 對話。'
+      : `目前沒有${candidateStatusLabel(selectedStatus)}的候選。`;
+    list.appendChild(empty);
+    return;
+  }
+
+  candidates.forEach((candidate, index) => {
+    const row = document.createElement('details');
+    row.className = 'candidate-row';
+    row.open = index === 0 && selectedStatus === 'pending_review';
+
+    const heading = document.createElement('summary');
+    heading.className = 'candidate-heading';
+    const headingInfo = document.createElement('span');
+    const title = document.createElement('strong');
+    title.textContent = candidate.title;
+    const source = document.createElement('small');
+    source.textContent = [
+      candidate.conversation_day,
+      candidate.group_label,
+      `${(candidate.source_message_ids || []).length} 則來源`,
+    ].filter(Boolean).join(' · ');
+    headingInfo.append(title, source);
+    const state = document.createElement('span');
+    state.className = `candidate-state ${candidate.status}`;
+    state.textContent = candidateStatusLabel(candidate.status);
+    heading.append(headingInfo, state);
+
+    const editor = document.createElement('div');
+    editor.className = 'candidate-editor';
+    const titleLabel = document.createElement('label');
+    titleLabel.textContent = '標題';
+    const titleInput = document.createElement('input');
+    titleInput.className = 'candidate-title-input';
+    titleInput.maxLength = 180;
+    titleInput.value = candidate.title;
+    titleInput.disabled = candidate.status === 'approved';
+    titleLabel.appendChild(titleInput);
+
+    const categoryLabel = document.createElement('label');
+    categoryLabel.textContent = '分類';
+    const categoryInput = document.createElement('input');
+    categoryInput.className = 'candidate-category-input';
+    categoryInput.maxLength = 160;
+    categoryInput.value = candidate.category;
+    categoryInput.disabled = candidate.status === 'approved';
+    categoryLabel.appendChild(categoryInput);
+
+    const contentLabel = document.createElement('label');
+    contentLabel.textContent = 'AI 友善內容';
+    const contentInput = document.createElement('textarea');
+    contentInput.className = 'candidate-content-input';
+    contentInput.rows = 10;
+    contentInput.maxLength = 12000;
+    contentInput.value = candidate.content;
+    contentInput.disabled = candidate.status === 'approved';
+    contentLabel.appendChild(contentInput);
+    editor.append(titleLabel, categoryLabel, contentLabel);
+
+    const riskFlags = Array.isArray(candidate.risk_flags) ? candidate.risk_flags : [];
+    const badges = document.createElement('div');
+    badges.className = 'candidate-badges';
+    const localBadge = document.createElement('span');
+    localBadge.textContent = `內部規則 Skill ${candidate.skill_version || ''}`.trim();
+    badges.appendChild(localBadge);
+    riskFlags.forEach(flag => {
+      const badge = document.createElement('span');
+      badge.className = 'risk';
+      badge.textContent = candidateRiskLabel(flag);
+      badges.appendChild(badge);
+    });
+
+    const notes = document.createElement('div');
+    notes.className = 'candidate-notes';
+    const pendingItems = Array.isArray(candidate.pending_items) ? candidate.pending_items : [];
+    const todos = Array.isArray(candidate.todos) ? candidate.todos : [];
+    if (pendingItems.length) {
+      const pending = document.createElement('p');
+      pending.textContent = `尚待確認：${pendingItems.join('；')}`;
+      notes.appendChild(pending);
+    }
+    if (todos.length) {
+      const todo = document.createElement('p');
+      todo.textContent = `可能待辦：${todos.join('；')}`;
+      notes.appendChild(todo);
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'candidate-actions';
+    if (candidate.status === 'pending_review') {
+      actions.append(
+        createCompactButton('核准並匯入 RAG', 'primary-button', event => (
+          updateKnowledgeCandidate(candidate, 'approved', row, event.currentTarget)
+        )),
+        createCompactButton('退回', 'secondary-button', event => (
+          updateKnowledgeCandidate(candidate, 'rejected', row, event.currentTarget)
+        )),
+        createCompactButton('封存', 'secondary-button', event => (
+          updateKnowledgeCandidate(candidate, 'archived', row, event.currentTarget)
+        ))
+      );
+    } else if (candidate.status === 'rejected' || candidate.status === 'archived') {
+      actions.append(
+        createCompactButton('回到待審核', 'secondary-button', event => (
+          updateKnowledgeCandidate(candidate, 'pending_review', row, event.currentTarget)
+        ))
+      );
+    } else if (candidate.approved_section_id) {
+      const approved = document.createElement('span');
+      approved.className = 'candidate-approved-note';
+      approved.textContent = `已建立公司知識 #${candidate.approved_section_id}`;
+      actions.appendChild(approved);
+    }
+
+    row.append(heading, badges, notes, editor, actions);
+    list.appendChild(row);
+  });
+}
+
 function renderDetail() {
   const detail = partnerState.detail;
   const workspace = document.getElementById('partnerWorkspace');
@@ -349,6 +498,7 @@ function renderDetail() {
   renderLineGroups(detail.lineGroups);
   renderKnowledge(detail.knowledge);
   renderConversationLog(partnerState.conversationLog);
+  renderKnowledgeCandidates(partnerState.knowledgeCandidates);
 }
 
 async function loadCompanies(selectFirst = true) {
@@ -372,21 +522,31 @@ async function loadCompanies(selectFirst = true) {
 async function loadCompanyDetail(companyId) {
   const days = Number(document.getElementById('conversationDays')?.value || 30);
   const conversationStatus = document.getElementById('conversationStatus')?.value || 'active';
-  const [detail, conversationResult] = await Promise.all([
+  const candidateStatus =
+    document.getElementById('candidateStatus')?.value || 'pending_review';
+  const [detail, conversationResult, candidateResult] = await Promise.all([
     partnerFetch(`/api/partners/${companyId}`),
     partnerFetch(
       `/api/partners/${companyId}/conversations?days=${days}&status=${conversationStatus}`
     )
       .then(data => ({ data, error: null }))
       .catch(error => ({ data: null, error })),
+    partnerFetch(
+      `/api/partners/${companyId}/knowledge-candidates?status=${candidateStatus}`
+    )
+      .then(data => ({ data, error: null }))
+      .catch(error => ({ data: null, error })),
   ]);
   partnerState.detail = detail;
   partnerState.conversationLog = conversationResult.data;
+  partnerState.knowledgeCandidates = candidateResult.data;
   partnerState.selectedCompanyId = Number(companyId);
   renderCompanies();
   renderDetail();
   document.getElementById('conversationError').textContent =
     conversationResult.error?.message || '';
+  document.getElementById('candidateError').textContent =
+    candidateResult.error?.message || '';
 }
 
 async function refreshConversationLog() {
@@ -410,10 +570,101 @@ async function refreshConversationLog() {
   }
 }
 
+async function refreshKnowledgeCandidates() {
+  const companyId = partnerState.selectedCompanyId;
+  if (!companyId) return;
+  const status = document.getElementById('candidateStatus').value || 'pending_review';
+  const error = document.getElementById('candidateError');
+  error.textContent = '';
+  try {
+    partnerState.knowledgeCandidates = await partnerFetch(
+      `/api/partners/${companyId}/knowledge-candidates?status=${status}`
+    );
+    renderKnowledgeCandidates(partnerState.knowledgeCandidates);
+  } catch (err) {
+    error.textContent = err.message;
+  }
+}
+
+async function generateKnowledgeCandidates(days) {
+  const company = partnerState.detail?.company;
+  if (!company) return;
+  const button = days === 1
+    ? document.getElementById('generateCandidatesDayBtn')
+    : document.getElementById('generateCandidatesWeekBtn');
+  const error = document.getElementById('candidateError');
+  const status = document.getElementById('candidateOperationStatus');
+  error.textContent = '';
+  status.textContent = '';
+  setBusy(button, true, '整理中...');
+  try {
+    const result = await partnerFetch(
+      `/api/partners/${company.id}/knowledge-candidates/generate`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ days }),
+      }
+    );
+    document.getElementById('candidateStatus').value = 'pending_review';
+    await refreshKnowledgeCandidates();
+    status.textContent = [
+      `已檢查 ${result.sourceMessageCount} 則 LINE 訊息`,
+      `新增 ${result.createdCandidateCount} 份待審知識`,
+      result.duplicateCandidateCount
+        ? `略過 ${result.duplicateCandidateCount} 份重複候選`
+        : '',
+      result.skippedNoiseCount ? `排除 ${result.skippedNoiseCount} 則無效訊息` : '',
+      '未呼叫外部 AI',
+    ].filter(Boolean).join('；');
+  } catch (err) {
+    error.textContent = err.message;
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function updateKnowledgeCandidate(candidate, status, row, button) {
+  const company = partnerState.detail?.company;
+  if (!company) return;
+  const error = document.getElementById('candidateError');
+  const operationStatus = document.getElementById('candidateOperationStatus');
+  error.textContent = '';
+  operationStatus.textContent = '';
+  setBusy(button, true, status === 'approved' ? '匯入中...' : '更新中...');
+  try {
+    const result = await partnerFetch(
+      `/api/partners/${company.id}/knowledge-candidates/${candidate.id}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({
+          status,
+          title: row.querySelector('.candidate-title-input').value,
+          category: row.querySelector('.candidate-category-input').value,
+          content: row.querySelector('.candidate-content-input').value,
+        }),
+      }
+    );
+    if (status === 'approved') {
+      operationStatus.textContent =
+        `已核准並建立公司知識 #${result.createdKnowledgeSectionId}，現在可以被 B2B RAG 使用。`;
+      await loadCompanies(false);
+    } else {
+      operationStatus.textContent =
+        `已將「${candidate.title}」改為${candidateStatusLabel(status)}。`;
+      await refreshKnowledgeCandidates();
+    }
+  } catch (err) {
+    error.textContent = err.message;
+  } finally {
+    setBusy(button, false);
+  }
+}
+
 async function selectCompany(companyId) {
   if (Number(companyId) === Number(partnerState.selectedCompanyId)) return;
   partnerState.testSessionId = '';
   partnerState.conversationLog = null;
+  partnerState.knowledgeCandidates = null;
   clearCleaner();
   document.getElementById('bindingResult').hidden = true;
   const chat = document.getElementById('testChat');
@@ -958,6 +1209,18 @@ function bindEvents() {
   document.getElementById('refreshConversationsBtn').addEventListener('click', refreshConversationLog);
   document.getElementById('conversationDays').addEventListener('change', refreshConversationLog);
   document.getElementById('conversationStatus').addEventListener('change', refreshConversationLog);
+  document.getElementById('candidateStatus').addEventListener(
+    'change',
+    refreshKnowledgeCandidates
+  );
+  document.getElementById('generateCandidatesDayBtn').addEventListener(
+    'click',
+    () => generateKnowledgeCandidates(1)
+  );
+  document.getElementById('generateCandidatesWeekBtn').addEventListener(
+    'click',
+    () => generateKnowledgeCandidates(7)
+  );
   document.getElementById('knowledgeStatus').addEventListener('change', () => {
     renderKnowledge(partnerState.detail?.knowledge || []);
   });

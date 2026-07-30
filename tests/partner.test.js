@@ -692,6 +692,12 @@ test('company knowledge clear removes only scoped knowledge data in one transact
       if (/DELETE FROM partner_knowledge_chunks/.test(sql)) {
         return { rows: [{ id: 1 }, { id: 2 }, { id: 3 }] };
       }
+      if (/DELETE FROM partner_knowledge_candidates/.test(sql)) {
+        return { rows: [{ id: 40 }, { id: 41 }] };
+      }
+      if (/DELETE FROM partner_conversation_batches/.test(sql)) {
+        return { rows: [{ id: 50 }] };
+      }
       if (/DELETE FROM partner_knowledge_sections/.test(sql)) {
         return { rows: [{ id: 10 }, { id: 11 }] };
       }
@@ -718,6 +724,8 @@ test('company knowledge clear removes only scoped knowledge data in one transact
   const result = await service.clearCompanyKnowledge(9, 'familymart-test');
 
   assert.deepEqual(result.deleted, {
+    knowledgeCandidates: 2,
+    conversationBatches: 1,
     knowledgeSections: 2,
     knowledgeChunks: 3,
     cleaningJobs: 1,

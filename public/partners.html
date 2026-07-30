@@ -220,10 +220,38 @@
           </div>
         </section>
 
-        <section class="workspace-section test-section">
+        <section class="workspace-section candidate-section">
           <div class="section-heading">
             <div>
               <span class="section-index">05</span>
+              <h3>LINE 待審知識</h3>
+            </div>
+            <div class="candidate-controls">
+              <label for="candidateStatus">狀態</label>
+              <select id="candidateStatus">
+                <option value="pending_review" selected>待審核</option>
+                <option value="approved">已核准</option>
+                <option value="rejected">已退回</option>
+                <option value="archived">已封存</option>
+              </select>
+              <button class="secondary-button" id="generateCandidatesDayBtn" type="button">整理今天</button>
+              <button class="secondary-button" id="generateCandidatesWeekBtn" type="button">整理最近 7 天</button>
+            </div>
+          </div>
+          <p class="candidate-intro">
+            使用固定內部規則 Skill 整理 SQL 中已保存的群組對話；不呼叫外部 AI。候選必須人工核准後才會進入公司知識與 RAG。
+          </p>
+          <p class="operation-status" id="candidateOperationStatus" role="status"></p>
+          <p class="form-error" id="candidateError" role="alert"></p>
+          <div class="candidate-list" id="candidateList">
+            <div class="empty-row">尚未讀取待審知識。</div>
+          </div>
+        </section>
+
+        <section class="workspace-section test-section">
+          <div class="section-heading">
+            <div>
+              <span class="section-index">06</span>
               <h3>LINE 分支測試</h3>
             </div>
             <span class="test-company-label" id="testCompanyLabel"></span>
@@ -271,7 +299,7 @@
       </div>
       <p>
         這會永久刪除「<strong id="clearKnowledgeCompanyName"></strong>」的公司知識、
-        RAG 切片、來源檔與清洗紀錄。
+        RAG 切片、待審候選、來源檔與清洗紀錄。
       </p>
       <p>LINE 綁定、LINE 對話紀錄、公司帳號與 B2C 資料不會刪除。</p>
       <label>
@@ -305,7 +333,7 @@
     </form>
   </dialog>
 
-  <script src="partner-data-cleaner.js?v=20260730-1" defer></script>
-  <script src="partners.js?v=20260730-5" defer></script>
+  <script src="partner-data-cleaner.js?v=20260730-2" defer></script>
+  <script src="partners.js?v=20260730-6" defer></script>
 </body>
 </html>

@@ -918,6 +918,14 @@ function createPartnerService({
         throw error;
       }
 
+      const { rows: deletedCandidateRows } = await db.query(
+        'DELETE FROM partner_knowledge_candidates WHERE company_id = $1 RETURNING id',
+        [id]
+      );
+      const { rows: deletedBatchRows } = await db.query(
+        'DELETE FROM partner_conversation_batches WHERE company_id = $1 RETURNING id',
+        [id]
+      );
       const { rows: deletedChunkRows } = await db.query(
         'DELETE FROM partner_knowledge_chunks WHERE company_id = $1 RETURNING id',
         [id]
@@ -949,6 +957,8 @@ function createPartnerService({
       return {
         company,
         deleted: {
+          knowledgeCandidates: deletedCandidateRows.length,
+          conversationBatches: deletedBatchRows.length,
           knowledgeSections: deletedSectionRows.length,
           knowledgeChunks: deletedChunkRows.length,
           cleaningJobs: deletedJobRows.length,

@@ -235,6 +235,49 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS idx_partner_conversations_archive
      ON partner_conversations(company_id, archived_at, timestamp DESC)
      WHERE line_group_id IS NOT NULL`,
+  `CREATE TABLE IF NOT EXISTS partner_conversation_batches (
+      id                   SERIAL PRIMARY KEY,
+      company_id           INTEGER NOT NULL REFERENCES partner_companies(id) ON DELETE CASCADE,
+      line_group_id        INTEGER NOT NULL REFERENCES partner_line_groups(id) ON DELETE CASCADE,
+      conversation_day     DATE NOT NULL,
+      status               TEXT NOT NULL DEFAULT 'completed',
+      skill_name           TEXT NOT NULL,
+      skill_version        TEXT NOT NULL,
+      source_message_count INTEGER NOT NULL DEFAULT 0,
+      content_hash         TEXT NOT NULL,
+      report               JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      completed_at         TIMESTAMPTZ,
+      updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(company_id, line_group_id, conversation_day, content_hash)
+    )`,
+  `CREATE INDEX IF NOT EXISTS idx_partner_conversation_batches_company
+     ON partner_conversation_batches(company_id, conversation_day DESC, id DESC)`,
+  `CREATE TABLE IF NOT EXISTS partner_knowledge_candidates (
+      id                   SERIAL PRIMARY KEY,
+      company_id           INTEGER NOT NULL REFERENCES partner_companies(id) ON DELETE CASCADE,
+      batch_id             INTEGER NOT NULL REFERENCES partner_conversation_batches(id) ON DELETE CASCADE,
+      line_group_id        INTEGER NOT NULL REFERENCES partner_line_groups(id) ON DELETE CASCADE,
+      title                TEXT NOT NULL,
+      category             TEXT NOT NULL,
+      content              TEXT NOT NULL,
+      summary              TEXT NOT NULL DEFAULT '',
+      facts                JSONB NOT NULL DEFAULT '[]'::jsonb,
+      pending_items        JSONB NOT NULL DEFAULT '[]'::jsonb,
+      todos                JSONB NOT NULL DEFAULT '[]'::jsonb,
+      source_message_ids   JSONB NOT NULL DEFAULT '[]'::jsonb,
+      risk_flags           JSONB NOT NULL DEFAULT '[]'::jsonb,
+      content_hash         TEXT NOT NULL,
+      status               TEXT NOT NULL DEFAULT 'pending_review',
+      reviewed_by          TEXT NOT NULL DEFAULT '',
+      reviewed_at          TIMESTAMPTZ,
+      approved_section_id  INTEGER REFERENCES partner_knowledge_sections(id) ON DELETE SET NULL,
+      created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(company_id, content_hash)
+    )`,
+  `CREATE INDEX IF NOT EXISTS idx_partner_knowledge_candidates_review
+     ON partner_knowledge_candidates(company_id, status, created_at DESC)`,
   `CREATE TABLE IF NOT EXISTS internal_wiki_entries (
       id          SERIAL PRIMARY KEY,
       department  TEXT NOT NULL DEFAULT 'general',

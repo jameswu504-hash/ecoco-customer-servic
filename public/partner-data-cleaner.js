@@ -9,7 +9,7 @@
   'use strict';
 
   const SKILL_NAME = 'ecoco-clean-brand-knowledge';
-  const SKILL_VERSION = '1.0.0';
+  const SKILL_VERSION = '1.1.0';
   const MAX_SOURCE_CHARACTERS = 500_000;
   const MAX_SECTION_CHARACTERS = 6_000;
   const MAX_CHUNK_CHARACTERS = 1_800;

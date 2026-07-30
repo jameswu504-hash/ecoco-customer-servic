@@ -15,6 +15,7 @@ function getPartnerTestSessionId(companyId, value) {
 function createPartnersRouter({
   partnerService,
   partnerCleaningService,
+  partnerConversationKnowledgeService,
   requireAdminKey,
   pool,
 }) {
@@ -117,6 +118,12 @@ function createPartnersRouter({
         req.params.day,
         req.body?.status
       );
+      const archivedCandidateCount = result.status === 'archived'
+        ? await partnerConversationKnowledgeService.archiveCandidatesForDay(
+          company.id,
+          result.day
+        )
+        : 0;
       await saveAdminAudit(pool, {
         action: result.status === 'archived'
           ? 'partner_conversation_day_archived'
@@ -127,9 +134,13 @@ function createPartnersRouter({
           companySlug: company.slug,
           day: result.day,
           updatedMessages: result.updatedMessages,
+          archivedCandidateCount,
         },
       });
-      res.json(result);
+      res.json({
+        ...result,
+        archivedCandidateCount,
+      });
     } catch (err) {
       if (err.code === 'PARTNER_INVALID_CONVERSATION_DAY') {
         return res.status(400).json({ error: err.message });
@@ -147,6 +158,11 @@ function createPartnersRouter({
         req.params.day,
         req.body?.confirmDay
       );
+      const deletedCandidateCount =
+        await partnerConversationKnowledgeService.deleteUnapprovedCandidatesForDay(
+          company.id,
+          result.day
+        );
       await saveAdminAudit(pool, {
         action: 'partner_conversation_day_deleted',
         targetType: 'partner_conversation_day',
@@ -155,9 +171,13 @@ function createPartnersRouter({
           companySlug: company.slug,
           day: result.day,
           deletedMessages: result.deletedMessages,
+          deletedCandidateCount,
         },
       });
-      res.json(result);
+      res.json({
+        ...result,
+        deletedCandidateCount,
+      });
     } catch (err) {
       if (
         err.code === 'PARTNER_INVALID_CONVERSATION_DAY'
@@ -300,6 +320,77 @@ function createPartnersRouter({
       throw err;
     }
   }));
+
+  router.get('/:companyId/knowledge-candidates', asyncHandler(async (req, res) => {
+    const company = await partnerService.getCompany(req.params.companyId);
+    if (!company) return res.status(404).json({ error: 'Partner company not found.' });
+    res.json({
+      status: req.query.status || 'pending_review',
+      candidates: await partnerConversationKnowledgeService.listCandidates(
+        company.id,
+        req.query.status
+      ),
+    });
+  }));
+
+  router.post('/:companyId/knowledge-candidates/generate', asyncHandler(async (req, res) => {
+    const company = await partnerService.getCompany(req.params.companyId);
+    if (!company) return res.status(404).json({ error: 'Partner company not found.' });
+    const result = await partnerConversationKnowledgeService.generateCandidates(
+      company.id,
+      req.body?.days
+    );
+    await saveAdminAudit(pool, {
+      action: 'partner_knowledge_candidates_generated',
+      targetType: 'partner_company',
+      targetId: String(company.id),
+      details: {
+        selectedDays: result.selectedDays,
+        sourceMessageCount: result.sourceMessageCount,
+        createdBatchCount: result.createdBatchCount,
+        createdCandidateCount: result.createdCandidateCount,
+        duplicateCandidateCount: result.duplicateCandidateCount,
+        skill: result.skill,
+      },
+    });
+    res.status(201).json(result);
+  }));
+
+  router.patch(
+    '/:companyId/knowledge-candidates/:candidateId',
+    asyncHandler(async (req, res) => {
+      try {
+        const result = await partnerConversationKnowledgeService.reviewCandidate(
+          req.params.companyId,
+          req.params.candidateId,
+          req.body || {}
+        );
+        if (!result) return res.status(404).json({ error: 'Knowledge candidate not found.' });
+        await saveAdminAudit(pool, {
+          action: `partner_knowledge_candidate_${result.candidate.status}`,
+          targetType: 'partner_knowledge_candidate',
+          targetId: String(result.candidate.id),
+          details: {
+            companyId: Number(req.params.companyId),
+            status: result.candidate.status,
+            approvedSectionId: result.createdKnowledgeSectionId,
+          },
+        });
+        res.json(result);
+      } catch (err) {
+        if (
+          err.code === 'PARTNER_CANDIDATE_ALREADY_APPROVED'
+          || err.code === 'PARTNER_CANDIDATE_REVIEW_REQUIRED'
+        ) {
+          return res.status(409).json({ error: err.message });
+        }
+        if (err.code === 'PARTNER_INVALID_CANDIDATE_STATUS') {
+          return res.status(400).json({ error: err.message });
+        }
+        throw err;
+      }
+    })
+  );
 
   router.post('/:companyId/test-chat', asyncHandler(async (req, res) => {
     const question = String(req.body?.question || '').trim();

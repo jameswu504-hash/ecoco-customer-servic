@@ -111,6 +111,12 @@ B2B 檢索會移除「目前、有哪些、為什麼、的問題」等問句外�
 
 管理者可在 `/partners.html` 的「LINE 對話紀錄」查看最近 7、30 或 90 天紀錄。後端以 `company_id` 限定公司範圍、排除 `line_group_id IS NULL` 的後台測試對話，再依 `Asia/Taipei` 日期分組；同一天內依時間由舊到新顯示。資料仍受既有對話保留天數與清理排程管理。
 
+## LINE 對話轉待審知識
+
+管理者可在「LINE 待審知識」手動整理今天或最近 7 天的已保存對話。系統依 `company_id + line_group_id + 台灣日期` 建立批次，使用 `ecoco-clean-brand-knowledge` 固定內部規則排除問候、附件占位與系統錯誤，再產生可編輯候選。這個流程不呼叫外部 AI。
+
+候選只會存於 `partner_knowledge_candidates` 且預設為 `pending_review`。管理者核准後，系統才在同一公司建立 `partner_knowledge_sections` 與 `partner_knowledge_chunks`。每個 Chunk 保存候選、批次、日期、群組與來源訊息 ID，讓回答可以追溯。詳見 `docs/B2B_LINE_KNOWLEDGE_REVIEW.md`。
+
 ## 管理 API
 
 所有 API 都需要 `x-admin-key`：
@@ -121,10 +127,15 @@ B2B 檢索會移除「目前、有哪些、為什麼、的問題」等問句外�
 | `POST` | `/api/partners` | 建立公司 |
 | `GET` | `/api/partners/:companyId` | 公司、群組與知識 |
 | `GET` | `/api/partners/:companyId/conversations?days=30` | 真實 LINE 群組對話，依台灣日期分組 |
+| `PATCH` | `/api/partners/:companyId/conversations/:day/status` | 封存或恢復某日 LINE 紀錄 |
+| `DELETE` | `/api/partners/:companyId/conversations/:day` | 永久刪除已封存的某日 LINE 紀錄 |
 | `PATCH` | `/api/partners/:companyId/status` | 啟用或停用公司 |
 | `POST` | `/api/partners/:companyId/binding-code` | 產生一次性綁定碼 |
 | `POST` | `/api/partners/:companyId/knowledge` | 新增公司專屬資料 |
 | `POST` | `/api/partners/:companyId/knowledge/import-cleaned` | 匯入已在瀏覽器本機清洗並經人工確認的 TXT／MD 資料包 |
+| `GET` | `/api/partners/:companyId/knowledge-candidates?status=pending_review` | 讀取該公司的待審／核准／退回／封存候選 |
+| `POST` | `/api/partners/:companyId/knowledge-candidates/generate` | 整理最近 1 至 7 天 LINE 對話 |
+| `PATCH` | `/api/partners/:companyId/knowledge-candidates/:candidateId` | 編輯並核准、退回或封存候選 |
 | `POST` | `/api/partners/:companyId/test-chat` | 模擬該公司 LINE 問答 |
 
 ## 目前範圍
@@ -143,11 +154,13 @@ B2B 檢索會移除「目前、有哪些、為什麼、的問題」等問句外�
 - B2B 公司總覽優先使用已授權專屬資料，不受一般 B2C 合作洽談內容干擾。
 - 管理頁可逐筆展開與收合公司專屬資料全文。
 - 真實 LINE 群組問答自動寫入後台，並在管理頁依台灣日期檢視。
+- LINE 紀錄與公司知識可封存、恢復及在二次確認後永久刪除。
+- LINE 對話可依公司、群組與台灣日期整理成待審知識；只有人工核准後才進入 B2B RAG。
 
 後續有正式合作資料時再做：
 
 - 批次 CSV / Excel 匯入與欄位映射。
-- 公司知識編輯、封存與版本紀錄。
+- 公司知識完整版本差異與回溯。
 - 群組重新指派、停用與管理介面。
 - 公司範圍的知識缺口待辦與更進階的對話稽核工具。
 - 依公司設定不同回覆語氣、聯絡窗口與人工轉接流程。
