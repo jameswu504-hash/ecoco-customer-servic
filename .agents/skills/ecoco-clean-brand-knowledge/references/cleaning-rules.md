@@ -1,38 +1,38 @@
-# Cleaning rules
+# 資料清洗規則
 
-## Privacy
+## 隱私
 
-- Preserve names, phone numbers, email addresses, speaker labels, dates, and company context.
-- Do not transmit content to external AI or embedding providers.
-- Do not include private content in logs, stdout, audit details, errors, or chat responses.
-- Store only approved cleaned sections and chunks in SQL.
-- Store source filename, hash, size, type, and status in SQL; do not store raw source content.
+- 保留姓名、電話、Email、發言者名稱、日期與公司脈絡。
+- 清洗期間不得把內容傳給外部 AI 或 Embedding 供應商。
+- 不得在 Log、stdout、稽核摘要、錯誤訊息或對話回覆中輸出私人內容。
+- SQL 只能保存已通過人工確認的清洗文件與 Chunk。
+- SQL 可以保存來源檔名、Hash、大小、類型與處理狀態，但不得保存原始檔內容。
 
-## TXT
+## TXT 規則
 
-- Accept UTF-8 LINE exports.
-- Remove export headers, save-date headers, repeated blank lines, and attachment placeholders.
-- Preserve message text, date headings, timestamps, and speakers.
-- Group for review by LINE date, then split only when the section size limit is exceeded.
-- Mark undated input with a warning instead of inventing a date.
+- 接受 UTF-8 編碼的 LINE 匯出檔。
+- 移除匯出標題、儲存日期標題、重複空白行及附件佔位文字。
+- 保留訊息文字、日期標題、時間與發言者。
+- 先依 LINE 日期分組；只有超過 Section 大小限制時才繼續切割。
+- 找不到日期時顯示警告，不得自行推測日期。
 
-## Markdown
+## Markdown 規則
 
-- Preserve headings and their bodies.
-- Start a new section on level 1–3 headings.
-- Treat pre-heading content as a source-level section.
-- Split oversized sections without changing text.
+- 保留標題與其內容。
+- 遇到第一至第三層標題時建立新 Section。
+- 第一個標題之前的內容視為來源層級 Section。
+- Section 過大時可以切割，但不得改寫原文。
 
-## RAG chunks
+## RAG Chunk 規則
 
-- Create chunks from approved cleaned sections, never directly from raw input.
-- Keep company ID, source hash, section index, chunk index, topic, and source references.
-- Use deterministic keyword `search_text`.
-- Keep external embeddings empty until a company-approved local embedding service exists.
+- 只能從已清洗的 Section 產生 Chunk，不得直接從原始檔產生。
+- 保留 company ID、來源 Hash、Section Index、Chunk Index、主題與來源引用。
+- 使用可重現的關鍵字 `search_text`。
+- 在公司核准 Local Embedding 服務以前，外部 Embedding 欄位保持空白。
 
-## Review
+## 預覽與匯入
 
-- Preview before import.
-- Show counts, source hash prefix, warnings, and a readable Markdown view.
-- Reject duplicate source hashes for the same company.
-- Never replace or delete existing knowledge during import.
+- 匯入前必須先預覽。
+- 顯示數量、來源 Hash 前綴、警告及可閱讀的 Markdown。
+- 同一公司已有相同來源 Hash 時，拒絕重複匯入。
+- 匯入時不得覆蓋或刪除既有知識。

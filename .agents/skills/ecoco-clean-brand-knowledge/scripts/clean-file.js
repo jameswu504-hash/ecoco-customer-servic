@@ -14,7 +14,7 @@ function getArg(name) {
 async function main() {
   const inputArg = getArg('input');
   const outputArg = getArg('out-dir');
-  if (!inputArg || !outputArg) throw new Error('--input and --out-dir are required.');
+  if (!inputArg || !outputArg) throw new Error('必須提供 --input 與 --out-dir。');
   const inputPath = path.resolve(inputArg);
   const outputDir = path.resolve(outputArg);
   const company = {
@@ -50,6 +50,6 @@ async function main() {
 }
 
 main().catch(error => {
-  process.stderr.write(`Cleaning failed: ${error.message}\n`);
+  process.stderr.write(`清洗失敗：${error.message}\n`);
   process.exitCode = 1;
 });

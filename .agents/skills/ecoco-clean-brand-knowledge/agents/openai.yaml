@@ -1,4 +1,4 @@
 interface:
   display_name: "ECOCO 品牌資料清洗"
   short_description: "本機清洗品牌 TXT／MD，產生可追溯的 B2B RAG 資料"
-  default_prompt: "Use $ecoco-clean-brand-knowledge to clean a partner TXT or Markdown file locally without exposing private content to an external AI."
+  default_prompt: "使用 $ecoco-clean-brand-knowledge 在本機清洗合作夥伴 TXT 或 Markdown；保留內部姓名、電話與 Email，先預覽再確認匯入，不得把原始內容傳給外部 AI。"
