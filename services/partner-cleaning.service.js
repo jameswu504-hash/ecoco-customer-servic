@@ -1,9 +1,11 @@
 const crypto = require('crypto');
 
-const MAX_SECTIONS = 100;
 const MAX_CHUNKS = 600;
+const MAX_SECTIONS = MAX_CHUNKS;
 const MAX_SECTION_CHARS = 20_000;
 const MAX_CHUNK_CHARS = 3_000;
+const MAX_TOTAL_SECTION_CHARS = 750_000;
+const MAX_TOTAL_CHUNK_CHARS = 750_000;
 const ALLOWED_SOURCE_TYPES = new Set(['line_txt', 'markdown']);
 const EXPECTED_SKILL_NAME = 'ecoco-clean-brand-knowledge';
 
@@ -75,6 +77,15 @@ function assertApprovedLocalPackage(companyId, payload = {}) {
       metadata: normalizeJsonObject(section.metadata),
     };
   });
+  const totalSectionCharacters = normalizedSections.reduce(
+    (sum, section) => sum + section.content.length,
+    0
+  );
+  if (totalSectionCharacters > MAX_TOTAL_SECTION_CHARS) {
+    throw new Error(
+      `Cleaned sections exceed ${MAX_TOTAL_SECTION_CHARS} total characters.`
+    );
+  }
 
   const normalizedChunks = chunks.map((chunk, index) => {
     const sectionIndex = Number(chunk?.sectionIndex);
@@ -103,6 +114,15 @@ function assertApprovedLocalPackage(companyId, payload = {}) {
       sourceReferences: normalizeJsonArray(chunk.sourceReferences).slice(0, 20),
     };
   });
+  const totalChunkCharacters = normalizedChunks.reduce(
+    (sum, chunk) => sum + chunk.content.length,
+    0
+  );
+  if (totalChunkCharacters > MAX_TOTAL_CHUNK_CHARS) {
+    throw new Error(
+      `Cleaned chunks exceed ${MAX_TOTAL_CHUNK_CHARS} total characters.`
+    );
+  }
 
   return {
     companyId: safeCompanyId,

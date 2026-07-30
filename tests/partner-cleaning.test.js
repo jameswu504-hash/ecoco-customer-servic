@@ -8,6 +8,7 @@ const {
   cleanPartnerKnowledgeFile,
 } = require('../public/partner-data-cleaner');
 const {
+  assertApprovedLocalPackage,
   createPartnerCleaningService,
 } = require('../services/partner-cleaning.service');
 
@@ -237,6 +238,50 @@ test('import rejects packages that used external AI or uploaded raw content', as
     }),
     /raw content/i
   );
+});
+
+test('approved package accepts a long LINE history with 167 daily sections', () => {
+  const sections = Array.from({ length: 167 }, (_, index) => ({
+    title: `LINE 對話第 ${index + 1} 天`,
+    category: `AI 清洗｜LINE｜第 ${index + 1} 天`,
+    content: `第 ${index + 1} 天的合作紀錄`,
+    contentHash: String(index + 1).padStart(64, 'a').slice(-64),
+    metadata: { dayIndex: index + 1 },
+  }));
+  const chunks = sections.map((section, index) => ({
+    sectionIndex: index,
+    chunkIndex: 0,
+    topic: section.title,
+    content: section.content,
+    searchText: section.content,
+    contentHash: String(index + 1).padStart(64, 'b').slice(-64),
+    metadata: {},
+    sourceReferences: [],
+  }));
+
+  const result = assertApprovedLocalPackage(7, {
+    source: {
+      name: '全家長期LINE紀錄.txt',
+      type: 'line_txt',
+      contentHash: 'c'.repeat(64),
+      characterCount: 43071,
+    },
+    policy: {
+      preservePersonalData: true,
+      externalAiUsed: false,
+      rawContentUploaded: false,
+    },
+    skill: {
+      name: 'ecoco-clean-brand-knowledge',
+      version: '1.1.0',
+    },
+    report: {},
+    sections,
+    chunks,
+  });
+
+  assert.equal(result.sections.length, 167);
+  assert.equal(result.chunks.length, 167);
 });
 
 test('partner page exposes local TXT and Markdown cleaning before approved SQL import', () => {
