@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {
   cleanPartnerKnowledgeFile,
-} = require('../../../public/partner-data-cleaner');
+} = require('../../../../public/partner-data-cleaner');
 
 function getArg(name) {
   const index = process.argv.indexOf(`--${name}`);
