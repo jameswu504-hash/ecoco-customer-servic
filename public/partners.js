@@ -484,29 +484,37 @@ async function addKnowledge(event) {
   }
 }
 
-async function clearCompanyKnowledge() {
+function openClearCompanyKnowledgeDialog() {
   const company = partnerState.detail?.company;
   if (!company) return;
-  const confirmation = window.prompt(
-    `這會永久刪除「${company.name}」的知識、RAG 切片與清洗紀錄。\n\n請輸入公司代號 ${company.slug} 確認：`,
-    ''
-  );
-  if (confirmation === null) return;
+  document.getElementById('clearKnowledgeCompanyName').textContent = company.name;
+  document.getElementById('clearKnowledgeCompanySlug').textContent = company.slug;
+  document.getElementById('clearKnowledgeConfirmation').value = '';
+  document.getElementById('clearKnowledgeDialogError').textContent = '';
+  document.getElementById('clearCompanyKnowledgeDialog').showModal();
+  document.getElementById('clearKnowledgeConfirmation').focus();
+}
 
-  const status = document.getElementById('clearCompanyKnowledgeStatus');
-  status.textContent = '';
+async function submitClearCompanyKnowledge(event) {
+  event.preventDefault();
+  const company = partnerState.detail?.company;
+  if (!company) return;
+  const confirmation = document.getElementById('clearKnowledgeConfirmation').value.trim();
+  const error = document.getElementById('clearKnowledgeDialogError');
+  error.textContent = '';
   if (confirmation.trim() !== company.slug) {
-    status.textContent = `公司代號不符，未刪除。請輸入 ${company.slug}。`;
+    error.textContent = `公司代號不符，未刪除。請輸入 ${company.slug}。`;
     return;
   }
 
-  const button = document.getElementById('clearCompanyKnowledgeBtn');
+  const button = event.submitter;
   setBusy(button, true, '清除中...');
   try {
     const result = await partnerFetch(`/api/partners/${company.id}/knowledge`, {
       method: 'DELETE',
-      body: JSON.stringify({ confirmSlug: confirmation.trim() }),
+      body: JSON.stringify({ confirmSlug: confirmation }),
     });
+    document.getElementById('clearCompanyKnowledgeDialog').close();
     await loadCompanyDetail(company.id);
     await loadCompanies(false);
     document.getElementById('clearCompanyKnowledgeStatus').textContent =
@@ -515,9 +523,9 @@ async function clearCompanyKnowledge() {
       + `${result.deleted.sourceDocuments} 份來源與 `
       + `${result.deleted.cleaningJobs} 筆清洗紀錄。`;
   } catch (err) {
-    status.textContent = err.message;
+    error.textContent = err.message;
   } finally {
-    setBusy(document.getElementById('clearCompanyKnowledgeBtn'), false);
+    setBusy(button, false);
   }
 }
 
@@ -788,7 +796,10 @@ function bindEvents() {
   document.getElementById('generateBindingCodeBtn').addEventListener('click', generateBindingCode);
   document.getElementById('copyBindingCodeBtn').addEventListener('click', copyBindingCode);
   document.getElementById('knowledgeForm').addEventListener('submit', addKnowledge);
-  document.getElementById('clearCompanyKnowledgeBtn').addEventListener('click', clearCompanyKnowledge);
+  document.getElementById('clearCompanyKnowledgeBtn').addEventListener('click', openClearCompanyKnowledgeDialog);
+  document.getElementById('closeClearKnowledgeBtn').addEventListener('click', () => document.getElementById('clearCompanyKnowledgeDialog').close());
+  document.getElementById('cancelClearKnowledgeBtn').addEventListener('click', () => document.getElementById('clearCompanyKnowledgeDialog').close());
+  document.getElementById('clearCompanyKnowledgeForm').addEventListener('submit', submitClearCompanyKnowledge);
   document.getElementById('selectCleanerFileBtn').addEventListener('click', openCleanerFilePicker);
   document.getElementById('cleanerFileInput').addEventListener('change', event => {
     prepareCleanerFile(event.target.files?.[0]);

@@ -250,7 +250,30 @@
     </form>
   </dialog>
 
+  <dialog id="clearCompanyKnowledgeDialog">
+    <form class="dialog-form" id="clearCompanyKnowledgeForm">
+      <div class="dialog-heading">
+        <h2>永久清空公司知識</h2>
+        <button class="icon-button" id="closeClearKnowledgeBtn" type="button" title="關閉" aria-label="關閉">×</button>
+      </div>
+      <p>
+        這會永久刪除「<strong id="clearKnowledgeCompanyName"></strong>」的公司知識、
+        RAG 切片、來源檔與清洗紀錄。
+      </p>
+      <p>LINE 綁定、LINE 對話紀錄、公司帳號與 B2C 資料不會刪除。</p>
+      <label>
+        請輸入公司代號 <code id="clearKnowledgeCompanySlug"></code>
+        <input id="clearKnowledgeConfirmation" type="text" autocomplete="off" required />
+      </label>
+      <p class="form-error" id="clearKnowledgeDialogError" role="alert"></p>
+      <div class="dialog-actions">
+        <button class="secondary-button" id="cancelClearKnowledgeBtn" type="button">取消</button>
+        <button class="danger-button" id="confirmClearKnowledgeBtn" type="submit">永久刪除</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="partner-data-cleaner.js?v=20260730-1" defer></script>
-  <script src="partners.js?v=20260730-3" defer></script>
+  <script src="partners.js?v=20260730-4" defer></script>
 </body>
 </html>

@@ -833,6 +833,10 @@ test('partner admin page exposes company-scoped test chat behind admin API', () 
   assert.match(js, /\/api\/partners\/\$\{company\.id\}\/test-chat/);
   assert.match(js, /\/api\/partners\/\$\{companyId\}\/conversations\?days=\$\{days\}/);
   assert.match(js, /conversation-day/);
+  assert.match(html, /clearCompanyKnowledgeDialog/);
+  assert.match(html, /clearKnowledgeConfirmation/);
+  assert.match(js, /submitClearCompanyKnowledge/);
+  assert.doesNotMatch(js, /window\.prompt/);
   assert.match(html, /cleanerFileInput/);
   assert.match(html, /AI 資料清洗/);
   assert.match(html, /accept="\.txt,\.md,text\/plain,text\/markdown"/);
