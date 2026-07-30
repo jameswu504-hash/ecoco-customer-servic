@@ -5,6 +5,7 @@ const partnerState = {
   conversationLog: null,
   testSessionId: '',
   pendingCleanPackage: null,
+  pendingDeleteAction: null,
 };
 
 const CLEANER_MAX_BYTES = 2_000_000;
@@ -139,18 +140,34 @@ function renderLineGroups(groups) {
   });
 }
 
+function createCompactButton(label, className, onClick) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = `${className} compact-button`;
+  button.textContent = label;
+  button.addEventListener('click', onClick);
+  return button;
+}
+
 function renderKnowledge(rows) {
   const list = document.getElementById('knowledgeList');
   list.replaceChildren();
-  if (!rows.length) {
+  const selectedStatus = document.getElementById('knowledgeStatus')?.value || 'active';
+  const filteredRows = rows.filter(item => (
+    selectedStatus === 'archived' ? Boolean(item.archived_at) : !item.archived_at
+  ));
+  if (!filteredRows.length) {
     const empty = document.createElement('div');
     empty.className = 'empty-row';
-    empty.textContent = '尚未加入公司專屬資料。';
+    empty.textContent = selectedStatus === 'archived'
+      ? '目前沒有已封存的公司專屬資料。'
+      : '尚未加入公司專屬資料。';
     list.appendChild(empty);
     return;
   }
 
-  rows.forEach(item => {
+  filteredRows.forEach(item => {
+    const isArchived = Boolean(item.archived_at);
     const row = document.createElement('details');
     row.className = 'knowledge-row';
     const summary = document.createElement('summary');
@@ -168,8 +185,8 @@ function renderKnowledge(rows) {
     const actions = document.createElement('span');
     actions.className = 'knowledge-summary-actions';
     const state = document.createElement('span');
-    state.className = 'row-state';
-    state.textContent = '專屬';
+    state.className = `row-state${isArchived ? ' archived' : ''}`;
+    state.textContent = isArchived ? '已封存' : '使用中';
     const toggleLabel = document.createElement('span');
     toggleLabel.className = 'knowledge-toggle-label';
     toggleLabel.textContent = '展開';
@@ -184,7 +201,24 @@ function renderKnowledge(rows) {
     const fullContent = document.createElement('pre');
     fullContent.className = 'knowledge-full-content';
     fullContent.textContent = String(item.content || '').trim();
-    contentPanel.append(contentLabel, fullContent);
+    const itemActions = document.createElement('div');
+    itemActions.className = 'knowledge-item-actions';
+    if (isArchived) {
+      itemActions.append(
+        createCompactButton('恢復', 'secondary-button', () => updateKnowledgeArchive(item, false)),
+        createCompactButton('永久刪除', 'danger-button', () => openDeletePartnerDataDialog({
+          kind: 'knowledge',
+          id: item.id,
+          label: item.category,
+          expected: partnerState.detail?.company?.slug || '',
+        }))
+      );
+    } else {
+      itemActions.append(
+        createCompactButton('封存', 'secondary-button', () => updateKnowledgeArchive(item, true))
+      );
+    }
+    contentPanel.append(contentLabel, fullContent, itemActions);
 
     row.addEventListener('toggle', () => {
       toggleLabel.textContent = row.open ? '收合' : '展開';
@@ -200,17 +234,21 @@ function renderConversationLog(payload) {
   const summary = document.getElementById('conversationSummary');
   log.replaceChildren();
   const days = Array.isArray(payload?.days) ? payload.days : [];
+  const selectedStatus = payload?.status === 'archived' ? 'archived' : 'active';
 
   if (!days.length) {
     const empty = document.createElement('div');
     empty.className = 'empty-row';
-    empty.textContent = '目前沒有真實 LINE 群組對話紀錄。後台測試對話不會顯示在這裡。';
+    empty.textContent = selectedStatus === 'archived'
+      ? '目前沒有已封存的 LINE 群組對話紀錄。'
+      : '目前沒有真實 LINE 群組對話紀錄。後台測試對話不會顯示在這裡。';
     log.appendChild(empty);
-    summary.textContent = `最近 ${Number(payload?.selectedDays || 30)} 天沒有 LINE 群組訊息。`;
+    summary.textContent = `最近 ${Number(payload?.selectedDays || 30)} 天沒有${selectedStatus === 'archived' ? '已封存的' : ''} LINE 群組訊息。`;
     return;
   }
 
   summary.textContent = [
+    selectedStatus === 'archived' ? '已封存' : '使用中',
     `最近 ${Number(payload.selectedDays || 30)} 天`,
     `共 ${Number(payload.totalDays || days.length)} 天`,
     `${Number(payload.totalMessages || 0)} 則訊息`,
@@ -229,6 +267,24 @@ function renderConversationLog(payload) {
     const count = document.createElement('span');
     count.textContent = `${Number(day.messageCount || 0)} 則`;
     heading.append(date, count);
+
+    const dayActions = document.createElement('div');
+    dayActions.className = 'conversation-day-actions';
+    if (selectedStatus === 'archived') {
+      dayActions.append(
+        createCompactButton('恢復當日', 'secondary-button', () => updateConversationDayArchive(day.date, false)),
+        createCompactButton('永久刪除當日', 'danger-button', () => openDeletePartnerDataDialog({
+          kind: 'conversation-day',
+          day: day.date,
+          label: `${formatConversationDate(day.date)} LINE 對話`,
+          expected: day.date,
+        }))
+      );
+    } else {
+      dayActions.append(
+        createCompactButton('封存當日', 'secondary-button', () => updateConversationDayArchive(day.date, true))
+      );
+    }
 
     const messages = document.createElement('div');
     messages.className = 'conversation-messages';
@@ -251,7 +307,7 @@ function renderConversationLog(payload) {
       messages.appendChild(message);
     });
 
-    section.append(heading, messages);
+    section.append(heading, dayActions, messages);
     log.appendChild(section);
   });
 }
@@ -274,7 +330,9 @@ function renderDetail() {
   document.getElementById('companySlug').textContent = company.slug;
   document.getElementById('testCompanyLabel').textContent = `${company.name} 分支`;
   document.getElementById('groupCount').textContent = String(detail.lineGroups.length);
-  document.getElementById('knowledgeCount').textContent = String(detail.knowledge.length);
+  document.getElementById('knowledgeCount').textContent = String(
+    detail.knowledge.filter(item => !item.archived_at).length
+  );
 
   const status = document.getElementById('companyStatus');
   const isActive = company.status === 'active';
@@ -313,9 +371,12 @@ async function loadCompanies(selectFirst = true) {
 
 async function loadCompanyDetail(companyId) {
   const days = Number(document.getElementById('conversationDays')?.value || 30);
+  const conversationStatus = document.getElementById('conversationStatus')?.value || 'active';
   const [detail, conversationResult] = await Promise.all([
     partnerFetch(`/api/partners/${companyId}`),
-    partnerFetch(`/api/partners/${companyId}/conversations?days=${days}`)
+    partnerFetch(
+      `/api/partners/${companyId}/conversations?days=${days}&status=${conversationStatus}`
+    )
       .then(data => ({ data, error: null }))
       .catch(error => ({ data: null, error })),
   ]);
@@ -334,11 +395,12 @@ async function refreshConversationLog() {
   const button = document.getElementById('refreshConversationsBtn');
   const error = document.getElementById('conversationError');
   const days = Number(document.getElementById('conversationDays').value || 30);
+  const status = document.getElementById('conversationStatus').value || 'active';
   error.textContent = '';
   setBusy(button, true, '更新中...');
   try {
     partnerState.conversationLog = await partnerFetch(
-      `/api/partners/${companyId}/conversations?days=${days}`
+      `/api/partners/${companyId}/conversations?days=${days}&status=${status}`
     );
     renderConversationLog(partnerState.conversationLog);
   } catch (err) {
@@ -477,6 +539,113 @@ async function addKnowledge(event) {
     event.currentTarget.reset();
     await loadCompanyDetail(company.id);
     await loadCompanies(false);
+  } catch (err) {
+    error.textContent = err.message;
+  } finally {
+    setBusy(button, false);
+  }
+}
+
+async function updateKnowledgeArchive(item, shouldArchive) {
+  const company = partnerState.detail?.company;
+  if (!company) return;
+  const status = document.getElementById('clearCompanyKnowledgeStatus');
+  status.textContent = '';
+  try {
+    await partnerFetch(`/api/partners/${company.id}/knowledge/${item.id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: shouldArchive ? 'archived' : 'active' }),
+    });
+    await loadCompanies(false);
+    document.getElementById('clearCompanyKnowledgeStatus').textContent =
+      shouldArchive ? `已封存「${item.category}」。` : `已恢復「${item.category}」。`;
+  } catch (err) {
+    status.textContent = err.message;
+  }
+}
+
+async function updateConversationDayArchive(day, shouldArchive) {
+  const company = partnerState.detail?.company;
+  if (!company) return;
+  const status = document.getElementById('conversationOperationStatus');
+  status.textContent = '';
+  try {
+    const result = await partnerFetch(
+      `/api/partners/${company.id}/conversations/${encodeURIComponent(day)}/status`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ status: shouldArchive ? 'archived' : 'active' }),
+      }
+    );
+    await refreshConversationLog();
+    document.getElementById('conversationOperationStatus').textContent =
+      `${shouldArchive ? '已封存' : '已恢復'} ${day}，共 ${result.updatedMessages} 則訊息。`;
+  } catch (err) {
+    document.getElementById('conversationError').textContent = err.message;
+  }
+}
+
+function openDeletePartnerDataDialog(action) {
+  partnerState.pendingDeleteAction = action;
+  const isKnowledge = action.kind === 'knowledge';
+  document.getElementById('deletePartnerDataTitle').textContent =
+    isKnowledge ? '永久刪除公司知識' : '永久刪除 LINE 當日紀錄';
+  document.getElementById('deletePartnerDataDescription').textContent = isKnowledge
+    ? `這會刪除「${action.label}」、對應 RAG 切片，以及沒有其他知識使用的來源與清洗紀錄。`
+    : `這會永久刪除「${action.label}」中已封存的所有訊息。`;
+  document.getElementById('deletePartnerDataExpected').textContent = action.expected;
+  document.getElementById('deletePartnerDataConfirmation').value = '';
+  document.getElementById('deletePartnerDataError').textContent = '';
+  document.getElementById('deletePartnerDataDialog').showModal();
+  document.getElementById('deletePartnerDataConfirmation').focus();
+}
+
+function closeDeletePartnerDataDialog() {
+  partnerState.pendingDeleteAction = null;
+  document.getElementById('deletePartnerDataDialog').close();
+}
+
+async function submitDeletePartnerData(event) {
+  event.preventDefault();
+  const company = partnerState.detail?.company;
+  const action = partnerState.pendingDeleteAction;
+  if (!company || !action) return;
+  const confirmation = document.getElementById('deletePartnerDataConfirmation').value.trim();
+  const error = document.getElementById('deletePartnerDataError');
+  error.textContent = '';
+  if (confirmation !== action.expected) {
+    error.textContent = `確認文字不符，請輸入 ${action.expected}。`;
+    return;
+  }
+
+  const button = event.submitter;
+  setBusy(button, true, '刪除中...');
+  try {
+    if (action.kind === 'knowledge') {
+      const result = await partnerFetch(
+        `/api/partners/${company.id}/knowledge/${action.id}`,
+        {
+          method: 'DELETE',
+          body: JSON.stringify({ confirmSlug: confirmation }),
+        }
+      );
+      closeDeletePartnerDataDialog();
+      await loadCompanies(false);
+      document.getElementById('clearCompanyKnowledgeStatus').textContent =
+        `已永久刪除「${action.label}」及 ${result.deleted.knowledgeChunks} 個 RAG 切片。`;
+    } else {
+      const result = await partnerFetch(
+        `/api/partners/${company.id}/conversations/${encodeURIComponent(action.day)}`,
+        {
+          method: 'DELETE',
+          body: JSON.stringify({ confirmDay: confirmation }),
+        }
+      );
+      closeDeletePartnerDataDialog();
+      await refreshConversationLog();
+      document.getElementById('conversationOperationStatus').textContent =
+        `已永久刪除 ${action.day} 的 ${result.deletedMessages} 則已封存訊息。`;
+    }
   } catch (err) {
     error.textContent = err.message;
   } finally {
@@ -788,6 +957,10 @@ function bindEvents() {
   document.getElementById('openCreateCompanyBtn').addEventListener('click', openCreateCompanyDialog);
   document.getElementById('refreshConversationsBtn').addEventListener('click', refreshConversationLog);
   document.getElementById('conversationDays').addEventListener('change', refreshConversationLog);
+  document.getElementById('conversationStatus').addEventListener('change', refreshConversationLog);
+  document.getElementById('knowledgeStatus').addEventListener('change', () => {
+    renderKnowledge(partnerState.detail?.knowledge || []);
+  });
   document.getElementById('emptyCreateCompanyBtn').addEventListener('click', openCreateCompanyDialog);
   document.getElementById('closeCreateCompanyBtn').addEventListener('click', () => document.getElementById('createCompanyDialog').close());
   document.getElementById('cancelCreateCompanyBtn').addEventListener('click', () => document.getElementById('createCompanyDialog').close());
@@ -800,6 +973,9 @@ function bindEvents() {
   document.getElementById('closeClearKnowledgeBtn').addEventListener('click', () => document.getElementById('clearCompanyKnowledgeDialog').close());
   document.getElementById('cancelClearKnowledgeBtn').addEventListener('click', () => document.getElementById('clearCompanyKnowledgeDialog').close());
   document.getElementById('clearCompanyKnowledgeForm').addEventListener('submit', submitClearCompanyKnowledge);
+  document.getElementById('closeDeletePartnerDataBtn').addEventListener('click', closeDeletePartnerDataDialog);
+  document.getElementById('cancelDeletePartnerDataBtn').addEventListener('click', closeDeletePartnerDataDialog);
+  document.getElementById('deletePartnerDataForm').addEventListener('submit', submitDeletePartnerData);
   document.getElementById('selectCleanerFileBtn').addEventListener('click', openCleanerFilePicker);
   document.getElementById('cleanerFileInput').addEventListener('change', event => {
     prepareCleanerFile(event.target.files?.[0]);

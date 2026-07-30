@@ -54,6 +54,7 @@ test('B2B schema separates companies, groups, knowledge and conversations', () =
   }
   assert.match(schema, /partner_knowledge_sections[\s\S]*company_id\s+INTEGER NOT NULL/);
   assert.match(schema, /partner_conversations[\s\S]*company_id\s+INTEGER NOT NULL/);
+  assert.match(schema, /ALTER TABLE partner_conversations ADD COLUMN IF NOT EXISTS archived_at/);
   assert.match(schema, /group_key\s+TEXT NOT NULL UNIQUE/);
   assert.match(schema, /idx_partner_conversations_company_day[\s\S]*WHERE line_group_id IS NOT NULL/);
   assert.doesNotMatch(schema, /\bgroup_id\s+TEXT/);
@@ -213,6 +214,7 @@ test('partner LINE conversation logs are company-scoped and grouped by Taipei da
   assert.equal(result.selectedDays, 90);
   assert.equal(result.totalDays, 2);
   assert.equal(result.totalMessages, 3);
+  assert.equal(result.status, 'active');
   assert.equal(result.days[0].date, '2026-07-28');
   assert.deepEqual(
     result.days[0].messages.map(message => message.role),
@@ -221,8 +223,47 @@ test('partner LINE conversation logs are company-scoped and grouped by Taipei da
   assert.equal(result.days[1].messages[0].groupLabel, 'LINE 群組 • 1234');
   assert.match(queries[0].sql, /WHERE pc\.company_id = \$1/);
   assert.match(queries[0].sql, /pc\.line_group_id IS NOT NULL/);
+  assert.match(queries[0].sql, /pc\.archived_at IS NULL/);
   assert.match(queries[0].sql, /AT TIME ZONE 'Asia\/Taipei'/);
   assert.deepEqual(queries[0].params.slice(0, 2), [7, 90]);
+});
+
+test('partner LINE conversation days can be archived, restored and permanently deleted', async () => {
+  const queries = [];
+  const pool = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (/UPDATE partner_conversations/.test(sql)) {
+        return { rows: [{ id: 1 }, { id: 2 }] };
+      }
+      if (/DELETE FROM partner_conversations/.test(sql)) {
+        return { rows: [{ id: 1 }, { id: 2 }] };
+      }
+      return { rows: [] };
+    },
+  };
+  const service = createService(pool);
+
+  const archived = await service.updateConversationDayStatus(7, '2026-07-28', 'archived');
+  const restored = await service.updateConversationDayStatus(7, '2026-07-28', 'active');
+  const deleted = await service.deleteArchivedConversationDay(
+    7,
+    '2026-07-28',
+    '2026-07-28'
+  );
+
+  assert.equal(archived.updatedMessages, 2);
+  assert.equal(archived.status, 'archived');
+  assert.equal(restored.status, 'active');
+  assert.equal(deleted.deletedMessages, 2);
+  assert.ok(queries.every(({ params }) => params[0] === 7));
+  assert.ok(queries.every(({ params }) => params[1] === '2026-07-28'));
+  assert.ok(queries.every(({ sql }) => /AT TIME ZONE 'Asia\/Taipei'/.test(sql)));
+  assert.match(queries[2].sql, /archived_at IS NOT NULL/);
+  await assert.rejects(
+    () => service.updateConversationDayStatus(7, '2026-02-30', 'archived'),
+    /valid conversation date/
+  );
 });
 
 test('passive LINE group messages are masked and stored without an assistant reply', async () => {
@@ -697,6 +738,83 @@ test('company knowledge clear removes only scoped knowledge data in one transact
   );
 });
 
+test('partner knowledge lifecycle scopes archive and permanent deletion to one company', async () => {
+  const directQueries = [];
+  const transactionQueries = [];
+  const connection = {
+    async query(sql, params = []) {
+      transactionQueries.push({ sql, params });
+      if (/FROM partner_knowledge_sections pks[\s\S]*FOR UPDATE/.test(sql)) {
+        return {
+          rows: [{
+            id: 12,
+            category: '測試知識',
+            archived_at: '2026-07-30T00:00:00.000Z',
+            source_document_id: 21,
+            cleaning_job_id: 31,
+            slug: 'familymart-test',
+          }],
+        };
+      }
+      if (/DELETE FROM partner_knowledge_chunks/.test(sql)) {
+        return { rows: [{ id: 1 }, { id: 2 }] };
+      }
+      if (/WHERE company_id = \$1[\s\S]*source_document_id = \$2[\s\S]*LIMIT 1/.test(sql)) {
+        return { rows: [] };
+      }
+      if (/DELETE FROM partner_cleaning_jobs/.test(sql)) {
+        return { rows: [{ id: 31 }] };
+      }
+      if (/DELETE FROM partner_source_documents/.test(sql)) {
+        return { rows: [{ id: 21 }] };
+      }
+      return { rows: [] };
+    },
+    release() {},
+  };
+  const pool = {
+    async query(sql, params = []) {
+      directQueries.push({ sql, params });
+      return {
+        rows: [{
+          id: 12,
+          company_id: 7,
+          category: '測試知識',
+          archived_at: params[2] === 'archived' ? '2026-07-30T00:00:00.000Z' : null,
+        }],
+      };
+    },
+    async connect() {
+      return connection;
+    },
+  };
+  const service = createService(pool);
+
+  await service.updateKnowledgeStatus(7, 12, 'archived');
+  const deleted = await service.deleteArchivedKnowledge(7, 12, 'familymart-test');
+
+  assert.equal(directQueries[0].params[0], 7);
+  assert.equal(directQueries[0].params[1], 12);
+  assert.equal(directQueries[0].params[2], 'archived');
+  assert.deepEqual(deleted.deleted, {
+    knowledgeSections: 1,
+    knowledgeChunks: 2,
+    cleaningJobs: 1,
+    sourceDocuments: 1,
+  });
+  assert.ok(transactionQueries.some(({ sql }) => sql === 'BEGIN'));
+  assert.ok(transactionQueries.some(({ sql }) => sql === 'COMMIT'));
+  assert.ok(
+    transactionQueries
+      .filter(({ sql }) => /(?:DELETE|SELECT)[\s\S]*partner_/.test(sql) && paramsHaveCompany(sql))
+      .every(({ params }) => params[0] === 7)
+  );
+
+  function paramsHaveCompany(sql) {
+    return /company_id = \$1/.test(sql) || /pks\.company_id = \$1/.test(sql);
+  }
+});
+
 test('active partner names are cached briefly for B2B scope checks', async () => {
   let companyListQueries = 0;
   const pool = {
@@ -831,8 +949,15 @@ test('partner admin page exposes company-scoped test chat behind admin API', () 
   assert.match(html, /LINE 對話紀錄/);
   assert.match(html, /尚未綁定真實 LINE 群組，仍可先使用下方測試功能|testChat/);
   assert.match(js, /\/api\/partners\/\$\{company\.id\}\/test-chat/);
-  assert.match(js, /\/api\/partners\/\$\{companyId\}\/conversations\?days=\$\{days\}/);
+  assert.match(js, /\/api\/partners\/\$\{companyId\}\/conversations\?days=\$\{days\}&status=/);
   assert.match(js, /conversation-day/);
+  assert.match(html, /knowledgeStatus/);
+  assert.match(html, /conversationStatus/);
+  assert.match(html, /deletePartnerDataDialog/);
+  assert.match(js, /updateKnowledgeArchive/);
+  assert.match(js, /updateConversationDayArchive/);
+  assert.match(routes, /conversations\/:day\/status/);
+  assert.match(routes, /knowledge\/:sectionId\/status/);
   assert.match(html, /clearCompanyKnowledgeDialog/);
   assert.match(html, /clearKnowledgeConfirmation/);
   assert.match(js, /submitClearCompanyKnowledge/);

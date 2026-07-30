@@ -164,7 +164,14 @@
               <span class="section-index">03</span>
               <h3>公司專屬資料</h3>
             </div>
-            <button class="danger-button" id="clearCompanyKnowledgeBtn" type="button">清空公司知識</button>
+            <div class="knowledge-controls">
+              <label for="knowledgeStatus">顯示</label>
+              <select id="knowledgeStatus">
+                <option value="active" selected>使用中</option>
+                <option value="archived">已封存</option>
+              </select>
+              <button class="danger-button" id="clearCompanyKnowledgeBtn" type="button">清空公司知識</button>
+            </div>
           </div>
           <p class="form-error" id="clearCompanyKnowledgeStatus" role="status"></p>
           <form class="knowledge-form" id="knowledgeForm">
@@ -191,6 +198,11 @@
               <h3>LINE 對話紀錄</h3>
             </div>
             <div class="conversation-controls">
+              <label for="conversationStatus">狀態</label>
+              <select id="conversationStatus">
+                <option value="active" selected>使用中</option>
+                <option value="archived">已封存</option>
+              </select>
               <label for="conversationDays">顯示期間</label>
               <select id="conversationDays">
                 <option value="7">最近 7 天</option>
@@ -201,6 +213,7 @@
             </div>
           </div>
           <p class="conversation-summary" id="conversationSummary">真實 LINE 群組問答會自動寫入後台，並依台灣日期分組。</p>
+          <p class="operation-status" id="conversationOperationStatus" role="status"></p>
           <p class="form-error" id="conversationError" role="alert"></p>
           <div class="conversation-log" id="conversationLog">
             <div class="empty-row">尚未讀取 LINE 對話紀錄。</div>
@@ -273,7 +286,26 @@
     </form>
   </dialog>
 
+  <dialog id="deletePartnerDataDialog">
+    <form class="dialog-form" id="deletePartnerDataForm">
+      <div class="dialog-heading">
+        <h2 id="deletePartnerDataTitle">永久刪除</h2>
+        <button class="icon-button" id="closeDeletePartnerDataBtn" type="button" title="關閉" aria-label="關閉">×</button>
+      </div>
+      <p id="deletePartnerDataDescription"></p>
+      <label>
+        請輸入 <code id="deletePartnerDataExpected"></code> 確認
+        <input id="deletePartnerDataConfirmation" type="text" autocomplete="off" required />
+      </label>
+      <p class="form-error" id="deletePartnerDataError" role="alert"></p>
+      <div class="dialog-actions">
+        <button class="secondary-button" id="cancelDeletePartnerDataBtn" type="button">取消</button>
+        <button class="danger-button" id="confirmDeletePartnerDataBtn" type="submit">永久刪除</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="partner-data-cleaner.js?v=20260730-1" defer></script>
-  <script src="partners.js?v=20260730-4" defer></script>
+  <script src="partners.js?v=20260730-5" defer></script>
 </body>
 </html>

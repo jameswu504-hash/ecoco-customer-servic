@@ -60,6 +60,25 @@ function normalizeCompanyStatus(value) {
   return String(value || '').toLowerCase() === 'inactive' ? 'inactive' : 'active';
 }
 
+function normalizePartnerDataStatus(value) {
+  return String(value || '').toLowerCase() === 'archived' ? 'archived' : 'active';
+}
+
+function normalizePartnerConversationDay(value) {
+  const candidate = String(value || '').trim();
+  const match = candidate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return '';
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  if (
+    date.getUTCFullYear() !== Number(match[1])
+    || date.getUTCMonth() !== Number(match[2]) - 1
+    || date.getUTCDate() !== Number(match[3])
+  ) {
+    return '';
+  }
+  return candidate;
+}
+
 function normalizePartnerMatchText(value) {
   return String(value || '')
     .normalize('NFKC')
@@ -558,22 +577,37 @@ function createPartnerService({
     return rows;
   }
 
-  async function listKnowledge(companyId) {
+  async function listKnowledge(companyId, status = 'active') {
+    const normalizedStatus = String(status || '').toLowerCase();
+    const statusClause = normalizedStatus === 'all'
+      ? ''
+      : normalizePartnerDataStatus(normalizedStatus) === 'archived'
+        ? 'AND archived_at IS NOT NULL'
+        : 'AND archived_at IS NULL';
     const { rows } = await pool.query(
-      `SELECT id, company_id, category, content, sort_order, created_at, updated_at
+      `SELECT id, company_id, category, content, sort_order, archived_at, created_at, updated_at
        FROM partner_knowledge_sections
-       WHERE company_id = $1 AND archived_at IS NULL
+       WHERE company_id = $1
+         ${statusClause}
        ORDER BY sort_order ASC, id ASC`,
       [Number(companyId)]
     );
     return rows;
   }
 
-  async function listLineConversationDays(companyId, days = PARTNER_CONVERSATION_DEFAULT_DAYS) {
+  async function listLineConversationDays(
+    companyId,
+    days = PARTNER_CONVERSATION_DEFAULT_DAYS,
+    status = 'active'
+  ) {
     const requestedDays = Number(days);
     const safeDays = Number.isFinite(requestedDays)
       ? Math.min(Math.max(Math.floor(requestedDays), 1), PARTNER_CONVERSATION_MAX_DAYS)
       : PARTNER_CONVERSATION_DEFAULT_DAYS;
+    const normalizedStatus = normalizePartnerDataStatus(status);
+    const archiveClause = normalizedStatus === 'archived'
+      ? 'AND pc.archived_at IS NOT NULL'
+      : 'AND pc.archived_at IS NULL';
     const { rows } = await pool.query(
       `SELECT
          pc.id,
@@ -582,6 +616,7 @@ function createPartnerService({
          pc.role,
          pc.content,
          pc.timestamp,
+         pc.archived_at,
          TO_CHAR(pc.timestamp AT TIME ZONE 'Asia/Taipei', 'YYYY-MM-DD') AS conversation_day,
          plg.label AS group_label,
          plg.group_id_last4
@@ -591,6 +626,7 @@ function createPartnerService({
         AND plg.company_id = pc.company_id
        WHERE pc.company_id = $1
          AND pc.line_group_id IS NOT NULL
+         ${archiveClause}
          AND pc.timestamp >= NOW() - ($2::integer * INTERVAL '1 day')
        ORDER BY pc.timestamp DESC, pc.id DESC
        LIMIT $3`,
@@ -617,6 +653,7 @@ function createPartnerService({
         role: row.role,
         content: row.content,
         timestamp: row.timestamp,
+        archivedAt: row.archived_at || null,
         groupLabel: row.group_label || `LINE 群組 • ${row.group_id_last4 || '----'}`,
       });
     }
@@ -628,6 +665,7 @@ function createPartnerService({
     return {
       days: groupedDays,
       selectedDays: safeDays,
+      status: normalizedStatus,
       totalDays: groupedDays.length,
       totalMessages: groupedDays.reduce((sum, day) => sum + day.messageCount, 0),
       truncated: rows.length >= PARTNER_CONVERSATION_MAX_ROWS,
@@ -657,6 +695,197 @@ function createPartnerService({
       [company.id, cleanCategory, cleanContent, Number(sortRows[0].next || 0)]
     );
     return rows[0];
+  }
+
+  async function updateKnowledgeStatus(companyId, sectionId, status) {
+    const normalizedStatus = normalizePartnerDataStatus(status);
+    const { rows } = await pool.query(
+      `UPDATE partner_knowledge_sections
+       SET archived_at = CASE WHEN $3 = 'archived' THEN COALESCE(archived_at, NOW()) ELSE NULL END,
+           updated_at = NOW()
+       WHERE id = $2
+         AND company_id = $1
+       RETURNING id, company_id, category, archived_at, updated_at`,
+      [Number(companyId), Number(sectionId), normalizedStatus]
+    );
+    return rows[0] || null;
+  }
+
+  async function deleteArchivedKnowledge(companyId, sectionId, confirmSlug) {
+    const companyIdNumber = Number(companyId);
+    const sectionIdNumber = Number(sectionId);
+    if (
+      !Number.isInteger(companyIdNumber)
+      || companyIdNumber < 1
+      || !Number.isInteger(sectionIdNumber)
+      || sectionIdNumber < 1
+    ) {
+      return null;
+    }
+    const db = await pool.connect();
+    try {
+      await db.query('BEGIN');
+      await db.query(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [`partner_knowledge_delete:${companyIdNumber}`]
+      );
+      const { rows: sectionRows } = await db.query(
+        `SELECT pks.id, pks.category, pks.archived_at, pks.source_document_id,
+                pks.cleaning_job_id, pc.slug
+         FROM partner_knowledge_sections pks
+         JOIN partner_companies pc ON pc.id = pks.company_id
+         WHERE pks.company_id = $1
+           AND pks.id = $2
+         FOR UPDATE OF pks`,
+        [companyIdNumber, sectionIdNumber]
+      );
+      const section = sectionRows[0];
+      if (!section) {
+        await db.query('ROLLBACK');
+        return null;
+      }
+      if (String(confirmSlug || '').trim() !== section.slug) {
+        const error = new Error(`Type ${section.slug} to confirm permanent deletion.`);
+        error.code = 'PARTNER_CONFIRMATION_MISMATCH';
+        throw error;
+      }
+      if (!section.archived_at) {
+        const error = new Error('Archive this knowledge item before permanently deleting it.');
+        error.code = 'PARTNER_KNOWLEDGE_NOT_ARCHIVED';
+        throw error;
+      }
+
+      const { rows: chunkRows } = await db.query(
+        'DELETE FROM partner_knowledge_chunks WHERE company_id = $1 AND section_id = $2 RETURNING id',
+        [companyIdNumber, sectionIdNumber]
+      );
+      await db.query(
+        'DELETE FROM partner_knowledge_sections WHERE company_id = $1 AND id = $2',
+        [companyIdNumber, sectionIdNumber]
+      );
+
+      let deletedCleaningJobs = 0;
+      let deletedSourceDocuments = 0;
+      if (section.source_document_id) {
+        const { rows: remainingRows } = await db.query(
+          `SELECT id
+           FROM partner_knowledge_sections
+           WHERE company_id = $1
+             AND source_document_id = $2
+           LIMIT 1`,
+          [companyIdNumber, Number(section.source_document_id)]
+        );
+        if (remainingRows.length === 0) {
+          const { rows: jobRows } = await db.query(
+            `DELETE FROM partner_cleaning_jobs
+             WHERE company_id = $1
+               AND source_document_id = $2
+             RETURNING id`,
+            [companyIdNumber, Number(section.source_document_id)]
+          );
+          const { rows: sourceRows } = await db.query(
+            `DELETE FROM partner_source_documents
+             WHERE company_id = $1
+               AND id = $2
+             RETURNING id`,
+            [companyIdNumber, Number(section.source_document_id)]
+          );
+          deletedCleaningJobs = jobRows.length;
+          deletedSourceDocuments = sourceRows.length;
+        }
+      } else if (section.cleaning_job_id) {
+        const { rows: remainingRows } = await db.query(
+          `SELECT id
+           FROM partner_knowledge_sections
+           WHERE company_id = $1
+             AND cleaning_job_id = $2
+           LIMIT 1`,
+          [companyIdNumber, Number(section.cleaning_job_id)]
+        );
+        if (remainingRows.length === 0) {
+          const { rows: jobRows } = await db.query(
+            `DELETE FROM partner_cleaning_jobs
+             WHERE company_id = $1
+               AND id = $2
+             RETURNING id`,
+            [companyIdNumber, Number(section.cleaning_job_id)]
+          );
+          deletedCleaningJobs = jobRows.length;
+        }
+      }
+
+      await db.query('COMMIT');
+      return {
+        id: section.id,
+        category: section.category,
+        deleted: {
+          knowledgeSections: 1,
+          knowledgeChunks: chunkRows.length,
+          cleaningJobs: deletedCleaningJobs,
+          sourceDocuments: deletedSourceDocuments,
+        },
+      };
+    } catch (err) {
+      await db.query('ROLLBACK');
+      throw err;
+    } finally {
+      db.release();
+    }
+  }
+
+  async function updateConversationDayStatus(companyId, day, status) {
+    const normalizedDay = normalizePartnerConversationDay(day);
+    if (!normalizedDay) {
+      const error = new Error('A valid conversation date is required.');
+      error.code = 'PARTNER_INVALID_CONVERSATION_DAY';
+      throw error;
+    }
+    const normalizedStatus = normalizePartnerDataStatus(status);
+    const { rows } = await pool.query(
+      `UPDATE partner_conversations
+       SET archived_at = CASE WHEN $3 = 'archived' THEN COALESCE(archived_at, NOW()) ELSE NULL END
+       WHERE company_id = $1
+         AND line_group_id IS NOT NULL
+         AND TO_CHAR(timestamp AT TIME ZONE 'Asia/Taipei', 'YYYY-MM-DD') = $2
+         AND (
+           ($3 = 'archived' AND archived_at IS NULL)
+           OR ($3 = 'active' AND archived_at IS NOT NULL)
+         )
+       RETURNING id`,
+      [Number(companyId), normalizedDay, normalizedStatus]
+    );
+    return {
+      day: normalizedDay,
+      status: normalizedStatus,
+      updatedMessages: rows.length,
+    };
+  }
+
+  async function deleteArchivedConversationDay(companyId, day, confirmDay) {
+    const normalizedDay = normalizePartnerConversationDay(day);
+    if (!normalizedDay) {
+      const error = new Error('A valid conversation date is required.');
+      error.code = 'PARTNER_INVALID_CONVERSATION_DAY';
+      throw error;
+    }
+    if (String(confirmDay || '').trim() !== normalizedDay) {
+      const error = new Error(`Type ${normalizedDay} to confirm permanent deletion.`);
+      error.code = 'PARTNER_CONFIRMATION_MISMATCH';
+      throw error;
+    }
+    const { rows } = await pool.query(
+      `DELETE FROM partner_conversations
+       WHERE company_id = $1
+         AND line_group_id IS NOT NULL
+         AND archived_at IS NOT NULL
+         AND TO_CHAR(timestamp AT TIME ZONE 'Asia/Taipei', 'YYYY-MM-DD') = $2
+       RETURNING id`,
+      [Number(companyId), normalizedDay]
+    );
+    return {
+      day: normalizedDay,
+      deletedMessages: rows.length,
+    };
   }
 
   async function clearCompanyKnowledge(companyId, confirmSlug) {
@@ -890,7 +1119,9 @@ function createPartnerService({
     const { rows } = await pool.query(
       `SELECT role, content
        FROM partner_conversations
-       WHERE company_id = $1 AND session_id = $2
+       WHERE company_id = $1
+         AND session_id = $2
+         AND archived_at IS NULL
        ORDER BY timestamp DESC, id DESC
        LIMIT $3`,
       [Number(companyId), String(sessionId || ''), limit]
@@ -1140,6 +1371,8 @@ function createPartnerService({
     bindLineGroup,
     clearCompanyKnowledge,
     createCompany,
+    deleteArchivedConversationDay,
+    deleteArchivedKnowledge,
     generateBindingCode,
     getCompany,
     importLineChatKnowledge,
@@ -1151,7 +1384,9 @@ function createPartnerService({
     retrievePartnerKnowledge,
     routeLineGroupMessage,
     storePartnerMessage,
+    updateConversationDayStatus,
     updateCompanyStatus,
+    updateKnowledgeStatus,
   };
 }
 

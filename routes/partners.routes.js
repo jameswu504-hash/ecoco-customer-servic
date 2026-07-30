@@ -51,7 +51,7 @@ function createPartnersRouter({
     if (!company) return res.status(404).json({ error: 'Partner company not found.' });
     const [lineGroups, knowledge] = await Promise.all([
       partnerService.listLineGroups(company.id),
-      partnerService.listKnowledge(company.id),
+      partnerService.listKnowledge(company.id, 'all'),
     ]);
     res.json({
       company,
@@ -95,13 +95,78 @@ function createPartnersRouter({
   }));
 
   router.get('/:companyId/knowledge', asyncHandler(async (req, res) => {
-    res.json(await partnerService.listKnowledge(req.params.companyId));
+    res.json(await partnerService.listKnowledge(req.params.companyId, req.query.status));
   }));
 
   router.get('/:companyId/conversations', asyncHandler(async (req, res) => {
     const company = await partnerService.getCompany(req.params.companyId);
     if (!company) return res.status(404).json({ error: 'Partner company not found.' });
-    res.json(await partnerService.listLineConversationDays(company.id, req.query.days));
+    res.json(await partnerService.listLineConversationDays(
+      company.id,
+      req.query.days,
+      req.query.status
+    ));
+  }));
+
+  router.patch('/:companyId/conversations/:day/status', asyncHandler(async (req, res) => {
+    const company = await partnerService.getCompany(req.params.companyId);
+    if (!company) return res.status(404).json({ error: 'Partner company not found.' });
+    try {
+      const result = await partnerService.updateConversationDayStatus(
+        company.id,
+        req.params.day,
+        req.body?.status
+      );
+      await saveAdminAudit(pool, {
+        action: result.status === 'archived'
+          ? 'partner_conversation_day_archived'
+          : 'partner_conversation_day_restored',
+        targetType: 'partner_conversation_day',
+        targetId: `${company.id}:${result.day}`,
+        details: {
+          companySlug: company.slug,
+          day: result.day,
+          updatedMessages: result.updatedMessages,
+        },
+      });
+      res.json(result);
+    } catch (err) {
+      if (err.code === 'PARTNER_INVALID_CONVERSATION_DAY') {
+        return res.status(400).json({ error: err.message });
+      }
+      throw err;
+    }
+  }));
+
+  router.delete('/:companyId/conversations/:day', asyncHandler(async (req, res) => {
+    const company = await partnerService.getCompany(req.params.companyId);
+    if (!company) return res.status(404).json({ error: 'Partner company not found.' });
+    try {
+      const result = await partnerService.deleteArchivedConversationDay(
+        company.id,
+        req.params.day,
+        req.body?.confirmDay
+      );
+      await saveAdminAudit(pool, {
+        action: 'partner_conversation_day_deleted',
+        targetType: 'partner_conversation_day',
+        targetId: `${company.id}:${result.day}`,
+        details: {
+          companySlug: company.slug,
+          day: result.day,
+          deletedMessages: result.deletedMessages,
+        },
+      });
+      res.json(result);
+    } catch (err) {
+      if (
+        err.code === 'PARTNER_INVALID_CONVERSATION_DAY'
+        || err.code === 'PARTNER_CONFIRMATION_MISMATCH'
+      ) {
+        return res.status(400).json({ error: err.message });
+      }
+      throw err;
+    }
   }));
 
   router.post('/:companyId/knowledge', asyncHandler(async (req, res) => {
@@ -144,6 +209,59 @@ function createPartnersRouter({
     } catch (err) {
       if (err.code === 'PARTNER_CONFIRMATION_MISMATCH') {
         return res.status(400).json({ error: err.message });
+      }
+      throw err;
+    }
+  }));
+
+  router.patch('/:companyId/knowledge/:sectionId/status', asyncHandler(async (req, res) => {
+    const section = await partnerService.updateKnowledgeStatus(
+      req.params.companyId,
+      req.params.sectionId,
+      req.body?.status
+    );
+    if (!section) return res.status(404).json({ error: 'Partner knowledge not found.' });
+    const status = section.archived_at ? 'archived' : 'active';
+    await saveAdminAudit(pool, {
+      action: status === 'archived'
+        ? 'partner_knowledge_archived'
+        : 'partner_knowledge_restored',
+      targetType: 'partner_knowledge',
+      targetId: String(section.id),
+      details: {
+        companyId: section.company_id,
+        category: section.category,
+        status,
+      },
+    });
+    res.json(section);
+  }));
+
+  router.delete('/:companyId/knowledge/:sectionId', asyncHandler(async (req, res) => {
+    try {
+      const result = await partnerService.deleteArchivedKnowledge(
+        req.params.companyId,
+        req.params.sectionId,
+        req.body?.confirmSlug
+      );
+      if (!result) return res.status(404).json({ error: 'Partner knowledge not found.' });
+      await saveAdminAudit(pool, {
+        action: 'partner_knowledge_deleted',
+        targetType: 'partner_knowledge',
+        targetId: String(result.id),
+        details: {
+          companyId: Number(req.params.companyId),
+          category: result.category,
+          deleted: result.deleted,
+        },
+      });
+      res.json(result);
+    } catch (err) {
+      if (err.code === 'PARTNER_CONFIRMATION_MISMATCH') {
+        return res.status(400).json({ error: err.message });
+      }
+      if (err.code === 'PARTNER_KNOWLEDGE_NOT_ARCHIVED') {
+        return res.status(409).json({ error: err.message });
       }
       throw err;
     }
