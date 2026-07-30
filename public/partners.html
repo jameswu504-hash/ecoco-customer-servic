@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ECOCO B2B 合作夥伴</title>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;800&family=Space+Mono&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="partners.css?v=20260730-1" />
+  <link rel="stylesheet" href="partners.css?v=20260730-2" />
 </head>
 <body>
   <div class="login-overlay" id="loginOverlay">
@@ -143,6 +143,16 @@
             accept=".txt,.md,text/plain,text/markdown"
             hidden
           />
+          <div
+            class="cleaner-drop-zone"
+            id="cleanerDropZone"
+            role="button"
+            tabindex="0"
+            aria-controls="cleanerFileInput"
+          >
+            <strong>把 TXT／MD 拖到這裡</strong>
+            <span>或點一下選擇檔案；放入後會立即在本機自動清洗並顯示預覽</span>
+          </div>
           <div class="cleaner-intro">
             <strong>Local-only 清洗</strong>
             <p>原始檔只在此瀏覽器處理，不會上傳，也不會傳送給 Claude、OpenAI 或外部 Embedding API。</p>
@@ -239,6 +249,6 @@
   </dialog>
 
   <script src="partner-data-cleaner.js?v=20260730-1" defer></script>
-  <script src="partners.js?v=20260730-1" defer></script>
+  <script src="partners.js?v=20260730-2" defer></script>
 </body>
 </html>

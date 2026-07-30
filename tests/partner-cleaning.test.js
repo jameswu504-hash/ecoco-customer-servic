@@ -253,7 +253,11 @@ test('partner page exposes local TXT and Markdown cleaning before approved SQL i
   assert.match(html, /accept="\.txt,\.md,text\/plain,text\/markdown"/);
   assert.match(html, /partner-data-cleaner\.js/);
   assert.match(html, /原始檔只在此瀏覽器處理，不會上傳/);
+  assert.match(html, /id="cleanerDropZone"/);
+  assert.match(html, /把 TXT／MD 拖到這裡/);
   assert.match(js, /cleanPartnerKnowledgeFile/);
+  assert.match(js, /addEventListener\('drop', handleCleanerDrop\)/);
+  assert.match(js, /event\.dataTransfer\?\.files/);
   assert.match(js, /\/knowledge\/import-cleaned/);
   assert.match(js, /確認並匯入知識庫/);
   assert.doesNotMatch(js, /preservePersonalData:\s*false/);

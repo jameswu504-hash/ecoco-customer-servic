@@ -752,6 +752,50 @@ button:disabled {
   gap: 8px;
 }
 
+.cleaner-drop-zone {
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  min-height: 132px;
+  margin-bottom: 14px;
+  padding: 22px;
+  text-align: center;
+  cursor: pointer;
+  border: 2px dashed #9fb2a6;
+  border-radius: 8px;
+  background: #fbfcfb;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.cleaner-drop-zone strong {
+  color: var(--green-dark);
+  font-size: 16px;
+}
+
+.cleaner-drop-zone span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.cleaner-drop-zone:hover,
+.cleaner-drop-zone:focus-visible,
+.cleaner-drop-zone.is-dragging {
+  outline: none;
+  border-color: var(--green);
+  background: #f1f8f3;
+  box-shadow: 0 0 0 3px rgb(22 123 70 / 10%);
+}
+
+.cleaner-drop-zone.disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .cleaner-intro {
   margin-bottom: 14px;
   padding: 14px 16px;

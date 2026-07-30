@@ -284,6 +284,9 @@ function renderDetail() {
   document.getElementById('generateBindingCodeBtn').disabled = !isActive;
   document.getElementById('sendTestBtn').disabled = !isActive;
   document.getElementById('selectCleanerFileBtn').disabled = !isActive;
+  const cleanerDropZone = document.getElementById('cleanerDropZone');
+  cleanerDropZone.classList.toggle('disabled', !isActive);
+  cleanerDropZone.setAttribute('aria-disabled', String(!isActive));
 
   renderLineGroups(detail.lineGroups);
   renderKnowledge(detail.knowledge);
@@ -495,6 +498,7 @@ function clearCleaner() {
 }
 
 function openCleanerFilePicker() {
+  if (partnerState.detail?.company?.status !== 'active') return;
   const input = document.getElementById('cleanerFileInput');
   input.value = '';
   input.click();
@@ -548,8 +552,7 @@ function renderCleanerPackage(cleanedPackage) {
       : cleanedPackage.markdown;
 }
 
-async function prepareCleanerFile(event) {
-  const file = event.target.files?.[0];
+async function prepareCleanerFile(file) {
   if (!file) return;
   const company = partnerState.detail?.company;
   const panel = document.getElementById('cleanerPanel');
@@ -566,6 +569,9 @@ async function prepareCleanerFile(event) {
   partnerState.pendingCleanPackage = null;
 
   try {
+    if (!company || company.status !== 'active') {
+      throw new Error('請先選擇已啟用的合作公司。');
+    }
     if (!/\.(?:txt|md)$/i.test(file.name)) {
       throw new Error('第一版只支援 .txt 與 .md 檔案。');
     }
@@ -589,6 +595,43 @@ async function prepareCleanerFile(event) {
     document.getElementById('cleanerPreview').textContent = '';
     confirmButton.disabled = true;
   }
+}
+
+function setCleanerDropState(active) {
+  document.getElementById('cleanerDropZone').classList.toggle('is-dragging', active);
+}
+
+function handleCleanerDrag(event) {
+  event.preventDefault();
+  if (partnerState.detail?.company?.status !== 'active') return;
+  if (event.type === 'dragleave' && event.currentTarget.contains(event.relatedTarget)) return;
+  setCleanerDropState(event.type !== 'dragleave');
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+}
+
+async function handleCleanerDrop(event) {
+  event.preventDefault();
+  setCleanerDropState(false);
+  const files = [...(event.dataTransfer?.files || [])];
+  if (!files.length) return;
+  if (files.length > 1) {
+    partnerState.pendingCleanPackage = null;
+    const panel = document.getElementById('cleanerPanel');
+    panel.hidden = false;
+    document.getElementById('cleanerMetrics').replaceChildren();
+    document.getElementById('cleanerWarnings').replaceChildren();
+    document.getElementById('confirmCleanerImportBtn').disabled = true;
+    document.getElementById('cleanerError').textContent = '一次只能清洗一個檔案。';
+    document.getElementById('cleanerPreview').textContent = '';
+    return;
+  }
+  await prepareCleanerFile(files[0]);
+}
+
+function handleCleanerDropZoneKeydown(event) {
+  if (!['Enter', ' '].includes(event.key)) return;
+  event.preventDefault();
+  openCleanerFilePicker();
 }
 
 function downloadCleanerPackage() {
@@ -709,7 +752,16 @@ function bindEvents() {
   document.getElementById('copyBindingCodeBtn').addEventListener('click', copyBindingCode);
   document.getElementById('knowledgeForm').addEventListener('submit', addKnowledge);
   document.getElementById('selectCleanerFileBtn').addEventListener('click', openCleanerFilePicker);
-  document.getElementById('cleanerFileInput').addEventListener('change', prepareCleanerFile);
+  document.getElementById('cleanerFileInput').addEventListener('change', event => {
+    prepareCleanerFile(event.target.files?.[0]);
+  });
+  const cleanerDropZone = document.getElementById('cleanerDropZone');
+  cleanerDropZone.addEventListener('click', openCleanerFilePicker);
+  cleanerDropZone.addEventListener('keydown', handleCleanerDropZoneKeydown);
+  cleanerDropZone.addEventListener('dragenter', handleCleanerDrag);
+  cleanerDropZone.addEventListener('dragover', handleCleanerDrag);
+  cleanerDropZone.addEventListener('dragleave', handleCleanerDrag);
+  cleanerDropZone.addEventListener('drop', handleCleanerDrop);
   document.getElementById('cancelCleanerBtn').addEventListener('click', clearCleaner);
   document.getElementById('downloadCleanerPackageBtn').addEventListener('click', downloadCleanerPackage);
   document.getElementById('confirmCleanerImportBtn').addEventListener('click', importCleanedPackage);
