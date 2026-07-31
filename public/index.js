@@ -33,6 +33,81 @@
       sendMessage();
     }
 
+    const guidedMenus = {
+      equipment: {
+        title: "請選擇您目前使用的 ECOCO 設備",
+        items: [
+          {
+            label: "ECOCO 智慧收瓶機",
+            question: "我想詢問 ECOCO 智慧收瓶機的操作方式"
+          },
+          {
+            label: "ECOCO 智慧電池機",
+            question: "我想詢問 ECOCO 智慧電池機的操作方式"
+          }
+        ]
+      }
+    };
+
+    function createGuidedMenu(title, items) {
+      const menu = document.createElement("div");
+      menu.className = "guided-menu";
+      menu.setAttribute("aria-label", title);
+
+      const heading = document.createElement("div");
+      heading.className = "guided-menu-title";
+      heading.textContent = title;
+      menu.appendChild(heading);
+
+      const grid = document.createElement("div");
+      grid.className = "guided-menu-grid";
+      items.forEach(item => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "guided-menu-btn";
+        button.textContent = item.label;
+        button.dataset.question = item.question;
+        grid.appendChild(button);
+      });
+      menu.appendChild(grid);
+      bindGuidedMenuButtons(menu);
+      return menu;
+    }
+
+    function openGuidedMenu(menuName) {
+      const menuConfig = guidedMenus[menuName];
+      if (!menuConfig) return;
+
+      const messages = document.getElementById("messages");
+      const row = document.createElement("div");
+      row.className = "msg-row bot";
+
+      const avatar = document.createElement("div");
+      avatar.className = "avatar bot";
+      avatar.innerHTML = '<img src="ecoco-mark.png" alt="ECOCO" />';
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "message-stack";
+      wrapper.appendChild(createGuidedMenu(menuConfig.title, menuConfig.items));
+      row.appendChild(avatar);
+      row.appendChild(wrapper);
+      messages.appendChild(row);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    function bindGuidedMenuButtons(root = document) {
+      root.querySelectorAll("[data-menu-target]").forEach(button => {
+        if (button.dataset.menuBound === "true") return;
+        button.dataset.menuBound = "true";
+        button.addEventListener("click", () => openGuidedMenu(button.dataset.menuTarget));
+      });
+      root.querySelectorAll("[data-question]").forEach(button => {
+        if (button.dataset.questionBound === "true") return;
+        button.dataset.questionBound = "true";
+        button.addEventListener("click", () => quickAsk(button.dataset.question || button.textContent.trim()));
+      });
+    }
+
     function appendMessage(role, text, options = {}) {
       const messages = document.getElementById("messages");
       const row = document.createElement("div");
@@ -223,9 +298,7 @@
     }
 
     function bindUiEvents() {
-      document.querySelectorAll(".quick-chip[data-question]").forEach(button => {
-        button.addEventListener("click", () => quickAsk(button.dataset.question || button.textContent.trim()));
-      });
+      bindGuidedMenuButtons();
 
       const input = document.getElementById("inputBox");
       input?.addEventListener("keydown", handleKey);
@@ -243,7 +316,7 @@
         navigator.geolocation.getCurrentPosition(
           pos => {
             btn.disabled = false;
-            btn.textContent = "\uD83D\uDCCD 查最近站點";
+            btn.textContent = "查最近站點";
             sendMessage({
               overrideText: "查詢我附近的 ECOCO 站點",
               coords: { lat: pos.coords.latitude, lng: pos.coords.longitude }
@@ -251,7 +324,7 @@
           },
           () => {
             btn.disabled = false;
-            btn.textContent = "\uD83D\uDCCD 查最近站點";
+            btn.textContent = "查最近站點";
             appendMessage("bot", "沒有取得定位權限，可以改用文字告訴我縣市、路名或地標，我再幫你查。");
           },
           { timeout: 8000, maximumAge: 5 * 60 * 1000 }

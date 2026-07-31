@@ -17,6 +17,7 @@ scripts/.changed
 
 # Local eval and analysis reports generated during QA
 evals/reports/
+outputs/design-qa/
 
 # Local IoT sync runner state, encrypted secrets, and logs
 .local-iot-sync/

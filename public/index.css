@@ -372,6 +372,10 @@
       animation: fadeUp .2s ease;
     }
 
+    .msg-row.bot {
+      align-items: flex-start;
+    }
+
     @keyframes fadeUp {
       from { opacity: 0; transform: translateY(8px); }
       to { opacity: 1; transform: translateY(0); }
@@ -448,6 +452,59 @@
       color: var(--muted);
       font-size: 11px;
       font-family: "Space Mono", monospace;
+    }
+
+    .guided-menu {
+      margin-top: 10px;
+      padding: 12px;
+      border: 1px solid #dfe8f2;
+      border-radius: 12px;
+      background: #fff;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .guided-menu-title {
+      margin-bottom: 9px;
+      color: var(--ecoco-blue);
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .guided-menu-grid {
+      display: grid;
+      gap: 8px;
+    }
+
+    .guided-menu-btn {
+      width: 100%;
+      min-height: 42px;
+      padding: 9px 12px;
+      border: 1px solid #cbd9e8;
+      border-radius: 9px;
+      background: #fff;
+      color: var(--ecoco-blue);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 800;
+      text-align: left;
+      cursor: pointer;
+      transition: border-color .16s ease, background .16s ease, transform .16s ease;
+    }
+
+    .guided-menu-btn::after {
+      content: "›";
+      float: right;
+      color: var(--ecoco-orange);
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .guided-menu-btn:hover,
+    .guided-menu-btn:focus-visible {
+      border-color: var(--ecoco-orange);
+      background: #fff8f2;
+      outline: none;
+      transform: translateY(-1px);
     }
 
     .typing-indicator {
@@ -603,6 +660,18 @@
       transform: none;
     }
 
+    .send-btn.secondary {
+      background: #fff;
+      color: var(--ecoco-blue);
+      border: 1px solid #b8c9da;
+      box-shadow: none;
+    }
+
+    .send-btn.secondary:hover {
+      background: #f3f7fb;
+      border-color: var(--ecoco-blue);
+    }
+
     .footer-hint {
       padding: 7px 16px 10px;
       text-align: center;
@@ -627,8 +696,12 @@
     }
 
     @media (max-width: 640px) {
+      .quick-area,
+      .brand-panel {
+        display: none;
+      }
+
       .topbar-inner,
-      .quick-inner,
       .workspace {
         width: min(100vw - 20px, 1180px);
       }
@@ -653,7 +726,7 @@
         align-self: flex-start;
       }
 
-      .workspace { margin: 10px auto; gap: 10px; }
+      .workspace { margin: 10px auto; gap: 0; }
       .hero-card { padding: 18px; }
       .hero-mark-badge { width: 58px; height: 58px; margin-bottom: 12px; }
       .hero-mark { width: 46px; height: 46px; }

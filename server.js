@@ -23,6 +23,7 @@ const { createReportsRouter } = require('./routes/reports.routes');
 const { createUnansweredRouter } = require('./routes/unanswered.routes');
 const { createIotStatusService } = require('./services/iot-status.service');
 const { getKnowledgeEmbeddingStatus } = require('./services/health.service');
+const { purgeLegacyStationKnowledge } = require('./services/knowledge-maintenance.service');
 const { ensureLineWebhookEndpoint } = require('./services/line-shared.service');
 const { isInternalMode } = require('./services/internal-wiki.service');
 const { createPromptService } = require('./services/prompt.service');
@@ -634,6 +635,20 @@ async function start() {
 
     await initDb(ragService);
     const syncChanged = await syncKnowledgeFromImportFile();
+    const legacyStationCleanup = await purgeLegacyStationKnowledge(pool);
+    if (
+      legacyStationCleanup.deletedSections > 0
+      || legacyStationCleanup.refreshedSectionIds.length > 0
+    ) {
+      console.log(
+        `Legacy station knowledge removed: sections=${legacyStationCleanup.deletedSections}`
+        + ` chunks=${legacyStationCleanup.deletedChunks}`
+        + ` refreshed=${legacyStationCleanup.refreshedSectionIds.length}`
+      );
+    }
+    for (const sectionId of legacyStationCleanup.refreshedSectionIds) {
+      await ragService.rebuildKnowledgeChunksForSection(sectionId);
+    }
     await ensureKnowledgeChunksReady(syncChanged);
     await runRetentionCleanup();
     scheduleRetentionCleanup();

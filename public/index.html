@@ -30,11 +30,11 @@
     <main class="main">
       <section class="quick-area" aria-label="常見問題快捷列">
         <div class="quick-inner" id="quickBar">
-          <button class="quick-chip" type="button" data-question="每種回收物可以得幾點？">回收點數</button>
-          <button class="quick-chip" type="button" data-question="點數有效期限是多久？">點數期限</button>
-          <button class="quick-chip" type="button" data-question="ECOCO 有哪些合作商家？">合作商家</button>
-          <button class="quick-chip" type="button" data-question="瓶子可以壓扁再投嗎？">投瓶規則</button>
-          <button class="quick-chip" type="button" data-question="怎麼查詢附近的 ECOCO 站點？">找站點</button>
+          <button class="quick-chip" type="button" data-menu-target="equipment">設備操作</button>
+          <button class="quick-chip" type="button" data-question="我有點數或 App 使用問題">點數與 App</button>
+          <button class="quick-chip" type="button" data-question="我想查詢 ECOCO 可回收的物品分類">回收物品分類</button>
+          <button class="quick-chip" type="button" data-question="ECOCO 設備發生異物掉落或緊急事件，該怎麼處理？">異常與緊急事件</button>
+          <button class="quick-chip" type="button" data-question="請幫我查詢附近的 ECOCO 站點">站點查詢</button>
           <button class="quick-chip" type="button" data-question="如何聯絡 ECOCO 客服？">聯絡客服</button>
         </div>
       </section>
@@ -46,7 +46,7 @@
               <img class="hero-mark" src="ecoco-mark.png" alt="" />
             </div>
             <h1>讓回收變成一件有趣的事</h1>
-            <p>我可以協助查詢回收規則、點數效期、優惠券兌換、站點與 App 使用問題。</p>
+            <p>我可以協助查詢 ECOCO 智慧收瓶機、ECOCO 智慧電池機、點數、站點與 App 使用問題。</p>
             <div class="hero-tags" aria-label="客服主題">
               <span class="hero-tag">回收規則</span>
               <span class="hero-tag">點數兌換</span>
@@ -58,7 +58,7 @@
             <div class="tip-title">詢問時可以附上這些資訊</div>
             <ul class="tip-list">
               <li>點數或優惠券問題：註冊手機、發生時間、截圖。</li>
-              <li>機台或站點問題：站點名稱、時間、現場狀況。</li>
+              <li>設備或站點問題：站點名稱、時間、現場狀況。</li>
               <li>帳號或個案問題：請依客服表單流程，由人工協助確認。</li>
             </ul>
           </section>
@@ -81,10 +81,18 @@
               <div class="avatar bot"><img src="ecoco-mark.png" alt="ECOCO" /></div>
               <div class="message-stack">
                 <div class="bubble bot">
-                  Hi 可可粉，歡迎加入 ECOCO 循環經濟。<br><br>
-                  我們透過 ECOCO 智慧回收機，讓資源回收變得更有趣。<br><br>
-                  只要將寶特瓶或鋁罐投入，就能累積點數折抵消費。<br><br>
-                  為了能更精準推薦您使用，請問您手邊有想回收的資源嗎？例如寶特瓶或鋁罐，或者您已經下載好 APP 了嗎？
+                  您好，我是 ECOCO 智慧小助手。<br>
+                  請選擇想詢問的問題類別，或直接輸入您的問題。
+                </div>
+                <div class="guided-menu" aria-label="問題類別">
+                  <div class="guided-menu-title">問題類別</div>
+                  <div class="guided-menu-grid">
+                    <button type="button" class="guided-menu-btn" data-menu-target="equipment">設備操作問題</button>
+                    <button type="button" class="guided-menu-btn" data-question="我有點數或 App 使用問題">點數與 App 問題</button>
+                    <button type="button" class="guided-menu-btn" data-question="我想查詢 ECOCO 可回收的物品分類">回收物品分類</button>
+                    <button type="button" class="guided-menu-btn" data-question="ECOCO 設備發生異物掉落或緊急事件，該怎麼處理？">異常與緊急事件</button>
+                    <button type="button" class="guided-menu-btn" data-question="請幫我查詢附近的 ECOCO 站點">站點查詢</button>
+                  </div>
                 </div>
                 <div class="bubble-time" id="initTime"></div>
               </div>
@@ -98,7 +106,7 @@
               placeholder="請輸入你的問題，例如：點數多久到期？"
               rows="1"
             ></textarea>
-            <button class="send-btn" id="locateBtn" type="button" title="傳送目前位置查詢最近站點">📍 查最近站點</button>
+            <button class="send-btn secondary" id="locateBtn" type="button" title="傳送目前位置查詢最近站點">查最近站點</button>
             <button class="send-btn" id="sendBtn" type="button">送出</button>
           </div>
         </section>

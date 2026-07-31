@@ -37,8 +37,31 @@ test('IoT MySQL config is optional', async () => {
 
   assert.equal(isIotMysqlConfigured({}), false);
   assert.equal(service.isConfigured(), false);
-  assert.equal(result.retrievalMode, 'iot_snapshot_miss');
+  assert.equal(result.retrievalMode, 'iot_unavailable');
   assert.equal(result.context, '');
+});
+
+test('committed station snapshots are not used unless explicitly enabled', async () => {
+  const tempPath = path.join(__dirname, `.tmp-disabled-iot-snapshot-${Date.now()}.json`);
+  fs.writeFileSync(tempPath, JSON.stringify({
+    generatedAt: new Date().toISOString(),
+    stations: [{ stationCode: 'stale-1', stationName: '已撤除的舊站點' }],
+  }), 'utf8');
+
+  try {
+    const service = createIotStatusService({
+      env: { ECOCO_IOT_STATION_SNAPSHOT_PATH: tempPath },
+    });
+    const result = await service.retrieveLiveStationContext('已撤除的舊站點現在正常嗎', {
+      classification: { category: 'station_machine' },
+    });
+
+    assert.equal(result.retrievalMode, 'iot_unavailable');
+    assert.equal(result.rows.length, 0);
+    assert.equal(result.context, '');
+  } finally {
+    fs.unlinkSync(tempPath);
+  }
 });
 
 test('station questions extract useful MySQL search terms', () => {
@@ -547,7 +570,7 @@ test('IoT MySQL connection diagnostics return sanitized errors', async () => {
   });
 });
 
-test('IoT snapshot is used when live MySQL is unreachable', async () => {
+test('IoT snapshot fallback requires an explicit opt-in when live MySQL is unreachable', async () => {
   const tempPath = path.join(__dirname, `.tmp-iot-snapshot-${Date.now()}.json`);
   fs.writeFileSync(tempPath, JSON.stringify({
     generatedAt: '2026-07-24T00:00:00.000Z',
@@ -582,6 +605,7 @@ test('IoT snapshot is used when live MySQL is unreachable', async () => {
       ECOCO_IOT_MYSQL_PASSWORD: 'secret',
       ECOCO_IOT_MYSQL_DATABASE: 'ecoco',
       ECOCO_IOT_STATION_SNAPSHOT_PATH: tempPath,
+      ECOCO_IOT_ALLOW_SNAPSHOT_FALLBACK: 'true',
     },
     mysqlFactory: { createPool: () => fakePool },
   });

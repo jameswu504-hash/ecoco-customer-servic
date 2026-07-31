@@ -49,6 +49,7 @@ function getIotMysqlConfig(env = process.env) {
     connectionLimit: Number(env.ECOCO_IOT_MYSQL_CONNECTION_LIMIT || 4),
     connectTimeoutMs: Number(env.ECOCO_IOT_MYSQL_CONNECT_TIMEOUT_MS || DEFAULT_CONNECT_TIMEOUT_MS),
     snapshotPath: env.ECOCO_IOT_STATION_SNAPSHOT_PATH || DEFAULT_SNAPSHOT_PATH,
+    allowSnapshotFallback: getBooleanEnv(env.ECOCO_IOT_ALLOW_SNAPSHOT_FALLBACK, false),
   };
 }
 
@@ -650,10 +651,19 @@ function createIotStatusService({
 
     const currentPool = getPool();
     if (!currentPool) {
-      return withQueryIntent(retrieveSnapshotStationContext(terms, {
-        limit,
+      if (config.allowSnapshotFallback) {
+        return withQueryIntent(retrieveSnapshotStationContext(terms, {
+          limit,
+          fallbackReason: 'mysql_iot_disabled',
+        }));
+      }
+      return withQueryIntent({
+        retrievalMode: 'iot_unavailable',
+        terms,
+        rows: [],
+        context: '',
         fallbackReason: 'mysql_iot_disabled',
-      }));
+      });
     }
 
     const cappedLimit = Math.min(Math.max(Number(limit) || DEFAULT_LIMIT, 1), MAX_LIMIT);
@@ -725,11 +735,13 @@ function createIotStatusService({
         ]
       );
     } catch (err) {
-      const fallback = retrieveSnapshotStationContext(terms, {
-        limit,
-        fallbackReason: err?.code || err?.message || 'mysql_iot_error',
-      });
-      if (fallback.context) return withQueryIntent(fallback);
+      if (config.allowSnapshotFallback) {
+        const fallback = retrieveSnapshotStationContext(terms, {
+          limit,
+          fallbackReason: err?.code || err?.message || 'mysql_iot_error',
+        });
+        if (fallback.context) return withQueryIntent(fallback);
+      }
       throw err;
     }
 

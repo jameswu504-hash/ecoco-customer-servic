@@ -18,6 +18,7 @@ const lineShared = require('../services/line-shared.service');
 const {
   LINE_FALLBACK_REPLY,
   LINE_MAX_INPUT_CHARS,
+  buildB2CQuickReplyItems,
   buildLineRateLimitKey,
   buildLineSessionId,
   claimLineWebhookEvent,
@@ -162,6 +163,7 @@ function createLineRouter({
           event,
           text: stripKnowledgeGapMarker(outcome.reply),
           channelAccessToken: config.channelAccessToken,
+          quickReplyItems: isPartnerGroup ? [] : buildB2CQuickReplyItems(),
         });
         if (delivery.deliveryMode === 'push') {
           console.warn('LINE reply token expired; delivered response with Push API.');

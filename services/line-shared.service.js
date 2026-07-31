@@ -173,6 +173,31 @@ function toLineText(text) {
   return `${cleaned.slice(0, LINE_TEXT_LIMIT)}\n\n（回覆較長，已截斷）`;
 }
 
+function buildB2CQuickReplyItems() {
+  return [
+    ['智慧收瓶機', '我想詢問 ECOCO 智慧收瓶機的操作方式'],
+    ['智慧電池機', '我想詢問 ECOCO 智慧電池機的操作方式'],
+    ['點數與 App', '我有點數或 App 使用問題'],
+    ['回收物品分類', '我想查詢 ECOCO 可回收的物品分類'],
+    ['站點查詢', '請幫我查詢附近的 ECOCO 站點'],
+  ].map(([label, text]) => ({
+    type: 'action',
+    action: {
+      type: 'message',
+      label,
+      text,
+    },
+  }));
+}
+
+function buildLineTextMessage(text, quickReplyItems = []) {
+  const message = { type: 'text', text: toLineText(text) };
+  if (Array.isArray(quickReplyItems) && quickReplyItems.length > 0) {
+    message.quickReply = { items: quickReplyItems.slice(0, 13) };
+  }
+  return message;
+}
+
 function parseLineLocationMessage(message = {}) {
   const coords = normalizeCoords({
     lat: message.latitude,
@@ -195,7 +220,7 @@ function parseLineLocationMessage(message = {}) {
   };
 }
 
-async function replyToLine({ replyToken, text, channelAccessToken }) {
+async function replyToLine({ replyToken, text, channelAccessToken, quickReplyItems = [] }) {
   const response = await fetch(LINE_REPLY_ENDPOINT, {
     method: 'POST',
     headers: {
@@ -204,7 +229,7 @@ async function replyToLine({ replyToken, text, channelAccessToken }) {
     },
     body: JSON.stringify({
       replyToken,
-      messages: [{ type: 'text', text: toLineText(text) }],
+      messages: [buildLineTextMessage(text, quickReplyItems)],
     }),
   });
 
@@ -217,7 +242,7 @@ async function replyToLine({ replyToken, text, channelAccessToken }) {
   }
 }
 
-async function pushToLine({ to, text, channelAccessToken }) {
+async function pushToLine({ to, text, channelAccessToken, quickReplyItems = [] }) {
   const response = await fetch(LINE_PUSH_ENDPOINT, {
     method: 'POST',
     headers: {
@@ -226,7 +251,7 @@ async function pushToLine({ to, text, channelAccessToken }) {
     },
     body: JSON.stringify({
       to,
-      messages: [{ type: 'text', text: toLineText(text) }],
+      messages: [buildLineTextMessage(text, quickReplyItems)],
     }),
   });
 
@@ -253,6 +278,7 @@ async function deliverLineMessage({
   event,
   text,
   channelAccessToken,
+  quickReplyItems = [],
 }, {
   replyFn = replyToLine,
   pushFn = pushToLine,
@@ -262,12 +288,13 @@ async function deliverLineMessage({
       replyToken: event?.replyToken,
       text,
       channelAccessToken,
+      quickReplyItems,
     });
     return { deliveryMode: 'reply' };
   } catch (replyError) {
     const to = getLineMessageDestination(event);
     if (!to || !isInvalidLineReplyTokenError(replyError)) throw replyError;
-    await pushFn({ to, text, channelAccessToken });
+    await pushFn({ to, text, channelAccessToken, quickReplyItems });
     return { deliveryMode: 'push', replyError };
   }
 }
@@ -464,8 +491,10 @@ module.exports = {
   LINE_TEXT_LIMIT,
   LINE_TIMEOUT_REPLY,
   LINE_WEBHOOK_SETTINGS_ENDPOINT,
+  buildB2CQuickReplyItems,
   buildLineRateLimitKey,
   buildLineSessionId,
+  buildLineTextMessage,
   claimLineWebhookEvent,
   cleanupLineRateBuckets,
   completeLineWebhookEvent,
