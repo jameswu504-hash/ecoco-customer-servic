@@ -106,6 +106,11 @@
         button.dataset.questionBound = "true";
         button.addEventListener("click", () => quickAsk(button.dataset.question || button.textContent.trim()));
       });
+      root.querySelectorAll("[data-locate-request]").forEach(button => {
+        if (button.dataset.locateBound === "true") return;
+        button.dataset.locateBound = "true";
+        button.addEventListener("click", () => requestNearestStations(button));
+      });
     }
 
     function appendMessage(role, text, options = {}) {
@@ -297,6 +302,41 @@
       input.focus();
     }
 
+    function requestNearestStations(triggerButton) {
+      if (!navigator.geolocation) {
+        appendMessage("bot", "你的瀏覽器不支援定位功能，可以改用文字告訴我縣市、路名或地標。");
+        return;
+      }
+
+      const originalText = triggerButton?.textContent || "站點查詢";
+      if (triggerButton) {
+        triggerButton.disabled = true;
+        triggerButton.textContent = "定位中…";
+      }
+
+      const restoreButton = () => {
+        if (!triggerButton) return;
+        triggerButton.disabled = false;
+        triggerButton.textContent = originalText;
+      };
+
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          restoreButton();
+          sendMessage({
+            overrideText: "查詢我附近的 ECOCO 站點",
+            coords: { lat: pos.coords.latitude, lng: pos.coords.longitude }
+          });
+        },
+        () => {
+          restoreButton();
+          appendMessage("bot", "沒有取得定位權限，可以改用文字告訴我縣市、路名或地標，我再幫你查。");
+          document.getElementById("inputBox")?.focus();
+        },
+        { timeout: 8000, maximumAge: 5 * 60 * 1000 }
+      );
+    }
+
     function bindUiEvents() {
       bindGuidedMenuButtons();
 
@@ -305,31 +345,6 @@
       input?.addEventListener("input", event => autoResize(event.currentTarget));
       document.getElementById("sendBtn")?.addEventListener("click", () => sendMessage());
 
-      document.getElementById("locateBtn")?.addEventListener("click", () => {
-        const btn = document.getElementById("locateBtn");
-        if (!navigator.geolocation) {
-          appendMessage("bot", "你的瀏覽器不支援定位功能，可以改用文字告訴我縣市或地標。");
-          return;
-        }
-        btn.disabled = true;
-        btn.textContent = "定位中…";
-        navigator.geolocation.getCurrentPosition(
-          pos => {
-            btn.disabled = false;
-            btn.textContent = "查最近站點";
-            sendMessage({
-              overrideText: "查詢我附近的 ECOCO 站點",
-              coords: { lat: pos.coords.latitude, lng: pos.coords.longitude }
-            });
-          },
-          () => {
-            btn.disabled = false;
-            btn.textContent = "查最近站點";
-            appendMessage("bot", "沒有取得定位權限，可以改用文字告訴我縣市、路名或地標，我再幫你查。");
-          },
-          { timeout: 8000, maximumAge: 5 * 60 * 1000 }
-        );
-      });
     }
 
     bindUiEvents();

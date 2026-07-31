@@ -174,12 +174,11 @@ function toLineText(text) {
 }
 
 function buildB2CQuickReplyItems() {
-  return [
+  const messageItems = [
     ['智慧收瓶機', '我想詢問 ECOCO 智慧收瓶機的操作方式'],
     ['智慧電池機', '我想詢問 ECOCO 智慧電池機的操作方式'],
     ['點數與 App', '我有點數或 App 使用問題'],
     ['回收物品分類', 'ECOCO 可以回收哪些物品？'],
-    ['站點查詢', '請幫我查詢附近的 ECOCO 站點'],
   ].map(([label, text]) => ({
     type: 'action',
     action: {
@@ -188,6 +187,17 @@ function buildB2CQuickReplyItems() {
       text,
     },
   }));
+
+  return [
+    ...messageItems,
+    {
+      type: 'action',
+      action: {
+        type: 'location',
+        label: '站點查詢',
+      },
+    },
+  ];
 }
 
 function buildLineTextMessage(text, quickReplyItems = []) {
