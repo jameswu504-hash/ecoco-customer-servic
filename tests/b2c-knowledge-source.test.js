@@ -123,6 +123,7 @@ test('web guided menu uses official equipment names and required categories', ()
   assert.match(html, /設備操作問題/);
   assert.match(html, /點數與 App 問題/);
   assert.match(html, /回收物品分類/);
+  assert.match(html, /ECOCO 可以回收哪些物品？/);
   assert.match(html, /異常與緊急事件/);
   assert.match(script, /ECOCO 智慧收瓶機/);
   assert.match(script, /ECOCO 智慧電池機/);
@@ -139,4 +140,5 @@ test('LINE B2C replies include a selectable quick-reply menu', () => {
     message.quickReply.items.map(item => item.action.label),
     ['智慧收瓶機', '智慧電池機', '點數與 App', '回收物品分類', '站點查詢']
   );
+  assert.equal(message.quickReply.items[3].action.text, 'ECOCO 可以回收哪些物品？');
 });

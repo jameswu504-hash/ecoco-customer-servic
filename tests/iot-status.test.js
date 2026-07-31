@@ -177,6 +177,18 @@ test('general recycling rule questions do not trigger live station lookup', () =
   assert.equal(shouldUseLiveStationContext(question, classification), false);
 });
 
+test('recyclable item menu questions do not trigger live station lookup', () => {
+  for (const question of [
+    '我想查詢 ECOCO 可回收的物品分類',
+    'ECOCO 可以回收哪些物品？',
+  ]) {
+    const classification = classifyQuestion(question);
+
+    assert.notEqual(classification.category, 'station_machine', question);
+    assert.equal(shouldUseLiveStationContext(question, classification), false, question);
+  }
+});
+
 test('partner policy questions mentioning machines do not trigger live station lookup', () => {
   const question = '\u5168\u5bb6\u6709\u6a5f\u53f0\u9700\u8981\u64a4\u96e2\u55ce\uff1f';
   const classification = classifyQuestion(question);

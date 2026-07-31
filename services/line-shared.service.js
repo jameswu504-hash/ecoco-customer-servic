@@ -178,7 +178,7 @@ function buildB2CQuickReplyItems() {
     ['智慧收瓶機', '我想詢問 ECOCO 智慧收瓶機的操作方式'],
     ['智慧電池機', '我想詢問 ECOCO 智慧電池機的操作方式'],
     ['點數與 App', '我有點數或 App 使用問題'],
-    ['回收物品分類', '我想查詢 ECOCO 可回收的物品分類'],
+    ['回收物品分類', 'ECOCO 可以回收哪些物品？'],
     ['站點查詢', '請幫我查詢附近的 ECOCO 站點'],
   ].map(([label, text]) => ({
     type: 'action',

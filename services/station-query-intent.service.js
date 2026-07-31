@@ -54,7 +54,6 @@ const LOCATION_ASK_WORDS = [
 ];
 
 const STATION_RESOURCE_WORDS = [
-  'ecoco',
   '\u7ad9\u9ede',
   '\u7ad9\u70b9',
   '\u7ad9',
@@ -368,6 +367,7 @@ function isStationDataQuestion(question) {
   if (STATION_CODE_PATTERN.test(text)) return true;
 
   const hasStationResource = hasAny(text, STATION_RESOURCE_WORDS);
+  const hasBrandNearbyIntent = text.includes('ecoco') && hasAny(text, NEARBY_WORDS);
   const hasRecyclePlace = hasAny(text, RECYCLE_PLACE_WORDS);
   const hasLiveStatus = hasAny(text, LIVE_STATUS_WORDS);
   const hasNearby = hasAny(text, NEARBY_WORDS);
@@ -379,6 +379,7 @@ function isStationDataQuestion(question) {
   const hasNamedStore = getStoreNameTerms(text).length > 0;
 
   if (hasStationResource && (hasLiveStatus || hasNearby || asksLocation || asksCount || hasKnownLocation)) return true;
+  if (hasBrandNearbyIntent) return true;
   if (hasLiveStatus && hasLikelyEntity) return true;
   if (hasKnownLocation && hasNamedStore) return true;
   if (hasKnownLocation && (hasNearby || asksLocation) && (hasStationResource || hasRecyclePlace)) return true;
