@@ -768,6 +768,70 @@ test('station status reply is deterministic when live station rows are found', (
   assert.doesNotMatch(reply, /2026-07-24T08:30:17.872Z/);
 });
 
+test('closed station status overrides an online machine in customer replies', () => {
+  const reply = buildLiveStationStatusReply({
+    rows: [{
+      stationCode: 'es-closed',
+      stationName: '\u6e2c\u8a66\u95dc\u9589\u7ad9',
+      address: '\u81fa\u5357\u5e02\u6e2c\u8a66\u8def 1 \u865f',
+      stationStatus: 'closed',
+      machineStatus: 'up',
+      lastConnectionStatus: 'online',
+    }],
+  });
+
+  assert.match(reply, /\u76ee\u524d\u95dc\u9589/);
+  assert.doesNotMatch(reply, /\u6a5f\u53f0\uff1a\u6b63\u5e38/);
+});
+
+test('off-hour station status is shown as outside service hours', () => {
+  const reply = buildLiveStationStatusReply({
+    rows: [{
+      stationCode: 'es-off-hour',
+      stationName: '\u6e2c\u8a66\u975e\u71df\u696d\u6642\u9593\u7ad9',
+      address: '\u81fa\u5357\u5e02\u6e2c\u8a66\u8def 2 \u865f',
+      stationStatus: 'off-hour',
+      machineStatus: 'up',
+      lastConnectionStatus: 'online',
+    }],
+  });
+
+  assert.match(reply, /\u6a5f\u53f0\uff1a\u975e\u71df\u696d\u6642\u9593/);
+  assert.doesNotMatch(reply, /\u6a5f\u53f0\uff1a\u6b63\u5e38/);
+});
+
+test('down station status is shown as unavailable instead of offline', () => {
+  const reply = buildLiveStationStatusReply({
+    rows: [{
+      stationCode: 'es-down',
+      stationName: '\u6e2c\u8a66\u7121\u6cd5\u670d\u52d9\u7ad9',
+      address: '\u81fa\u5357\u5e02\u6e2c\u8a66\u8def 3 \u865f',
+      stationStatus: 'down',
+      machineStatus: 'up',
+      lastConnectionStatus: 'online',
+    }],
+  });
+
+  assert.match(reply, /\u6a5f\u53f0\uff1a\u76ee\u524d\u7121\u6cd5\u670d\u52d9/);
+  assert.doesNotMatch(reply, /\u6a5f\u53f0\uff1a\u96e2\u7dda/);
+});
+
+test('offline station status overrides a machine that still reports up', () => {
+  const reply = buildLiveStationStatusReply({
+    rows: [{
+      stationCode: 'es-offline',
+      stationName: '\u6e2c\u8a66\u96e2\u7dda\u7ad9',
+      address: '\u81fa\u5357\u5e02\u6e2c\u8a66\u8def 4 \u865f',
+      stationStatus: 'offline',
+      machineStatus: 'up',
+      lastConnectionStatus: 'offline',
+    }],
+  });
+
+  assert.match(reply, /\u6a5f\u53f0\uff1a\u96e2\u7dda/);
+  assert.match(reply, /\u9023\u7dda\uff1a\u96e2\u7dda/);
+});
+
 test('deterministic station reply only short-circuits status questions', () => {
   const liveStationContext = {
     rows: [{

@@ -101,9 +101,9 @@ LINE 聊天屬於歷史紀錄，不等同整理完成的 SOP。匯入內容會�
 
 B2B 檢索會移除「目前、有哪些、為什麼、的問題」等問句外殼，再以公司名稱、門市名稱與事件片語搜尋並依較長片語優先排序。詢問「有哪些合作紀錄／這家公司有什麼資料」等總覽問題時，則直接讀取同一 `company_id` 最近的公司資料；此 fallback 不得跨公司，也不會讀取 B2C 全域知識作為公司專屬答案。
 
-公司專屬資料是管理者授權給該公司 B2B 群組使用的內部合作資料。模型可以整理與引用其中的日期、發言者及內容，但必須保留歷史紀錄的時間語意，不得把舊對話改寫成目前承諾。總覽問題不載入一般 B2C RAG，避免公開合作洽談規則蓋過已授權資料或把回答錯誤導向客服表單。
+公司專屬資料是管理者授權給該公司 B2B 群組使用的內部合作資料。模型可以整理與引用其中的日期、發言者及內容，但必須保留歷史紀錄的時間語意，不得把舊對話改寫成目前承諾。總覽問題不載入一般 B2C RAG，避免公開合作洽談規則蓋過已授權資料或把回答錯誤導向客服表單。B2B 回答階段允許把該問題實際檢索到、回答所需的姓名、電話與 Email 隨 RAG 片段傳給 Claude；不得傳送整個公司資料庫或未命中的資料。
 
-管理頁的公司專屬資料預設顯示摘要；具備 `ADMIN_KEY` 權限的使用者可逐筆展開完整內容。展開內容保留原始換行，長紀錄在項目內捲動，不會將專屬資料公開到未授權頁面。
+管理頁的公司專屬資料預設顯示摘要；具備 `ADMIN_KEY` 權限的使用者可逐筆展開完整內容。展開內容保留原始換行，長紀錄在項目內捲動，不會將專屬資料公開到未授權頁面。搜尋、使用狀態與 10／15／20／50／100 筆分頁由 PostgreSQL 執行，瀏覽器只取得目前頁面的資料。
 
 ## LINE 對話自動紀錄
 
@@ -113,9 +113,9 @@ B2B 檢索會移除「目前、有哪些、為什麼、的問題」等問句外�
 
 ## LINE 對話轉待審知識
 
-管理者可在「LINE 待審知識」手動整理今天或最近 7 天的已保存對話。系統依 `company_id + line_group_id + 台灣日期` 建立批次，使用 `ecoco-clean-brand-knowledge` 固定內部規則排除問候、附件占位與系統錯誤，再產生可編輯候選。這個流程不呼叫外部 AI。
+管理者可在「LINE 待審知識」手動整理今天或最近 7 天的已保存對話。系統依 `company_id + line_group_id + 台灣日期` 建立批次，使用 `ecoco-clean-brand-knowledge` 固定內部規則排除問候、附件占位與系統錯誤，再產生可編輯候選。這個流程不呼叫外部 AI。單次最多處理最新 2,000 則訊息；超過時前台會明確提示。
 
-候選只會存於 `partner_knowledge_candidates` 且預設為 `pending_review`。管理者核准後，系統才在同一公司建立 `partner_knowledge_sections` 與 `partner_knowledge_chunks`。每個 Chunk 保存候選、批次、日期、群組與來源訊息 ID，讓回答可以追溯。詳見 `docs/B2B_LINE_KNOWLEDGE_REVIEW.md`。
+候選只會存於 `partner_knowledge_candidates` 且預設為 `pending_review`。Bot 回覆只作為人工審核證據，不會自動列為已確認事實。管理者核准後，系統才在同一公司建立 `partner_knowledge_sections` 與 `partner_knowledge_chunks`。每個 Chunk 保存候選、批次、日期、群組與來源訊息 ID，讓回答可以追溯。詳見 `docs/B2B_LINE_KNOWLEDGE_REVIEW.md`。
 
 ## 管理 API
 
@@ -125,7 +125,8 @@ B2B 檢索會移除「目前、有哪些、為什麼、的問題」等問句外�
 | --- | --- | --- |
 | `GET` | `/api/partners` | 公司清單 |
 | `POST` | `/api/partners` | 建立公司 |
-| `GET` | `/api/partners/:companyId` | 公司、群組與知識 |
+| `GET` | `/api/partners/:companyId` | 公司與群組資料 |
+| `GET` | `/api/partners/:companyId/knowledge?status=active&query=&limit=10&offset=0` | 由 SQL 搜尋並分頁讀取公司知識 |
 | `GET` | `/api/partners/:companyId/conversations?days=30` | 真實 LINE 群組對話，依台灣日期分組 |
 | `PATCH` | `/api/partners/:companyId/conversations/:day/status` | 封存或恢復某日 LINE 紀錄 |
 | `DELETE` | `/api/partners/:companyId/conversations/:day` | 永久刪除已封存的某日 LINE 紀錄 |
@@ -148,7 +149,7 @@ B2B 檢索會移除「目前、有哪些、為什麼、的問題」等問句外�
 - 管理者模擬測試。
 - 跨公司問題的後端拒答。
 - TXT／MD 在瀏覽器本機依 `ecoco-clean-brand-knowledge` Skill 清洗、預覽與分段。
-- 原始檔不傳至伺服器或外部 AI；姓名、電話及 Email 保留於核准後的 B2B 知識。
+- 原始檔清洗時不傳至伺服器或外部 AI；姓名、電話及 Email 保留於核准後的 B2B 知識。回答時只把命中的必要 RAG 片段傳給 Claude。
 - B2B 來源、清洗工作、文件與 RAG Chunk 依 `company_id` 隔離，並具重複匯入防護。
 - B2B 自然語句拆詞、片語加權與公司資料總覽檢索。
 - B2B 公司總覽優先使用已授權專屬資料，不受一般 B2C 合作洽談內容干擾。
@@ -156,6 +157,8 @@ B2B 檢索會移除「目前、有哪些、為什麼、的問題」等問句外�
 - 真實 LINE 群組問答自動寫入後台，並在管理頁依台灣日期檢視。
 - LINE 紀錄與公司知識可封存、恢復及在二次確認後永久刪除。
 - LINE 對話可依公司、群組與台灣日期整理成待審知識；只有人工核准後才進入 B2B RAG。
+- 公司知識清單與搜尋使用 PostgreSQL 後端分頁，不會一次下載全部資料。
+- 測試階段維持共用 `ADMIN_KEY`，暫不建立管理者個人帳號；稽核紀錄目前只標示為 `admin`。
 
 後續有正式合作資料時再做：
 

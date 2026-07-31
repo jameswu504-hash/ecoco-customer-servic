@@ -37,9 +37,19 @@ async function attachLiveStationContext({
 function formatStatus(value) {
   const status = String(value || '').trim().toLowerCase();
   if (!status) return '未知';
+  if (status === 'closed') return '目前關閉';
+  if (status === 'off-hour') return '非營業時間';
+  if (status === 'down') return '目前無法服務';
   if (['up', 'online', 'normal', 'ok'].includes(status)) return '正常';
-  if (['down', 'offline'].includes(status)) return '離線';
+  if (status === 'offline') return '離線';
   return String(value);
+}
+
+function getOperationalStatus(row = {}) {
+  if (['closed', 'off-hour', 'down', 'offline'].includes(String(row.stationStatus || '').trim().toLowerCase())) {
+    return row.stationStatus;
+  }
+  return row.machineStatus || row.stationStatus;
 }
 
 function hasNumber(value) {
@@ -117,7 +127,7 @@ function buildLiveStationStatusReply(liveStationContext = null) {
         `地址：${row.address || '未知'}`
       );
       if (liveStationContext?.isStale !== true) {
-        lines.push(`目前狀態：機台${formatStatus(row.machineStatus || row.stationStatus)}、連線${formatStatus(row.lastConnectionStatus)}`);
+        lines.push(`目前狀態：機台${formatStatus(getOperationalStatus(row))}、連線${formatStatus(row.lastConnectionStatus)}`);
       }
     });
     if (liveStationContext?.isStale === true) {
@@ -186,7 +196,7 @@ function buildLiveStationStatusReply(liveStationContext = null) {
       `地址：${row.address || '未知'}`,
       '',
       '目前狀態',
-      `機台：${formatStatus(row.machineStatus || row.stationStatus)}`,
+      `機台：${formatStatus(getOperationalStatus(row))}`,
       `連線：${formatStatus(row.lastConnectionStatus)}`,
       '',
       '回收槽容量',

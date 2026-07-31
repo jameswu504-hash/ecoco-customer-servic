@@ -20,6 +20,9 @@ const PARTNER_COMPANY_CACHE_TTL_MS = 60 * 1000;
 const PARTNER_CONVERSATION_DEFAULT_DAYS = 30;
 const PARTNER_CONVERSATION_MAX_DAYS = 90;
 const PARTNER_CONVERSATION_MAX_ROWS = 2000;
+const PARTNER_KNOWLEDGE_DEFAULT_PAGE_SIZE = 10;
+const PARTNER_KNOWLEDGE_PAGE_SIZES = new Set([10, 15, 20, 50, 100]);
+const PARTNER_KNOWLEDGE_MAX_OFFSET = 1_000_000;
 const PARTNER_UNBOUND_REPLY = '此 LINE 群組尚未綁定 ECOCO 合作夥伴。請由 ECOCO 管理者建立公司並產生一次性綁定碼。';
 const PARTNER_NO_DATA_REPLY = '目前沒有可供此群組回答的公司專屬資料，請聯絡 ECOCO 窗口協助確認。';
 const PARTNER_SCOPE_DENIED_REPLY = PARTNER_NO_DATA_REPLY;
@@ -411,29 +414,58 @@ function createPartnerService({
   }
 
   async function generateBindingCode(companyId) {
-    const company = await getCompany(companyId);
-    if (!company) return null;
-    if (company.status !== 'active') throw new Error('Inactive companies cannot create binding codes.');
+    const safeCompanyId = Number(companyId);
+    if (!Number.isInteger(safeCompanyId) || safeCompanyId < 1) return null;
+    const db = await pool.connect();
+    try {
+      await db.query('BEGIN');
+      await db.query(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [`partner_binding_code:${safeCompanyId}`]
+      );
+      const { rows: companyRows } = await db.query(
+        `SELECT id, slug, name, status, created_at, updated_at
+         FROM partner_companies
+         WHERE id = $1
+         FOR UPDATE`,
+        [safeCompanyId]
+      );
+      const company = companyRows[0];
+      if (!company) {
+        await db.query('ROLLBACK');
+        return null;
+      }
+      if (company.status !== 'active') {
+        throw new Error('Inactive companies cannot create binding codes.');
+      }
 
-    const code = generatePartnerBindingCode();
-    const expiresAt = new Date(Date.now() + PARTNER_BINDING_CODE_TTL_HOURS * 60 * 60 * 1000);
-    await pool.query(
-      `UPDATE partner_binding_codes
-       SET used_at = NOW()
-       WHERE company_id = $1 AND used_at IS NULL`,
-      [company.id]
-    );
-    await pool.query(
-      `INSERT INTO partner_binding_codes
-        (company_id, code_hash, code_hint, expires_at, created_at)
-       VALUES ($1, $2, $3, $4, NOW())`,
-      [company.id, hashPartnerValue(code), code.slice(-4), expiresAt.toISOString()]
-    );
-    return {
-      code,
-      expiresAt: expiresAt.toISOString(),
-      company,
-    };
+      const code = generatePartnerBindingCode();
+      const expiresAt =
+        new Date(Date.now() + PARTNER_BINDING_CODE_TTL_HOURS * 60 * 60 * 1000);
+      await db.query(
+        `UPDATE partner_binding_codes
+         SET used_at = NOW()
+         WHERE company_id = $1 AND used_at IS NULL`,
+        [company.id]
+      );
+      await db.query(
+        `INSERT INTO partner_binding_codes
+          (company_id, code_hash, code_hint, expires_at, created_at)
+         VALUES ($1, $2, $3, $4, NOW())`,
+        [company.id, hashPartnerValue(code), code.slice(-4), expiresAt.toISOString()]
+      );
+      await db.query('COMMIT');
+      return {
+        code,
+        expiresAt: expiresAt.toISOString(),
+        company,
+      };
+    } catch (err) {
+      await db.query('ROLLBACK');
+      throw err;
+    } finally {
+      db.release();
+    }
   }
 
   async function bindLineGroup({ groupId, code }) {
@@ -577,22 +609,68 @@ function createPartnerService({
     return rows;
   }
 
-  async function listKnowledge(companyId, status = 'active') {
-    const normalizedStatus = String(status || '').toLowerCase();
+  async function listKnowledge(companyId, options = {}) {
+    const normalizedOptions = typeof options === 'string'
+      ? { status: options }
+      : (options || {});
+    const normalizedStatus = String(normalizedOptions.status || 'active').toLowerCase();
     const statusClause = normalizedStatus === 'all'
       ? ''
       : normalizePartnerDataStatus(normalizedStatus) === 'archived'
         ? 'AND archived_at IS NOT NULL'
         : 'AND archived_at IS NULL';
-    const { rows } = await pool.query(
+    const requestedLimit = Number(normalizedOptions.limit);
+    const limit = PARTNER_KNOWLEDGE_PAGE_SIZES.has(requestedLimit)
+      ? requestedLimit
+      : PARTNER_KNOWLEDGE_DEFAULT_PAGE_SIZE;
+    const requestedOffset = Number(normalizedOptions.offset);
+    const offset = Number.isFinite(requestedOffset)
+      ? Math.min(Math.max(Math.floor(requestedOffset), 0), PARTNER_KNOWLEDGE_MAX_OFFSET)
+      : 0;
+    const query = String(normalizedOptions.query || '')
+      .normalize('NFKC')
+      .trim()
+      .slice(0, 200);
+    const searchPattern = query ? `%${escapeIlikePattern(query)}%` : '';
+    const searchClause =
+      `AND ($2 = '' OR category ILIKE $2 ESCAPE '\\' OR content ILIKE $2 ESCAPE '\\')`;
+    const { rows: countRows } = await pool.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE archived_at IS NULL)::int AS active_count,
+         COUNT(*) FILTER (WHERE archived_at IS NOT NULL)::int AS archived_count
+       FROM partner_knowledge_sections
+       WHERE company_id = $1
+         ${searchClause}`,
+      [Number(companyId), searchPattern]
+    );
+    const activeCount = Number(countRows[0]?.active_count || 0);
+    const archivedCount = Number(countRows[0]?.archived_count || 0);
+    const total = normalizedStatus === 'all'
+      ? activeCount + archivedCount
+      : normalizePartnerDataStatus(normalizedStatus) === 'archived'
+        ? archivedCount
+        : activeCount;
+    const safeOffset = total > 0
+      ? Math.min(offset, Math.floor((total - 1) / limit) * limit)
+      : 0;
+    const { rows: items } = await pool.query(
       `SELECT id, company_id, category, content, sort_order, archived_at, created_at, updated_at
        FROM partner_knowledge_sections
        WHERE company_id = $1
+         ${searchClause}
          ${statusClause}
-       ORDER BY sort_order ASC, id ASC`,
-      [Number(companyId)]
+       ORDER BY sort_order ASC, id ASC
+       LIMIT $3 OFFSET $4`,
+      [Number(companyId), searchPattern, limit, safeOffset]
     );
-    return rows;
+    return {
+      items,
+      total,
+      activeCount,
+      archivedCount,
+      limit,
+      offset: safeOffset,
+    };
   }
 
   async function listLineConversationDays(
@@ -841,24 +919,60 @@ function createPartnerService({
       throw error;
     }
     const normalizedStatus = normalizePartnerDataStatus(status);
-    const { rows } = await pool.query(
-      `UPDATE partner_conversations
-       SET archived_at = CASE WHEN $3 = 'archived' THEN COALESCE(archived_at, NOW()) ELSE NULL END
-       WHERE company_id = $1
-         AND line_group_id IS NOT NULL
-         AND TO_CHAR(timestamp AT TIME ZONE 'Asia/Taipei', 'YYYY-MM-DD') = $2
-         AND (
-           ($3 = 'archived' AND archived_at IS NULL)
-           OR ($3 = 'active' AND archived_at IS NOT NULL)
-         )
-       RETURNING id`,
-      [Number(companyId), normalizedDay, normalizedStatus]
-    );
-    return {
-      day: normalizedDay,
-      status: normalizedStatus,
-      updatedMessages: rows.length,
-    };
+    const safeCompanyId = Number(companyId);
+    const db = await pool.connect();
+    try {
+      await db.query('BEGIN');
+      await db.query(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [`partner_conversation_day:${safeCompanyId}:${normalizedDay}`]
+      );
+      const { rows: messageRows } = await db.query(
+        `UPDATE partner_conversations
+         SET archived_at = CASE
+           WHEN $3 = 'archived' THEN COALESCE(archived_at, NOW())
+           ELSE NULL
+         END
+         WHERE company_id = $1
+           AND line_group_id IS NOT NULL
+           AND TO_CHAR(timestamp AT TIME ZONE 'Asia/Taipei', 'YYYY-MM-DD') = $2
+           AND (
+             ($3 = 'archived' AND archived_at IS NULL)
+             OR ($3 = 'active' AND archived_at IS NOT NULL)
+           )
+         RETURNING id`,
+        [safeCompanyId, normalizedDay, normalizedStatus]
+      );
+      let archivedCandidateCount = 0;
+      if (normalizedStatus === 'archived' && messageRows.length > 0) {
+        const { rows: candidateRows } = await db.query(
+          `UPDATE partner_knowledge_candidates pkc
+           SET status = 'archived',
+               updated_at = NOW()
+           FROM partner_conversation_batches pcb
+           WHERE pkc.batch_id = pcb.id
+             AND pkc.company_id = pcb.company_id
+             AND pkc.company_id = $1
+             AND pcb.conversation_day = $2
+             AND pkc.status IN ('pending_review', 'rejected')
+           RETURNING pkc.id`,
+          [safeCompanyId, normalizedDay]
+        );
+        archivedCandidateCount = candidateRows.length;
+      }
+      await db.query('COMMIT');
+      return {
+        day: normalizedDay,
+        status: normalizedStatus,
+        updatedMessages: messageRows.length,
+        archivedCandidateCount,
+      };
+    } catch (err) {
+      await db.query('ROLLBACK');
+      throw err;
+    } finally {
+      db.release();
+    }
   }
 
   async function deleteArchivedConversationDay(companyId, day, confirmDay) {
@@ -873,19 +987,50 @@ function createPartnerService({
       error.code = 'PARTNER_CONFIRMATION_MISMATCH';
       throw error;
     }
-    const { rows } = await pool.query(
-      `DELETE FROM partner_conversations
-       WHERE company_id = $1
-         AND line_group_id IS NOT NULL
-         AND archived_at IS NOT NULL
-         AND TO_CHAR(timestamp AT TIME ZONE 'Asia/Taipei', 'YYYY-MM-DD') = $2
-       RETURNING id`,
-      [Number(companyId), normalizedDay]
-    );
-    return {
-      day: normalizedDay,
-      deletedMessages: rows.length,
-    };
+    const safeCompanyId = Number(companyId);
+    const db = await pool.connect();
+    try {
+      await db.query('BEGIN');
+      await db.query(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [`partner_conversation_day:${safeCompanyId}:${normalizedDay}`]
+      );
+      const { rows: messageRows } = await db.query(
+        `DELETE FROM partner_conversations
+         WHERE company_id = $1
+           AND line_group_id IS NOT NULL
+           AND archived_at IS NOT NULL
+           AND TO_CHAR(timestamp AT TIME ZONE 'Asia/Taipei', 'YYYY-MM-DD') = $2
+         RETURNING id`,
+        [safeCompanyId, normalizedDay]
+      );
+      let deletedCandidateCount = 0;
+      if (messageRows.length > 0) {
+        const { rows: candidateRows } = await db.query(
+          `DELETE FROM partner_knowledge_candidates pkc
+           USING partner_conversation_batches pcb
+           WHERE pkc.batch_id = pcb.id
+             AND pkc.company_id = pcb.company_id
+             AND pkc.company_id = $1
+             AND pcb.conversation_day = $2
+             AND pkc.status <> 'approved'
+           RETURNING pkc.id`,
+          [safeCompanyId, normalizedDay]
+        );
+        deletedCandidateCount = candidateRows.length;
+      }
+      await db.query('COMMIT');
+      return {
+        day: normalizedDay,
+        deletedMessages: messageRows.length,
+        deletedCandidateCount,
+      };
+    } catch (err) {
+      await db.query('ROLLBACK');
+      throw err;
+    } finally {
+      db.release();
+    }
   }
 
   async function clearCompanyKnowledge(companyId, confirmSlug) {

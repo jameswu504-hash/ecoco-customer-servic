@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 
 const SKILL_NAME = 'ecoco-clean-brand-knowledge';
-const SKILL_VERSION = '1.1.0';
+const SKILL_VERSION = '1.2.0';
 const MAX_GENERATION_DAYS = 7;
 const MAX_SOURCE_MESSAGES = 2_000;
 const MAX_CANDIDATE_CONTENT = 12_000;
@@ -118,7 +118,8 @@ function buildCandidate({
     .map(message => message.content)
     .filter(text => /請|需要|協助|確認|追蹤|派工|清運|處理/.test(text))
     .slice(0, 20);
-  const pendingItems = answer ? [] : [question];
+  // LINE replies are evidence for human review, not verified facts by themselves.
+  const pendingItems = [question];
   const contentHash = sha256(JSON.stringify({
     companyId,
     lineGroupId,
@@ -134,7 +135,7 @@ function buildCandidate({
     summary: answer
       ? `${question.slice(0, 180)} → ${answer.slice(0, 260)}`
       : `${question.slice(0, 360)}（尚待回覆）`,
-    facts: answer ? [answer] : [],
+    facts: [],
     pendingItems,
     todos,
     sourceMessageIds,
@@ -249,27 +250,34 @@ function createPartnerConversationKnowledgeService({ pool }) {
     if (!safeCompanyId) throw new Error('A valid partner company is required.');
     const safeDays = normalizeDays(days);
     const { rows } = await pool.query(
-      `SELECT
-         pc.id,
-         pc.line_group_id,
-         pc.role,
-         pc.content,
-         pc.timestamp,
-         TO_CHAR(pc.timestamp AT TIME ZONE 'Asia/Taipei', 'YYYY-MM-DD') AS conversation_day,
-         COALESCE(NULLIF(plg.label, ''), 'LINE 群組 • ' || plg.group_id_last4) AS group_label
-       FROM partner_conversations pc
-       JOIN partner_line_groups plg
-         ON plg.id = pc.line_group_id
-        AND plg.company_id = pc.company_id
-       WHERE pc.company_id = $1
-         AND pc.line_group_id IS NOT NULL
-         AND pc.archived_at IS NULL
-         AND (pc.timestamp AT TIME ZONE 'Asia/Taipei')::date
-             >= (NOW() AT TIME ZONE 'Asia/Taipei')::date - ($2::integer - 1)
-       ORDER BY pc.line_group_id ASC, conversation_day ASC, pc.timestamp ASC, pc.id ASC
-       LIMIT $3`,
+      `SELECT recent.*
+       FROM (
+         SELECT
+           pc.id,
+           pc.line_group_id,
+           pc.role,
+           pc.content,
+           pc.timestamp,
+           TO_CHAR(pc.timestamp AT TIME ZONE 'Asia/Taipei', 'YYYY-MM-DD') AS conversation_day,
+           COALESCE(NULLIF(plg.label, ''), 'LINE 群組 • ' || plg.group_id_last4) AS group_label,
+           COUNT(*) OVER() AS total_source_count
+         FROM partner_conversations pc
+         JOIN partner_line_groups plg
+           ON plg.id = pc.line_group_id
+          AND plg.company_id = pc.company_id
+         WHERE pc.company_id = $1
+           AND pc.line_group_id IS NOT NULL
+           AND pc.archived_at IS NULL
+           AND (pc.timestamp AT TIME ZONE 'Asia/Taipei')::date
+               >= (NOW() AT TIME ZONE 'Asia/Taipei')::date - ($2::integer - 1)
+         ORDER BY pc.timestamp DESC, pc.id DESC
+         LIMIT $3
+       ) recent
+       ORDER BY recent.line_group_id ASC, recent.conversation_day ASC,
+                recent.timestamp ASC, recent.id ASC`,
       [safeCompanyId, safeDays, MAX_SOURCE_MESSAGES]
     );
+    const truncated = Number(rows[0]?.total_source_count || 0) > MAX_SOURCE_MESSAGES;
 
     const groups = new Map();
     for (const row of rows) {
@@ -398,7 +406,7 @@ function createPartnerConversationKnowledgeService({ pool }) {
         duplicateCandidateCount,
         skippedNoiseCount,
         skippedAssistantErrorCount,
-        truncated: rows.length >= MAX_SOURCE_MESSAGES,
+        truncated,
         skill: {
           name: SKILL_NAME,
           version: SKILL_VERSION,
@@ -576,41 +584,7 @@ function createPartnerConversationKnowledgeService({ pool }) {
     }
   }
 
-  async function archiveCandidatesForDay(companyId, day) {
-    const { rows } = await pool.query(
-      `UPDATE partner_knowledge_candidates pkc
-       SET status = 'archived',
-           updated_at = NOW()
-       FROM partner_conversation_batches pcb
-       WHERE pkc.batch_id = pcb.id
-         AND pkc.company_id = pcb.company_id
-         AND pkc.company_id = $1
-         AND pcb.conversation_day = $2
-         AND pkc.status IN ('pending_review', 'rejected')
-       RETURNING pkc.id`,
-      [normalizeId(companyId), String(day || '')]
-    );
-    return rows.length;
-  }
-
-  async function deleteUnapprovedCandidatesForDay(companyId, day) {
-    const { rows } = await pool.query(
-      `DELETE FROM partner_knowledge_candidates pkc
-       USING partner_conversation_batches pcb
-       WHERE pkc.batch_id = pcb.id
-         AND pkc.company_id = pcb.company_id
-         AND pkc.company_id = $1
-         AND pcb.conversation_day = $2
-         AND pkc.status <> 'approved'
-       RETURNING pkc.id`,
-      [normalizeId(companyId), String(day || '')]
-    );
-    return rows.length;
-  }
-
   return {
-    archiveCandidatesForDay,
-    deleteUnapprovedCandidatesForDay,
     generateCandidates,
     listCandidates,
     reviewCandidate,

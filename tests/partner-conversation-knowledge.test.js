@@ -29,6 +29,8 @@ test('LINE conversation cleaning creates traceable candidates without external A
   assert.equal(result.candidates.length, 2);
   assert.deepEqual(result.candidates[0].sourceMessageIds, [2, 3]);
   assert.ok(result.candidates[0].riskFlags.includes('operational_status'));
+  assert.deepEqual(result.candidates[0].facts, []);
+  assert.deepEqual(result.candidates[0].pendingItems, ['崇學站現在機台狀態正常嗎？']);
   assert.deepEqual(result.candidates[1].pendingItems, ['請營運安排明天清運並確認。']);
   assert.ok(result.candidates[1].todos.length > 0);
   assert.match(result.candidates[0].contentHash, /^[a-f0-9]{64}$/);
@@ -78,6 +80,7 @@ test('candidate generation reads only active company LINE messages and is idempo
               timestamp: '2026-07-30T01:00:00.000Z',
               conversation_day: '2026-07-30',
               group_label: '全家群組',
+              total_source_count: '2001',
             },
             {
               id: 12,
@@ -87,6 +90,7 @@ test('candidate generation reads only active company LINE messages and is idempo
               timestamp: '2026-07-30T01:01:00.000Z',
               conversation_day: '2026-07-30',
               group_label: '全家群組',
+              total_source_count: '2001',
             },
           ],
         };
@@ -105,10 +109,15 @@ test('candidate generation reads only active company LINE messages and is idempo
   assert.equal(result.skill.name, SKILL_NAME);
   assert.equal(result.skill.version, SKILL_VERSION);
   assert.equal(result.skill.externalAiUsed, false);
+  assert.equal(result.truncated, true);
   assert.match(sourceQueries[0].sql, /pc\.company_id = \$1/);
   assert.match(sourceQueries[0].sql, /pc\.archived_at IS NULL/);
   assert.match(sourceQueries[0].sql, /AT TIME ZONE 'Asia\/Taipei'/);
+  assert.match(sourceQueries[0].sql, /COUNT\(\*\) OVER\(\) AS total_source_count/);
+  assert.match(sourceQueries[0].sql, /ORDER BY pc\.timestamp DESC, pc\.id DESC/);
+  assert.match(sourceQueries[0].sql, /ORDER BY recent\.line_group_id ASC[\s\S]*recent\.timestamp ASC/);
   assert.deepEqual(sourceQueries[0].params.slice(0, 2), [7, 1]);
+  assert.equal(sourceQueries[0].params[2], 2_000);
   const batchInsert = transactionQueries.find(({ sql }) => (
     /INSERT INTO partner_conversation_batches/.test(sql)
   ));
@@ -208,9 +217,11 @@ test('partner admin exposes manual one-day and seven-day candidate review workfl
   assert.match(js, /knowledge-candidates\/generate/);
   assert.match(js, /核准並匯入 RAG/);
   assert.match(js, /candidateStatus/);
+  assert.match(js, /紀錄超過 2,000 則，僅處理最新 2,000 則/);
   assert.match(routes, /knowledge-candidates\/:candidateId/);
   assert.match(skill, /name: ecoco-clean-brand-knowledge/);
-  assert.match(skill, /版本：1\.1\.0/);
+  assert.match(skill, /版本：1\.2\.0/);
+  assert.match(skill, /Bot 回覆不得自動列為已確認事實/);
   assert.match(skill, /pending_review/);
   assert.match(skill, /不得進入 RAG/);
 });

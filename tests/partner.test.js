@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const express = require('express');
 
 const { SCHEMA } = require('../db/schema');
 const {
@@ -11,7 +12,10 @@ const {
   isLineBotMentioned,
   stripLineBotMentions,
 } = require('../routes/line.routes');
-const { getPartnerTestSessionId } = require('../routes/partners.routes');
+const {
+  createPartnersRouter,
+  getPartnerTestSessionId,
+} = require('../routes/partners.routes');
 const {
   PARTNER_LINE_IMPORT_CHUNK_CHARS,
   PARTNER_NO_DATA_REPLY,
@@ -56,6 +60,10 @@ test('B2B schema separates companies, groups, knowledge and conversations', () =
   assert.match(schema, /partner_conversations[\s\S]*company_id\s+INTEGER NOT NULL/);
   assert.match(schema, /ALTER TABLE partner_conversations ADD COLUMN IF NOT EXISTS archived_at/);
   assert.match(schema, /group_key\s+TEXT NOT NULL UNIQUE/);
+  assert.match(
+    schema,
+    /CREATE UNIQUE INDEX IF NOT EXISTS idx_partner_binding_codes_one_active_per_company[\s\S]*WHERE used_at IS NULL/
+  );
   assert.match(schema, /idx_partner_conversations_company_day[\s\S]*WHERE line_group_id IS NOT NULL/);
   assert.doesNotMatch(schema, /\bgroup_id\s+TEXT/);
 });
@@ -69,6 +77,47 @@ test('partner slug and one-time binding commands are normalized', () => {
   assert.equal(parsePartnerBindingCommand(`綁定 ${code.toLowerCase()}`), code);
   assert.equal(parsePartnerBindingCommand(`請幫我綁定 ${code}`), '');
   assert.equal(hashPartnerValue('group-1').length, 64);
+});
+
+test('binding code generation serializes per company and leaves one active code', async () => {
+  const queries = [];
+  const connection = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (/SELECT id, slug, name, status/.test(sql)) {
+        return {
+          rows: [{
+            id: 7,
+            slug: 'familymart-test',
+            name: '全家便利商店（測試）',
+            status: 'active',
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+    release() {},
+  };
+  const service = createService({
+    async query() {
+      throw new Error('binding code generation must use one transaction');
+    },
+    async connect() {
+      return connection;
+    },
+  });
+
+  const result = await service.generateBindingCode(7);
+
+  assert.equal(result.company.id, 7);
+  assert.match(result.code, /^B2B-[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+  assert.equal(queries[0].sql, 'BEGIN');
+  assert.match(queries[1].sql, /pg_advisory_xact_lock/);
+  assert.deepEqual(queries[1].params, ['partner_binding_code:7']);
+  assert.ok(queries.some(({ sql }) => /FOR UPDATE/.test(sql)));
+  assert.ok(queries.some(({ sql }) => /UPDATE partner_binding_codes/.test(sql)));
+  assert.ok(queries.some(({ sql }) => /INSERT INTO partner_binding_codes/.test(sql)));
+  assert.equal(queries.at(-1).sql, 'COMMIT');
 });
 
 test('LINE group sessions are scoped to groupId instead of member userId', () => {
@@ -163,6 +212,123 @@ test('partner retrieval always scopes SQL by company_id', async () => {
   assert.ok(queries.some(({ sql }) => /partner_knowledge_sections/.test(sql)));
 });
 
+test('partner knowledge search and pagination are executed by PostgreSQL', async () => {
+  const queries = [];
+  const pool = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (/COUNT\(\*\) FILTER/.test(sql)) {
+        return { rows: [{ active_count: 31, archived_count: 4 }] };
+      }
+      return {
+        rows: [{
+          id: 91,
+          company_id: 7,
+          category: '門市合作',
+          content: '全家門市合作資料',
+          sort_order: 30,
+          archived_at: null,
+        }],
+      };
+    },
+  };
+  const service = createService(pool);
+
+  const result = await service.listKnowledge(7, {
+    status: 'active',
+    query: '門市%_',
+    limit: 15,
+    offset: 30,
+  });
+
+  assert.equal(result.total, 31);
+  assert.equal(result.activeCount, 31);
+  assert.equal(result.archivedCount, 4);
+  assert.equal(result.limit, 15);
+  assert.equal(result.offset, 30);
+  assert.equal(result.items.length, 1);
+  assert.equal(queries.length, 2);
+  assert.match(queries[0].sql, /COUNT\(\*\) FILTER \(WHERE archived_at IS NULL\)/);
+  assert.match(queries[0].sql, /company_id = \$1/);
+  assert.match(queries[0].sql, /ILIKE \$2 ESCAPE '\\'/);
+  assert.deepEqual(queries[0].params, [7, '%門市\\%\\_%']);
+  assert.match(queries[1].sql, /archived_at IS NULL/);
+  assert.match(queries[1].sql, /LIMIT \$3 OFFSET \$4/);
+  assert.deepEqual(queries[1].params, [7, '%門市\\%\\_%', 15, 30]);
+});
+
+test('partner knowledge API forwards status, search and pagination parameters', async () => {
+  let received;
+  const page = {
+    items: [],
+    total: 0,
+    activeCount: 0,
+    archivedCount: 0,
+    limit: 20,
+    offset: 40,
+  };
+  const app = express();
+  app.use('/api/partners', createPartnersRouter({
+    partnerService: {
+      async listKnowledge(companyId, options) {
+        received = { companyId, options };
+        return page;
+      },
+    },
+    partnerCleaningService: {},
+    partnerConversationKnowledgeService: {},
+    requireAdminKey: (req, res, next) => next(),
+    pool: {},
+  }));
+
+  const server = app.listen(0);
+  await new Promise(resolve => server.once('listening', resolve));
+  try {
+    const { port } = server.address();
+    const response = await fetch(
+      `http://127.0.0.1:${port}/api/partners/7/knowledge`
+      + '?status=archived&query=%E5%90%88%E7%B4%84&limit=20&offset=40'
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), page);
+    assert.deepEqual(received, {
+      companyId: '7',
+      options: {
+        status: 'archived',
+        query: '合約',
+        limit: '20',
+        offset: '40',
+      },
+    });
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test('partner knowledge pagination rejects unsupported page sizes and clamps stale pages', async () => {
+  const queries = [];
+  const service = createService({
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (/COUNT\(\*\) FILTER/.test(sql)) {
+        return { rows: [{ active_count: 0, archived_count: 4 }] };
+      }
+      return { rows: [{ id: 1, archived_at: '2026-07-31T00:00:00.000Z' }] };
+    },
+  });
+
+  const result = await service.listKnowledge(7, {
+    status: 'archived',
+    limit: 999,
+    offset: 999_999,
+  });
+
+  assert.equal(result.total, 4);
+  assert.equal(result.limit, 10);
+  assert.equal(result.offset, 0);
+  assert.deepEqual(queries[1].params, [7, '', 10, 0]);
+});
+
 test('partner LINE conversation logs are company-scoped and grouped by Taipei day', async () => {
   const queries = [];
   const pool = {
@@ -230,16 +396,32 @@ test('partner LINE conversation logs are company-scoped and grouped by Taipei da
 
 test('partner LINE conversation days can be archived, restored and permanently deleted', async () => {
   const queries = [];
-  const pool = {
+  const connection = {
     async query(sql, params = []) {
       queries.push({ sql, params });
       if (/UPDATE partner_conversations/.test(sql)) {
         return { rows: [{ id: 1 }, { id: 2 }] };
       }
+      if (/UPDATE partner_knowledge_candidates/.test(sql)) {
+        return { rows: [{ id: 10 }] };
+      }
       if (/DELETE FROM partner_conversations/.test(sql)) {
         return { rows: [{ id: 1 }, { id: 2 }] };
       }
+      if (/DELETE FROM partner_knowledge_candidates/.test(sql)) {
+        return { rows: [{ id: 10 }] };
+      }
       return { rows: [] };
+    },
+    release() {},
+  };
+  const pool = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      return { rows: [] };
+    },
+    async connect() {
+      return connection;
     },
   };
   const service = createService(pool);
@@ -254,16 +436,80 @@ test('partner LINE conversation days can be archived, restored and permanently d
 
   assert.equal(archived.updatedMessages, 2);
   assert.equal(archived.status, 'archived');
+  assert.equal(archived.archivedCandidateCount, 1);
   assert.equal(restored.status, 'active');
+  assert.equal(restored.archivedCandidateCount, 0);
   assert.equal(deleted.deletedMessages, 2);
-  assert.ok(queries.every(({ params }) => params[0] === 7));
-  assert.ok(queries.every(({ params }) => params[1] === '2026-07-28'));
-  assert.ok(queries.every(({ sql }) => /AT TIME ZONE 'Asia\/Taipei'/.test(sql)));
-  assert.match(queries[2].sql, /archived_at IS NOT NULL/);
+  assert.equal(deleted.deletedCandidateCount, 1);
+  assert.ok(queries.some(({ sql }) => sql === 'BEGIN'));
+  assert.ok(queries.some(({ sql }) => sql === 'COMMIT'));
+  assert.ok(queries.some(({ sql }) => /DELETE FROM partner_knowledge_candidates/.test(sql)));
+  const conversationDelete = queries.find(({ sql }) => /DELETE FROM partner_conversations/.test(sql));
+  assert.deepEqual(conversationDelete.params, [7, '2026-07-28']);
+  assert.match(conversationDelete.sql, /archived_at IS NOT NULL/);
+  assert.match(conversationDelete.sql, /AT TIME ZONE 'Asia\/Taipei'/);
   await assert.rejects(
     () => service.updateConversationDayStatus(7, '2026-02-30', 'archived'),
     /valid conversation date/
   );
+});
+
+test('permanent deletion leaves candidates untouched when the day is not archived', async () => {
+  const queries = [];
+  const connection = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      return { rows: [] };
+    },
+    release() {},
+  };
+  const service = createService({
+    async connect() {
+      return connection;
+    },
+  });
+
+  const result = await service.deleteArchivedConversationDay(
+    7,
+    '2026-07-28',
+    '2026-07-28'
+  );
+
+  assert.equal(result.deletedMessages, 0);
+  assert.equal(result.deletedCandidateCount, 0);
+  assert.equal(
+    queries.some(({ sql }) => /DELETE FROM partner_knowledge_candidates/.test(sql)),
+    false
+  );
+  assert.equal(queries.at(-1).sql, 'COMMIT');
+});
+
+test('permanent conversation deletion rolls back when related candidate deletion fails', async () => {
+  const queries = [];
+  const connection = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (/DELETE FROM partner_conversations/.test(sql)) {
+        return { rows: [{ id: 1 }] };
+      }
+      if (/DELETE FROM partner_knowledge_candidates/.test(sql)) {
+        throw new Error('candidate delete failed');
+      }
+      return { rows: [] };
+    },
+    release() {},
+  };
+  const service = createService({
+    async connect() {
+      return connection;
+    },
+  });
+
+  await assert.rejects(
+    () => service.deleteArchivedConversationDay(7, '2026-07-28', '2026-07-28'),
+    /candidate delete failed/
+  );
+  assert.equal(queries.at(-1).sql, 'ROLLBACK');
 });
 
 test('passive LINE group messages are masked and stored without an assistant reply', async () => {
@@ -971,8 +1217,14 @@ test('partner admin page exposes company-scoped test chat behind admin API', () 
   assert.match(html, /conversationStatus/);
   assert.match(html, /deletePartnerDataDialog/);
   assert.match(js, /updateKnowledgeArchive/);
-  assert.match(js, /normalizeKnowledgeSearch/);
-  assert.match(js, /filteredRows\.slice/);
+  assert.match(js, /async function refreshKnowledgePage/);
+  assert.match(js, /new URLSearchParams/);
+  assert.match(js, /limit:\s*String\(partnerState\.knowledgePageSize\)/);
+  assert.match(
+    js,
+    /offset:\s*String\(partnerState\.knowledgePage \* partnerState\.knowledgePageSize\)/
+  );
+  assert.doesNotMatch(js, /filteredRows\.slice/);
   assert.match(js, /knowledgePageInfo/);
   assert.match(js, /目前已切換到「已封存（可恢復）」/);
   assert.match(js, /updateConversationDayArchive/);

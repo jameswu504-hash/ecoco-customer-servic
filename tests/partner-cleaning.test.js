@@ -273,7 +273,7 @@ test('approved package accepts a long LINE history with 167 daily sections', () 
     },
     skill: {
       name: 'ecoco-clean-brand-knowledge',
-      version: '1.1.0',
+      version: '1.2.0',
     },
     report: {},
     sections,

@@ -144,6 +144,23 @@ const SCHEMA = [
       created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`,
   `CREATE INDEX IF NOT EXISTS idx_partner_binding_codes_company ON partner_binding_codes(company_id, expires_at)`,
+  `WITH ranked_codes AS (
+      SELECT id,
+             ROW_NUMBER() OVER (
+               PARTITION BY company_id
+               ORDER BY created_at DESC, id DESC
+             ) AS active_rank
+      FROM partner_binding_codes
+      WHERE used_at IS NULL
+    )
+    UPDATE partner_binding_codes pbc
+    SET used_at = NOW()
+    FROM ranked_codes ranked
+    WHERE pbc.id = ranked.id
+      AND ranked.active_rank > 1`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_partner_binding_codes_one_active_per_company
+     ON partner_binding_codes(company_id)
+     WHERE used_at IS NULL`,
   `CREATE TABLE IF NOT EXISTS partner_source_documents (
       id                     SERIAL PRIMARY KEY,
       company_id             INTEGER NOT NULL REFERENCES partner_companies(id) ON DELETE CASCADE,

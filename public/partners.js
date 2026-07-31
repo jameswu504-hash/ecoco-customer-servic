@@ -2,6 +2,7 @@ const partnerState = {
   companies: [],
   selectedCompanyId: null,
   detail: null,
+  knowledgePageResult: null,
   conversationLog: null,
   knowledgeCandidates: null,
   testSessionId: '',
@@ -10,6 +11,8 @@ const partnerState = {
   knowledgePage: 0,
   knowledgePageSize: 10,
   knowledgeQuery: '',
+  knowledgeRequestId: 0,
+  knowledgeSearchTimer: null,
 };
 
 const CLEANER_MAX_BYTES = 2_000_000;
@@ -154,63 +157,41 @@ function createCompactButton(label, className, onClick) {
   return button;
 }
 
-function normalizeKnowledgeSearch(value) {
-  return String(value || '')
-    .normalize('NFKC')
-    .toLocaleLowerCase('zh-Hant')
-    .replace(/\s+/g, '');
-}
-
-function renderKnowledge(rows) {
+function renderKnowledge(pageResult = {}) {
   const list = document.getElementById('knowledgeList');
   list.replaceChildren();
   const selectedStatus = document.getElementById('knowledgeStatus')?.value || 'active';
-  const activeCount = rows.filter(item => !item.archived_at).length;
-  const archivedCount = rows.length - activeCount;
-  const normalizedQuery = normalizeKnowledgeSearch(partnerState.knowledgeQuery);
-  const filteredRows = rows.filter(item => {
-    const isArchived = Boolean(item.archived_at);
-    const matchesStatus = selectedStatus === 'all'
-      || (selectedStatus === 'archived' ? isArchived : !isArchived);
-    if (!matchesStatus) return false;
-    if (!normalizedQuery) return true;
-    return normalizeKnowledgeSearch([
-      item.category,
-      item.title,
-      item.content,
-    ].filter(Boolean).join(' ')).includes(normalizedQuery);
-  });
-
-  const pageSizeValue = Number(document.getElementById('knowledgePageSize')?.value);
-  partnerState.knowledgePageSize = KNOWLEDGE_PAGE_SIZES.has(pageSizeValue)
-    ? pageSizeValue
-    : 10;
-  const pageCount = Math.max(1, Math.ceil(filteredRows.length / partnerState.knowledgePageSize));
-  partnerState.knowledgePage = Math.min(
-    Math.max(0, partnerState.knowledgePage),
-    pageCount - 1
-  );
-  const pageStart = partnerState.knowledgePage * partnerState.knowledgePageSize;
-  const pageRows = filteredRows.slice(pageStart, pageStart + partnerState.knowledgePageSize);
+  const pageRows = Array.isArray(pageResult.items) ? pageResult.items : [];
+  const activeCount = Number(pageResult.activeCount || 0);
+  const archivedCount = Number(pageResult.archivedCount || 0);
+  const total = Number(pageResult.total || 0);
+  const resultLimit = Number(pageResult.limit);
+  if (KNOWLEDGE_PAGE_SIZES.has(resultLimit)) {
+    partnerState.knowledgePageSize = resultLimit;
+  }
+  const offset = Number(pageResult.offset || 0);
+  partnerState.knowledgePage = Math.floor(offset / partnerState.knowledgePageSize);
+  const pageCount = Math.max(1, Math.ceil(total / partnerState.knowledgePageSize));
+  const hasQuery = Boolean(String(partnerState.knowledgeQuery || '').trim());
 
   const resultInfo = document.getElementById('knowledgeResultInfo');
   resultInfo.textContent = [
     `使用中 ${activeCount} 筆`,
     `已封存 ${archivedCount} 筆`,
-    `${normalizedQuery ? '搜尋結果' : '目前顯示'} ${filteredRows.length} 筆`,
+    `${hasQuery ? '搜尋結果' : '目前顯示'} ${total} 筆`,
     selectedStatus === 'archived' ? '展開資料即可恢復使用' : '',
   ].filter(Boolean).join(' · ');
   document.getElementById('knowledgePageInfo').textContent =
     `${partnerState.knowledgePage + 1} / ${pageCount}`;
   document.getElementById('knowledgePrevBtn').disabled =
-    partnerState.knowledgePage === 0 || filteredRows.length === 0;
+    partnerState.knowledgePage === 0 || total === 0;
   document.getElementById('knowledgeNextBtn').disabled =
-    partnerState.knowledgePage >= pageCount - 1 || filteredRows.length === 0;
+    partnerState.knowledgePage >= pageCount - 1 || total === 0;
 
   if (!pageRows.length) {
     const empty = document.createElement('div');
     empty.className = 'empty-row';
-    empty.textContent = normalizedQuery
+    empty.textContent = hasQuery
       ? '找不到符合搜尋條件的公司專屬資料。'
       : selectedStatus === 'archived'
         ? '目前沒有已封存的公司專屬資料。'
@@ -541,9 +522,11 @@ function renderDetail() {
   document.getElementById('companySlug').textContent = company.slug;
   document.getElementById('testCompanyLabel').textContent = `${company.name} 分支`;
   document.getElementById('groupCount').textContent = String(detail.lineGroups.length);
-  document.getElementById('knowledgeCount').textContent = String(
-    detail.knowledge.filter(item => !item.archived_at).length
+  const companySummary = partnerState.companies.find(
+    item => Number(item.id) === Number(company.id)
   );
+  document.getElementById('knowledgeCount').textContent =
+    String(Number(companySummary?.knowledge_count || 0));
 
   const status = document.getElementById('companyStatus');
   const isActive = company.status === 'active';
@@ -558,7 +541,7 @@ function renderDetail() {
   cleanerDropZone.setAttribute('aria-disabled', String(!isActive));
 
   renderLineGroups(detail.lineGroups);
-  renderKnowledge(detail.knowledge);
+  renderKnowledge(partnerState.knowledgePageResult);
   renderConversationLog(partnerState.conversationLog);
   renderKnowledgeCandidates(partnerState.knowledgeCandidates);
 }
@@ -581,13 +564,49 @@ async function loadCompanies(selectFirst = true) {
   }
 }
 
+function buildKnowledgePageUrl(companyId) {
+  const status = document.getElementById('knowledgeStatus')?.value || 'active';
+  const params = new URLSearchParams({
+    status,
+    query: partnerState.knowledgeQuery,
+    limit: String(partnerState.knowledgePageSize),
+    offset: String(partnerState.knowledgePage * partnerState.knowledgePageSize),
+  });
+  return `/api/partners/${companyId}/knowledge?${params.toString()}`;
+}
+
+function fetchKnowledgePage(companyId) {
+  return partnerFetch(buildKnowledgePageUrl(companyId));
+}
+
+async function refreshKnowledgePage() {
+  const companyId = partnerState.selectedCompanyId;
+  if (!companyId) return;
+  const requestId = ++partnerState.knowledgeRequestId;
+  const status = document.getElementById('clearCompanyKnowledgeStatus');
+  status.textContent = '';
+  try {
+    const result = await fetchKnowledgePage(companyId);
+    if (requestId !== partnerState.knowledgeRequestId) return;
+    partnerState.knowledgePageResult = result;
+    renderKnowledge(result);
+  } catch (err) {
+    if (requestId === partnerState.knowledgeRequestId) {
+      status.textContent = err.message;
+    }
+  }
+}
+
 async function loadCompanyDetail(companyId) {
   const days = Number(document.getElementById('conversationDays')?.value || 30);
   const conversationStatus = document.getElementById('conversationStatus')?.value || 'active';
   const candidateStatus =
     document.getElementById('candidateStatus')?.value || 'pending_review';
-  const [detail, conversationResult, candidateResult] = await Promise.all([
+  const [detail, knowledgeResult, conversationResult, candidateResult] = await Promise.all([
     partnerFetch(`/api/partners/${companyId}`),
+    fetchKnowledgePage(companyId)
+      .then(data => ({ data, error: null }))
+      .catch(error => ({ data: null, error })),
     partnerFetch(
       `/api/partners/${companyId}/conversations?days=${days}&status=${conversationStatus}`
     )
@@ -600,6 +619,7 @@ async function loadCompanyDetail(companyId) {
       .catch(error => ({ data: null, error })),
   ]);
   partnerState.detail = detail;
+  partnerState.knowledgePageResult = knowledgeResult.data;
   partnerState.conversationLog = conversationResult.data;
   partnerState.knowledgeCandidates = candidateResult.data;
   partnerState.selectedCompanyId = Number(companyId);
@@ -607,6 +627,8 @@ async function loadCompanyDetail(companyId) {
   renderDetail();
   document.getElementById('conversationError').textContent =
     conversationResult.error?.message || '';
+  document.getElementById('clearCompanyKnowledgeStatus').textContent =
+    knowledgeResult.error?.message || '';
   document.getElementById('candidateError').textContent =
     candidateResult.error?.message || '';
 }
@@ -676,6 +698,7 @@ async function generateKnowledgeCandidates(days) {
         ? `略過 ${result.duplicateCandidateCount} 份重複候選`
         : '',
       result.skippedNoiseCount ? `排除 ${result.skippedNoiseCount} 則無效訊息` : '',
+      result.truncated ? '紀錄超過 2,000 則，僅處理最新 2,000 則' : '',
       '未呼叫外部 AI',
     ].filter(Boolean).join('；');
   } catch (err) {
@@ -725,10 +748,13 @@ async function updateKnowledgeCandidate(candidate, status, row, button) {
 async function selectCompany(companyId) {
   if (Number(companyId) === Number(partnerState.selectedCompanyId)) return;
   partnerState.testSessionId = '';
+  partnerState.knowledgePageResult = null;
+  partnerState.knowledgeRequestId += 1;
   partnerState.conversationLog = null;
   partnerState.knowledgeCandidates = null;
   partnerState.knowledgePage = 0;
   partnerState.knowledgeQuery = '';
+  clearTimeout(partnerState.knowledgeSearchTimer);
   document.getElementById('knowledgeSearch').value = '';
   document.getElementById('knowledgeStatus').value = 'active';
   clearCleaner();
@@ -1296,26 +1322,30 @@ function bindEvents() {
   );
   document.getElementById('knowledgeStatus').addEventListener('change', () => {
     partnerState.knowledgePage = 0;
-    renderKnowledge(partnerState.detail?.knowledge || []);
+    refreshKnowledgePage();
   });
   document.getElementById('knowledgeSearch').addEventListener('input', event => {
     partnerState.knowledgeQuery = event.target.value;
     partnerState.knowledgePage = 0;
-    renderKnowledge(partnerState.detail?.knowledge || []);
+    clearTimeout(partnerState.knowledgeSearchTimer);
+    partnerState.knowledgeSearchTimer = setTimeout(
+      () => refreshKnowledgePage(),
+      250
+    );
   });
   document.getElementById('knowledgePageSize').addEventListener('change', event => {
     const pageSize = Number(event.target.value);
     partnerState.knowledgePageSize = KNOWLEDGE_PAGE_SIZES.has(pageSize) ? pageSize : 10;
     partnerState.knowledgePage = 0;
-    renderKnowledge(partnerState.detail?.knowledge || []);
+    refreshKnowledgePage();
   });
   document.getElementById('knowledgePrevBtn').addEventListener('click', () => {
     partnerState.knowledgePage = Math.max(0, partnerState.knowledgePage - 1);
-    renderKnowledge(partnerState.detail?.knowledge || []);
+    refreshKnowledgePage();
   });
   document.getElementById('knowledgeNextBtn').addEventListener('click', () => {
     partnerState.knowledgePage += 1;
-    renderKnowledge(partnerState.detail?.knowledge || []);
+    refreshKnowledgePage();
   });
   document.getElementById('emptyCreateCompanyBtn').addEventListener('click', openCreateCompanyDialog);
   document.getElementById('closeCreateCompanyBtn').addEventListener('click', () => document.getElementById('createCompanyDialog').close());

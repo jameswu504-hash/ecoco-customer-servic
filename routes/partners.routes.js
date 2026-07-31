@@ -50,14 +50,10 @@ function createPartnersRouter({
   router.get('/:companyId', asyncHandler(async (req, res) => {
     const company = await partnerService.getCompany(req.params.companyId);
     if (!company) return res.status(404).json({ error: 'Partner company not found.' });
-    const [lineGroups, knowledge] = await Promise.all([
-      partnerService.listLineGroups(company.id),
-      partnerService.listKnowledge(company.id, 'all'),
-    ]);
+    const lineGroups = await partnerService.listLineGroups(company.id);
     res.json({
       company,
       lineGroups,
-      knowledge,
     });
   }));
 
@@ -96,7 +92,12 @@ function createPartnersRouter({
   }));
 
   router.get('/:companyId/knowledge', asyncHandler(async (req, res) => {
-    res.json(await partnerService.listKnowledge(req.params.companyId, req.query.status));
+    res.json(await partnerService.listKnowledge(req.params.companyId, {
+      status: req.query.status,
+      query: req.query.query,
+      limit: req.query.limit,
+      offset: req.query.offset,
+    }));
   }));
 
   router.get('/:companyId/conversations', asyncHandler(async (req, res) => {
@@ -118,12 +119,6 @@ function createPartnersRouter({
         req.params.day,
         req.body?.status
       );
-      const archivedCandidateCount = result.status === 'archived'
-        ? await partnerConversationKnowledgeService.archiveCandidatesForDay(
-          company.id,
-          result.day
-        )
-        : 0;
       await saveAdminAudit(pool, {
         action: result.status === 'archived'
           ? 'partner_conversation_day_archived'
@@ -134,13 +129,10 @@ function createPartnersRouter({
           companySlug: company.slug,
           day: result.day,
           updatedMessages: result.updatedMessages,
-          archivedCandidateCount,
+          archivedCandidateCount: result.archivedCandidateCount,
         },
       });
-      res.json({
-        ...result,
-        archivedCandidateCount,
-      });
+      res.json(result);
     } catch (err) {
       if (err.code === 'PARTNER_INVALID_CONVERSATION_DAY') {
         return res.status(400).json({ error: err.message });
@@ -158,11 +150,6 @@ function createPartnersRouter({
         req.params.day,
         req.body?.confirmDay
       );
-      const deletedCandidateCount =
-        await partnerConversationKnowledgeService.deleteUnapprovedCandidatesForDay(
-          company.id,
-          result.day
-        );
       await saveAdminAudit(pool, {
         action: 'partner_conversation_day_deleted',
         targetType: 'partner_conversation_day',
@@ -171,13 +158,10 @@ function createPartnersRouter({
           companySlug: company.slug,
           day: result.day,
           deletedMessages: result.deletedMessages,
-          deletedCandidateCount,
+          deletedCandidateCount: result.deletedCandidateCount,
         },
       });
-      res.json({
-        ...result,
-        deletedCandidateCount,
-      });
+      res.json(result);
     } catch (err) {
       if (
         err.code === 'PARTNER_INVALID_CONVERSATION_DAY'
