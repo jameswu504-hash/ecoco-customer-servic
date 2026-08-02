@@ -458,15 +458,35 @@ function createPartnerConversationKnowledgeService({ pool }) {
         await db.query('ROLLBACK');
         return null;
       }
-      if (candidate.status === 'approved' && requestedStatus !== 'approved') {
-        const error = new Error('Approved knowledge cannot be moved back to another review state.');
+      const approvedCandidateWasEdited = candidate.status === 'approved' && (
+        (titleInput && titleInput !== String(candidate.title || '').trim())
+        || (categoryInput && categoryInput !== String(candidate.category || '').trim())
+        || (contentInput && contentInput !== String(candidate.content || '').trim())
+      );
+      if (
+        candidate.status === 'approved'
+        && (requestedStatus !== 'approved' || approvedCandidateWasEdited)
+      ) {
+        const error = new Error('Approved knowledge cannot be edited or moved to another state.');
         error.code = 'PARTNER_CANDIDATE_ALREADY_APPROVED';
         throw error;
+      }
+      if (candidate.status === 'approved') {
+        const existingSectionId = Number(candidate.approved_section_id);
+        if (!Number.isInteger(existingSectionId) || existingSectionId < 1) {
+          const error = new Error('Approved knowledge is missing its published section reference.');
+          error.code = 'PARTNER_CANDIDATE_ALREADY_APPROVED';
+          throw error;
+        }
+        await db.query('COMMIT');
+        return {
+          candidate,
+          createdKnowledgeSectionId: existingSectionId,
+        };
       }
       if (
         requestedStatus === 'approved'
         && candidate.status !== 'pending_review'
-        && candidate.status !== 'approved'
       ) {
         const error = new Error('Move this candidate back to pending review before approving it.');
         error.code = 'PARTNER_CANDIDATE_REVIEW_REQUIRED';

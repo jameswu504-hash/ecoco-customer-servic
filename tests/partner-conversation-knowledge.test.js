@@ -200,6 +200,122 @@ test('approving a candidate creates company-scoped knowledge and RAG chunks', as
   assert.ok(queries.some(({ sql }) => sql === 'COMMIT'));
 });
 
+test('approved knowledge candidates cannot be edited after RAG publication', async () => {
+  const queries = [];
+  const connection = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (/SELECT pkc\.\*, pcb\.conversation_day/.test(sql)) {
+        return {
+          rows: [{
+            id: 81,
+            company_id: 7,
+            batch_id: 51,
+            line_group_id: 4,
+            title: 'Published title',
+            category: 'Published category',
+            content: 'Published content',
+            source_message_ids: [11, 12],
+            risk_flags: [],
+            status: 'approved',
+            approved_section_id: 91,
+            conversation_day: '2026-07-30',
+            skill_name: SKILL_NAME,
+            skill_version: SKILL_VERSION,
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+    release() {},
+  };
+  const service = createPartnerConversationKnowledgeService({
+    pool: {
+      async connect() {
+        return connection;
+      },
+    },
+  });
+
+  await assert.rejects(
+    () => service.reviewCandidate(7, 81, {
+      status: 'approved',
+      title: 'Published title',
+      category: 'Published category',
+      content: 'Changed after approval',
+    }),
+    error => error.code === 'PARTNER_CANDIDATE_ALREADY_APPROVED'
+  );
+  assert.equal(
+    queries.some(({ sql }) => /UPDATE partner_knowledge_candidates/.test(sql)),
+    false
+  );
+  assert.equal(
+    queries.some(({ sql }) => /INSERT INTO partner_knowledge_(?:sections|chunks)/.test(sql)),
+    false
+  );
+  assert.equal(queries.at(-1).sql, 'ROLLBACK');
+});
+
+test('repeating an identical approved candidate request is idempotent', async () => {
+  const queries = [];
+  const approvedCandidate = {
+    id: 81,
+    company_id: 7,
+    batch_id: 51,
+    line_group_id: 4,
+    title: 'Published title',
+    category: 'Published category',
+    content: 'Published content',
+    source_message_ids: [11, 12],
+    risk_flags: [],
+    status: 'approved',
+    approved_section_id: 91,
+    conversation_day: '2026-07-30',
+    skill_name: SKILL_NAME,
+    skill_version: SKILL_VERSION,
+  };
+  const connection = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (/SELECT pkc\.\*, pcb\.conversation_day/.test(sql)) {
+        return { rows: [approvedCandidate] };
+      }
+      if (/UPDATE partner_knowledge_candidates/.test(sql)) {
+        return { rows: [approvedCandidate] };
+      }
+      return { rows: [] };
+    },
+    release() {},
+  };
+  const service = createPartnerConversationKnowledgeService({
+    pool: {
+      async connect() {
+        return connection;
+      },
+    },
+  });
+
+  const result = await service.reviewCandidate(7, 81, {
+    status: 'approved',
+    title: approvedCandidate.title,
+    category: approvedCandidate.category,
+    content: approvedCandidate.content,
+  });
+
+  assert.equal(result.candidate.id, 81);
+  assert.equal(result.createdKnowledgeSectionId, 91);
+  assert.equal(
+    queries.some(({ sql }) => /UPDATE partner_knowledge_candidates/.test(sql)),
+    false
+  );
+  assert.equal(
+    queries.some(({ sql }) => /INSERT INTO partner_knowledge_(?:sections|chunks)/.test(sql)),
+    false
+  );
+  assert.equal(queries.at(-1).sql, 'COMMIT');
+});
+
 test('partner admin exposes manual one-day and seven-day candidate review workflow', () => {
   const root = path.join(__dirname, '..');
   const html = fs.readFileSync(path.join(root, 'public', 'partners.html'), 'utf8');

@@ -329,6 +329,85 @@ test('partner knowledge pagination rejects unsupported page sizes and clamps sta
   assert.deepEqual(queries[1].params, [7, '', 10, 0]);
 });
 
+test('partner status mutations reject unsupported values with HTTP 400', async () => {
+  const service = createService({
+    async query() {
+      return { rows: [{ id: 7, company_id: 7, status: 'active', archived_at: null }] };
+    },
+    async connect() {
+      return {
+        async query() {
+          return { rows: [] };
+        },
+        release() {},
+      };
+    },
+  });
+
+  await assert.rejects(
+    () => service.updateCompanyStatus(7, 'deleted'),
+    error => error.code === 'PARTNER_INVALID_STATUS'
+  );
+  await assert.rejects(
+    () => service.updateKnowledgeStatus(7, 12, 'deleted'),
+    error => error.code === 'PARTNER_INVALID_STATUS'
+  );
+  await assert.rejects(
+    () => service.updateConversationDayStatus(7, '2026-07-28', 'deleted'),
+    error => error.code === 'PARTNER_INVALID_STATUS'
+  );
+
+  const invalidStatusError = Object.assign(new Error('Unsupported partner status.'), {
+    code: 'PARTNER_INVALID_STATUS',
+  });
+  const app = express();
+  app.use(express.json());
+  app.use('/api/partners', createPartnersRouter({
+    partnerService: {
+      async getCompany() {
+        return { id: 7, slug: 'familymart', name: 'FamilyMart', status: 'active' };
+      },
+      async updateCompanyStatus() {
+        throw invalidStatusError;
+      },
+      async updateKnowledgeStatus() {
+        throw invalidStatusError;
+      },
+      async updateConversationDayStatus() {
+        throw invalidStatusError;
+      },
+    },
+    partnerCleaningService: {},
+    partnerConversationKnowledgeService: {},
+    requireAdminKey: (req, res, next) => next(),
+    pool: {},
+  }));
+  app.use((err, req, res, next) => {
+    void next;
+    res.status(500).json({ error: err.message });
+  });
+
+  const server = app.listen(0);
+  await new Promise(resolve => server.once('listening', resolve));
+  try {
+    const { port } = server.address();
+    for (const path of [
+      '/api/partners/7/status',
+      '/api/partners/7/knowledge/12/status',
+      '/api/partners/7/conversations/2026-07-28/status',
+    ]) {
+      const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: 'deleted' }),
+      });
+      assert.equal(response.status, 400, path);
+    }
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
 test('partner LINE conversation logs are company-scoped and grouped by Taipei day', async () => {
   const queries = [];
   const pool = {
@@ -782,35 +861,76 @@ test('cross-company questions are denied before RAG and model access', async () 
   assert.ok(queries.some(({ sql }) => /INSERT INTO partner_conversations/.test(sql)));
 });
 
-test('partner knowledge is anonymized before database writes', async () => {
+test('manual partner knowledge preserves internal contacts and writes RAG chunks atomically', async () => {
   const phone = ['0912', '345', '678'].join('-');
+  const email = ['project.owner', 'example.com'].join('@');
   const memberNumber = ['1234', '5678'].join('');
   const queries = [];
-  const pool = {
+  const connection = {
     async query(sql, params = []) {
       queries.push({ sql, params });
-      if (/FROM partner_companies\s+WHERE id/.test(sql)) {
-        return { rows: [{ id: 1, name: '測試甲公司', status: 'active' }] };
+      if (/FROM partner_companies[\s\S]*FOR (?:SHARE|UPDATE)/.test(sql)) {
+        return { rows: [{ id: 1, name: 'FamilyMart', status: 'active' }] };
       }
       if (/MAX\(sort_order\)/.test(sql)) return { rows: [{ next: 0 }] };
       if (/INSERT INTO partner_knowledge_sections/.test(sql)) {
-        return { rows: [{ id: 8, company_id: 1, category: params[1], content: params[2] }] };
+        return {
+          rows: [{
+            id: 8,
+            company_id: 1,
+            title: params[1],
+            category: params[2],
+            content: params[3],
+            sort_order: params[6],
+          }],
+        };
+      }
+      if (/INSERT INTO partner_knowledge_chunks/.test(sql)) {
+        return { rows: [{ id: 80 }] };
       }
       return { rows: [] };
+    },
+    release() {},
+  };
+  const pool = {
+    async query() {
+      throw new Error('manual knowledge writes must use one transaction');
+    },
+    async connect() {
+      return connection;
     },
   };
   const service = createService(pool);
 
-  await service.addKnowledge(1, {
-    category: '窗口 support@example.com',
-    content: `請聯絡 ${phone}，會員編號 ${memberNumber}。`,
+  const result = await service.addKnowledge(1, {
+    category: `Internal contact ${email}`,
+    content: `Contact Wang at ${phone}; member number ${memberNumber}.`,
   });
 
-  const insert = queries.find(({ sql }) => /INSERT INTO partner_knowledge_sections/.test(sql));
-  assert.ok(insert);
-  assert.equal(insert.params[1].includes('support@example.com'), false);
-  assert.equal(insert.params[2].includes(phone), false);
-  assert.equal(insert.params[2].includes(memberNumber), false);
+  assert.equal(result.id, 8);
+  assert.equal(queries[0].sql, 'BEGIN');
+  assert.equal(queries.at(-1).sql, 'COMMIT');
+  assert.equal(queries.some(({ sql }) => sql === 'ROLLBACK'), false);
+
+  const sectionInsert = queries.find(
+    ({ sql }) => /INSERT INTO partner_knowledge_sections/.test(sql)
+  );
+  assert.ok(sectionInsert);
+  assert.ok(sectionInsert.params.includes(`Internal contact ${email}`));
+  assert.ok(sectionInsert.params.some(value => String(value).includes(phone)));
+  assert.ok(sectionInsert.params.some(value => String(value).includes(memberNumber)));
+  const sectionMetadata = JSON.parse(sectionInsert.params.find(value => (
+    typeof value === 'string' && value.includes('preservePersonalData')
+  )));
+  assert.equal(sectionMetadata.preservePersonalData, true);
+  assert.equal(sectionMetadata.externalAiUsed, false);
+
+  const chunkInserts = queries.filter(
+    ({ sql }) => /INSERT INTO partner_knowledge_chunks/.test(sql)
+  );
+  assert.ok(chunkInserts.length >= 1);
+  assert.ok(chunkInserts.some(({ params }) => params.some(value => String(value).includes(phone))));
+  assert.ok(chunkInserts.every(({ params }) => params[0] === 1 && params[1] === 8));
 });
 
 test('LINE TXT imports are anonymized, cleaned and split at date boundaries', () => {

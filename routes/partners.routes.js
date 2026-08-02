@@ -58,18 +58,25 @@ function createPartnersRouter({
   }));
 
   router.patch('/:companyId/status', asyncHandler(async (req, res) => {
-    const company = await partnerService.updateCompanyStatus(
-      req.params.companyId,
-      req.body?.status
-    );
-    if (!company) return res.status(404).json({ error: 'Partner company not found.' });
-    await saveAdminAudit(pool, {
-      action: 'partner_company_status_updated',
-      targetType: 'partner_company',
-      targetId: String(company.id),
-      details: { status: company.status },
-    });
-    res.json(company);
+    try {
+      const company = await partnerService.updateCompanyStatus(
+        req.params.companyId,
+        req.body?.status
+      );
+      if (!company) return res.status(404).json({ error: 'Partner company not found.' });
+      await saveAdminAudit(pool, {
+        action: 'partner_company_status_updated',
+        targetType: 'partner_company',
+        targetId: String(company.id),
+        details: { status: company.status },
+      });
+      res.json(company);
+    } catch (err) {
+      if (err.code === 'PARTNER_INVALID_STATUS') {
+        return res.status(400).json({ error: err.message });
+      }
+      throw err;
+    }
   }));
 
   router.post('/:companyId/binding-code', asyncHandler(async (req, res) => {
@@ -134,7 +141,10 @@ function createPartnersRouter({
       });
       res.json(result);
     } catch (err) {
-      if (err.code === 'PARTNER_INVALID_CONVERSATION_DAY') {
+      if (
+        err.code === 'PARTNER_INVALID_CONVERSATION_DAY'
+        || err.code === 'PARTNER_INVALID_STATUS'
+      ) {
         return res.status(400).json({ error: err.message });
       }
       throw err;
@@ -219,26 +229,33 @@ function createPartnersRouter({
   }));
 
   router.patch('/:companyId/knowledge/:sectionId/status', asyncHandler(async (req, res) => {
-    const section = await partnerService.updateKnowledgeStatus(
-      req.params.companyId,
-      req.params.sectionId,
-      req.body?.status
-    );
-    if (!section) return res.status(404).json({ error: 'Partner knowledge not found.' });
-    const status = section.archived_at ? 'archived' : 'active';
-    await saveAdminAudit(pool, {
-      action: status === 'archived'
-        ? 'partner_knowledge_archived'
-        : 'partner_knowledge_restored',
-      targetType: 'partner_knowledge',
-      targetId: String(section.id),
-      details: {
-        companyId: section.company_id,
-        category: section.category,
-        status,
-      },
-    });
-    res.json(section);
+    try {
+      const section = await partnerService.updateKnowledgeStatus(
+        req.params.companyId,
+        req.params.sectionId,
+        req.body?.status
+      );
+      if (!section) return res.status(404).json({ error: 'Partner knowledge not found.' });
+      const status = section.archived_at ? 'archived' : 'active';
+      await saveAdminAudit(pool, {
+        action: status === 'archived'
+          ? 'partner_knowledge_archived'
+          : 'partner_knowledge_restored',
+        targetType: 'partner_knowledge',
+        targetId: String(section.id),
+        details: {
+          companyId: section.company_id,
+          category: section.category,
+          status,
+        },
+      });
+      res.json(section);
+    } catch (err) {
+      if (err.code === 'PARTNER_INVALID_STATUS') {
+        return res.status(400).json({ error: err.message });
+      }
+      throw err;
+    }
   }));
 
   router.delete('/:companyId/knowledge/:sectionId', asyncHandler(async (req, res) => {

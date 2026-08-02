@@ -259,7 +259,9 @@ function buildEmbeddingInput(row) {
 function createRagService({ pool, env = process.env, fetchImpl = fetch }) {
   const embeddingModel = env.EMBEDDING_MODEL || 'text-embedding-3-small';
   const embeddingDimensions = Number(env.EMBEDDING_DIMENSIONS || 1536);
-  const embeddingBatchSize = Number(env.EMBEDDING_BATCH_SIZE || 80);
+  const embeddingBatchSize = Math.floor(
+    getBoundedNumber(env.EMBEDDING_BATCH_SIZE, 80, 1, 1000)
+  );
   const embeddingTimeoutMs = Number(env.EMBEDDING_TIMEOUT_MS || 10000);
   const embeddingMaxRetries = Math.floor(getBoundedNumber(env.EMBEDDING_MAX_RETRIES, 2, 0, 5));
   const embeddingRetryBaseMs = getBoundedNumber(env.EMBEDDING_RETRY_BASE_MS, 250, 0, 10000);

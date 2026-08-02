@@ -10,6 +10,7 @@ const { buildSearchTerms, escapeIlikePattern } = require('./rag.service');
 const { anonymizeText } = require('../scripts/anonymize-pii');
 const { maskSensitiveText } = require('./privacy.service');
 const { saveChatTrace } = require('./trace.service');
+const { splitChunkContent } = require('./partner-conversation-knowledge.service');
 
 const PARTNER_BINDING_CODE_TTL_HOURS = 24;
 const PARTNER_MAX_KNOWLEDGE_CHARS = 20_000;
@@ -60,11 +61,19 @@ function generatePartnerBindingCode() {
 }
 
 function normalizeCompanyStatus(value) {
-  return String(value || '').toLowerCase() === 'inactive' ? 'inactive' : 'active';
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'active' || normalized === 'inactive') return normalized;
+  const error = new Error('Partner company status must be active or inactive.');
+  error.code = 'PARTNER_INVALID_STATUS';
+  throw error;
 }
 
 function normalizePartnerDataStatus(value) {
-  return String(value || '').toLowerCase() === 'archived' ? 'archived' : 'active';
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'active' || normalized === 'archived') return normalized;
+  const error = new Error('Partner data status must be active or archived.');
+  error.code = 'PARTNER_INVALID_STATUS';
+  throw error;
 }
 
 function normalizePartnerConversationDay(value) {
@@ -751,28 +760,98 @@ function createPartnerService({
   }
 
   async function addKnowledge(companyId, { category, content }) {
-    const company = await getCompany(companyId);
-    if (!company) return null;
-    const cleanCategory = anonymizeText(String(category || '').trim()).slice(0, 160);
-    const cleanContent = anonymizeText(String(content || '').trim());
-    if (!cleanCategory || !cleanContent) throw new Error('Knowledge category and content are required.');
-    if (cleanContent.length > PARTNER_MAX_KNOWLEDGE_CHARS) {
+    const companyIdNumber = Number(companyId);
+    if (!Number.isInteger(companyIdNumber) || companyIdNumber < 1) return null;
+    const knowledgeCategory = String(category || '').normalize('NFKC').trim().slice(0, 160);
+    const knowledgeContent = String(content || '').normalize('NFKC').trim();
+    if (!knowledgeCategory || !knowledgeContent) {
+      throw new Error('Knowledge category and content are required.');
+    }
+    if (knowledgeContent.length > PARTNER_MAX_KNOWLEDGE_CHARS) {
       throw new Error(`Knowledge content must be under ${PARTNER_MAX_KNOWLEDGE_CHARS} characters.`);
     }
-    const { rows: sortRows } = await pool.query(
-      `SELECT COALESCE(MAX(sort_order), -1) + 1 AS next
-       FROM partner_knowledge_sections
-       WHERE company_id = $1`,
-      [company.id]
-    );
-    const { rows } = await pool.query(
-      `INSERT INTO partner_knowledge_sections
-        (company_id, category, content, sort_order, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, NOW(), NOW())
-       RETURNING id, company_id, category, content, sort_order, created_at, updated_at`,
-      [company.id, cleanCategory, cleanContent, Number(sortRows[0].next || 0)]
-    );
-    return rows[0];
+
+    const metadata = {
+      sourceType: 'manual_admin',
+      preservePersonalData: true,
+      externalAiUsed: false,
+    };
+    const contentHash = hashPartnerValue(`${knowledgeCategory}\n${knowledgeContent}`);
+    const db = await pool.connect();
+    try {
+      await db.query('BEGIN');
+      await db.query(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [`partner_knowledge_write:${companyIdNumber}`]
+      );
+      const { rows: companyRows } = await db.query(
+        `SELECT id, name, status
+         FROM partner_companies
+         WHERE id = $1
+         FOR SHARE`,
+        [companyIdNumber]
+      );
+      const company = companyRows[0];
+      if (!company) {
+        await db.query('ROLLBACK');
+        return null;
+      }
+      const { rows: sortRows } = await db.query(
+        `SELECT COALESCE(MAX(sort_order), -1) + 1 AS next
+         FROM partner_knowledge_sections
+         WHERE company_id = $1`,
+        [company.id]
+      );
+      const { rows } = await db.query(
+        `INSERT INTO partner_knowledge_sections
+          (company_id, title, category, content, content_hash, metadata,
+           review_status, sort_order, created_at, updated_at, approved_at)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, 'approved', $7,
+                 NOW(), NOW(), NOW())
+         RETURNING id, company_id, title, category, content, sort_order,
+                   created_at, updated_at`,
+        [
+          company.id,
+          knowledgeCategory,
+          knowledgeCategory,
+          knowledgeContent,
+          contentHash,
+          JSON.stringify(metadata),
+          Number(sortRows[0]?.next || 0),
+        ]
+      );
+      const section = rows[0];
+      const chunks = splitChunkContent(knowledgeContent);
+      for (const [chunkIndex, chunkContent] of chunks.entries()) {
+        const searchText = `${knowledgeCategory}\n${chunkContent}`.normalize('NFKC');
+        await db.query(
+          `INSERT INTO partner_knowledge_chunks
+            (company_id, section_id, chunk_index, topic, content, search_text,
+             content_hash, metadata, source_references, embedding_model,
+             created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, '',
+                   NOW(), NOW())`,
+          [
+            company.id,
+            section.id,
+            chunkIndex,
+            knowledgeCategory,
+            chunkContent,
+            searchText,
+            hashPartnerValue(chunkContent),
+            JSON.stringify(metadata),
+            JSON.stringify([{ type: 'partner_knowledge_section', id: section.id }]),
+          ]
+        );
+      }
+      await db.query('COMMIT');
+      return section;
+    } catch (err) {
+      await db.query('ROLLBACK');
+      throw err;
+    } finally {
+      db.release();
+    }
   }
 
   async function updateKnowledgeStatus(companyId, sectionId, status) {

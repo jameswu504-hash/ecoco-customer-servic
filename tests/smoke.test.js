@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
 const express = require('express');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -649,6 +650,49 @@ test('embedding requests retry transient failures but not indefinitely', async (
 
   assert.equal(attempts, 2);
   assert.deepEqual(embeddings, [[0.1, 0.2]]);
+});
+
+test('embedding backfill clamps a zero batch size instead of hanging', () => {
+  const script = `
+    const { createRagService } = require('./services/rag.service');
+    const pool = {
+      async query(sql) {
+        if (/SELECT id, category, title, content/.test(sql)) {
+          return { rows: [{ id: 1, category: 'test', title: 'test', content: 'content' }] };
+        }
+        if (/UPDATE knowledge_chunks/.test(sql)) return { rows: [], rowCount: 1 };
+        return { rows: [] };
+      },
+    };
+    const rag = createRagService({
+      pool,
+      env: {
+        OPENAI_API_KEY: 'test-key',
+        EMBEDDING_BATCH_SIZE: '0',
+        EMBEDDING_MAX_RETRIES: '0',
+      },
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({ data: [{ embedding: [0.1, 0.2] }] }),
+      }),
+    });
+    (async () => {
+      await rag.ensurePgVector();
+      const result = await rag.backfillMissingEmbeddings();
+      process.exit(result.updated === 1 ? 0 : 2);
+    })().catch(() => process.exit(3));
+  `;
+  const result = spawnSync(process.execPath, ['-e', script], {
+    cwd: path.join(__dirname, '..'),
+    timeout: 1500,
+    encoding: 'utf8',
+  });
+
+  assert.equal(
+    result.status,
+    0,
+    result.error?.message || result.stderr || 'embedding backfill did not complete'
+  );
 });
 
 test('RAG classification scope boosts ranking without hard-filtering SQL', async () => {
