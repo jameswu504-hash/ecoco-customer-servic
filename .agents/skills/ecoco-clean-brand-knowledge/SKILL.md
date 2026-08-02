@@ -1,49 +1,53 @@
 ---
 name: ecoco-clean-brand-knowledge
-description: 在本機清洗 ECOCO 品牌合作夥伴的 LINE TXT 匯出檔與 Markdown（MD）知識文件，產生經人工確認、依 company_id 隔離的 B2B 知識文件與 RAG Chunk。當使用者要求整理品牌對話、把 TXT／MD 變成 AI 友善資料、保留內部姓名／電話／Email，或要求不把原始內容傳給 Claude、OpenAI、Embedding API 等外部 AI 時使用。
+description: 將 ECOCO 品牌方的 LINE TXT、Markdown 文件或已綁定 LINE 群組對話，整理成可追溯、可審核且依公司隔離的 AI 友善知識。Use when 清洗品牌資料、整理 LINE 對話、建立待審知識、切分 B2B RAG，或匯入公司專屬知識庫。
 ---
 
-# ECOCO 品牌知識資料清洗
+# ECOCO 品牌資料清洗
 
-## 不可違反的安全規則
+版本：1.2.0
 
-- 只使用 Skill 內附的確定性本機腳本處理原始 `.txt` 與 `.md`。
-- 不得開啟、引用、摘要、貼上或把原始內容放進模型 Context。
-- 清洗期間不得把原始或清洗後的私人內容傳給 Claude、OpenAI、Embedding API、網頁搜尋或其他遠端服務。
-- 保留內部姓名、電話與 Email，不做遮蔽或刪除。
-- 原始檔必須留在原本的 Local 路徑；不得上傳、移動、覆寫或刪除。
-- 每份知識文件與 Chunk 都必須綁定目前選擇的 `company_id`。
-- 匯入 SQL 前必須先讓人員預覽並明確確認。
-- 若資料包未聲明 `externalAiUsed=false` 與 `rawContentUploaded=false`，必須拒絕匯入。
+## 必守原則
 
-## 執行流程
+1. 原始 TXT／MD 只在公司 Local 端或使用者瀏覽器處理。
+2. 自動保存的 LINE 對話只在 ECOCO 應用程式與 SQL 內用固定規則整理。
+3. 不把姓名、電話、Email 或原始 LINE 對話傳給 Claude、OpenAI、Embedding API 或其他外部服務。
+4. 保留原始資料；正式知識使用另外產生的摘要、索引與 Chunk。
+5. 每筆結果必須帶 `company_id`，不得跨公司合併或檢索。
+6. LINE 自動整理結果一律先標為 `pending_review`，人工核准前不得進入 RAG。
+7. 報價、合約、期限、活動、站點狀態、設備狀態、清運及派工都要標記時效風險。
 
-1. 確認目前選擇的合作公司，取得 `id`、`name`、`slug`。
-2. 確認來源副檔名為 `.txt` 或 `.md`。
-3. 執行 `scripts/clean-file.js`；模型不得自行讀取來源檔內容。
-4. 只讀取腳本輸出的隱私安全摘要。
-5. 告知使用者產生的 Markdown 預覽檔與 JSON 資料包路徑。
-6. 請使用者檢查 Local Markdown，或在 B2B 管理後台查看預覽。
-7. 只有取得明確同意後，才可透過受保護的管理 API 或後台匯入。
-8. 回報 Section 數、Chunk 數、警告、來源 Hash 前綴與公司範圍，不得印出私人內容。
+## TXT／Markdown 工作流程
 
-## 執行指令
+1. 驗證來源只能是 `.txt` 或 `.md`。
+2. 正規化換行、空白與標題，不改寫姓名、電話或 Email。
+3. LINE TXT 依日期切段；Markdown 依一至三級標題切段。
+4. 移除空白、重複問候及照片、貼圖、檔案等無文字附件占位。
+5. 每段加入公司、來源、資料性質與使用範圍。
+6. 依主題與長度產生 Section 與 Chunk。
+7. 產生 SHA-256，供來源及內容去重。
+8. 預覽後由管理者確認，才寫入公司專屬 SQL 與 RAG。
 
-```powershell
-node scripts/clean-file.js `
-  --input "C:\path\brand-chat.txt" `
-  --company-id 1 `
-  --company-name "全家便利商店（測試）" `
-  --company-slug "familymart-test" `
-  --out-dir "C:\path\cleaned-output"
-```
+## 已綁定 LINE 對話工作流程
 
-腳本會產生：
+1. 依 `company_id + line_group_id + 台灣日期` 建立每日批次。
+2. 只讀取未封存訊息；略過問候、附件占位與系統錯誤。
+3. 將連續的人員訊息與下一則有效 AI 回覆組成一份候選。
+4. 不論是否已有 Bot 回覆，候選在人工核准前都必須標示「尚待確認」，Bot 回覆不得自動列為已確認事實。
+5. 保存來源訊息 ID、群組、日期、Skill 版本、待辦與風險標記。
+6. 以內容雜湊去重；同一批資料重跑不得重複建立候選。
+7. 管理者可修改標題、分類及內容，再核准、退回或封存。
+8. 只有 `approved` 候選可以建立公司知識 Section 與 RAG Chunk。
 
-- `<source>-ai-cleaned.md`：提供人員閱讀與確認。
-- `<source>-ai-cleaned.json`：人工核准後用於 SQL 匯入，亦可作為備份與移轉資料包。
+## 輸出與狀態
 
-## 參考規則
+- 檔案清洗：輸出 Section、Chunk、來源 Metadata、清洗報告與可下載備份包。
+- LINE 整理：輸出批次及待審候選。
+- 狀態只使用 `pending_review`、`approved`、`rejected`、`archived`。
+- 詳細欄位見 [references/OUTPUT_SCHEMA.md](references/OUTPUT_SCHEMA.md)。
 
-- 修改文字正規化、LINE 解析、Chunk 切割或隱私行為前，必須閱讀 `references/cleaning-rules.md`。
-- 修改 JSON 資料包或 SQL 匯入契約前，必須閱讀 `references/output-schema.md`。
+## 迭代規則
+
+- 修改切割、分類、去重或風險判斷時必須提升版本。
+- 舊資料保留原本 `skill_version`，不得假裝由新版規則產生。
+- 新版上線前需以固定測試資料驗證公司隔離、去重及核准前不可檢索。
