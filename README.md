@@ -47,6 +47,8 @@ ECOCO AI 客服
 | `docs/` | 依 B2C、B2B、維運與技術參考分類的文件 |
 | `skills/ecoco-clean-brand-knowledge/` | B2B 品牌資料清洗 Skill |
 
+`skills/ecoco-clean-brand-knowledge/` 是唯一正式來源；`.agents/skills/` 是 Agent 相容副本。修改 Skill 後執行 `npm run skill:sync`，完整測試會檢查兩份內容是否完全一致。
+
 ## 本機啟動
 
 需求：Node.js 20 以上與 PostgreSQL。

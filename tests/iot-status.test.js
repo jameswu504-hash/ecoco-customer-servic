@@ -18,6 +18,7 @@ const stationQueryIntent = require('../services/station-query-intent.service');
 const {
   buildStationSearchTerms,
   createIotStatusService,
+  getIotMysqlConfig,
   isStationCountQuestion,
   isIotMysqlConfigured,
   normalizeCoords,
@@ -26,11 +27,7 @@ const {
 } = require('../services/iot-status.service');
 
 test('IoT MySQL config is optional', async () => {
-  const service = createIotStatusService({
-    env: {
-      ECOCO_IOT_STATION_SNAPSHOT_PATH: path.join(__dirname, '.missing-iot-snapshot.json'),
-    },
-  });
+  const service = createIotStatusService({});
   const result = await service.retrieveLiveStationContext('台南崇學站現在能不能投', {
     classification: { category: 'station_machine' },
   });
@@ -41,27 +38,18 @@ test('IoT MySQL config is optional', async () => {
   assert.equal(result.context, '');
 });
 
-test('committed station snapshots are not used unless explicitly enabled', async () => {
-  const tempPath = path.join(__dirname, `.tmp-disabled-iot-snapshot-${Date.now()}.json`);
-  fs.writeFileSync(tempPath, JSON.stringify({
-    generatedAt: new Date().toISOString(),
-    stations: [{ stationCode: 'stale-1', stationName: '已撤除的舊站點' }],
-  }), 'utf8');
+test('customer runtime does not expose legacy station snapshot configuration', () => {
+  const config = getIotMysqlConfig({
+    ECOCO_IOT_STATION_SNAPSHOT_PATH: 'legacy.json',
+    ECOCO_IOT_ALLOW_SNAPSHOT_FALLBACK: 'true',
+  });
+  const service = createIotStatusService({});
+  const envExample = fs.readFileSync(path.join(__dirname, '..', '.env.example'), 'utf8');
 
-  try {
-    const service = createIotStatusService({
-      env: { ECOCO_IOT_STATION_SNAPSHOT_PATH: tempPath },
-    });
-    const result = await service.retrieveLiveStationContext('已撤除的舊站點現在正常嗎', {
-      classification: { category: 'station_machine' },
-    });
-
-    assert.equal(result.retrievalMode, 'iot_unavailable');
-    assert.equal(result.rows.length, 0);
-    assert.equal(result.context, '');
-  } finally {
-    fs.unlinkSync(tempPath);
-  }
+  assert.equal(Object.hasOwn(config, 'snapshotPath'), false);
+  assert.equal(Object.hasOwn(config, 'allowSnapshotFallback'), false);
+  assert.equal(service.retrieveSnapshotStationContext, undefined);
+  assert.doesNotMatch(envExample, /ECOCO_IOT_(?:STATION_SNAPSHOT_PATH|ALLOW_SNAPSHOT_FALLBACK)/);
 });
 
 test('station questions extract useful MySQL search terms', () => {
@@ -577,60 +565,6 @@ test('IoT MySQL connection diagnostics return sanitized errors', async () => {
     errorCode: 'Error',
     message: 'bad',
   });
-});
-
-test('customer station lookup never serves a snapshot even when legacy fallback is enabled', async () => {
-  const tempPath = path.join(__dirname, `.tmp-iot-snapshot-${Date.now()}.json`);
-  fs.writeFileSync(tempPath, JSON.stringify({
-    generatedAt: '2026-07-24T00:00:00.000Z',
-    stations: [{
-      stationCode: 'es0140',
-      stationName: '小北百貨台南西門店站',
-      address: '臺南市北區西門路四段5號',
-      areaName: '臺南',
-      districtName: '北區',
-      placeName: '小北百貨',
-      serviceHours: '24H',
-      stationStatus: 'up',
-      machineStatus: 'up',
-      lastConnectionStatus: 'online',
-      bin1RemainCapacity: 56,
-      bin2RemainCapacity: 0,
-    }],
-  }), 'utf8');
-
-  const fakePool = {
-    async query() {
-      const err = new Error('connect ETIMEDOUT');
-      err.code = 'ETIMEDOUT';
-      throw err;
-    },
-    async end() {},
-  };
-  const service = createIotStatusService({
-    env: {
-      ECOCO_IOT_MYSQL_HOST: 'example.invalid',
-      ECOCO_IOT_MYSQL_USER: 'readonly',
-      ECOCO_IOT_MYSQL_PASSWORD: 'secret',
-      ECOCO_IOT_MYSQL_DATABASE: 'ecoco',
-      ECOCO_IOT_STATION_SNAPSHOT_PATH: tempPath,
-      ECOCO_IOT_ALLOW_SNAPSHOT_FALLBACK: 'true',
-    },
-    mysqlFactory: { createPool: () => fakePool },
-  });
-
-  try {
-    const result = await service.retrieveLiveStationContext('小北百貨台南西門店站現在正常嗎', {
-      classification: { category: 'station_machine' },
-    });
-
-    assert.equal(result.retrievalMode, 'iot_unavailable');
-    assert.equal(result.fallbackReason, 'postgres_iot_disabled');
-    assert.equal(result.rows.length, 0);
-    assert.equal(result.context, '');
-  } finally {
-    fs.unlinkSync(tempPath);
-  }
 });
 
 test('live station context is attached to the RAG prompt only for station questions', async () => {

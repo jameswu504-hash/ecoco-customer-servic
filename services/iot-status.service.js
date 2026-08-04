@@ -1,8 +1,5 @@
-const fs = require('fs');
-const path = require('path');
 const mysql = require('mysql2/promise');
 const stationQueryIntent = require('./station-query-intent.service');
-const { normalizeUnicodeText } = require('./text-normalization.service');
 
 const DEFAULT_LIMIT = 5;
 const MAX_LIMIT = 8;
@@ -26,12 +23,6 @@ function normalizeCoords(coords) {
     label: String(coords?.label || '').trim().slice(0, 80),
   };
 }
-const DEFAULT_SNAPSHOT_PATH = path.join(__dirname, '..', 'data', 'iot-station-snapshot.json');
-
-function normalizeText(value) {
-  return normalizeUnicodeText(value, { whitespace: 'remove' });
-}
-
 function getBooleanEnv(value, fallback = false) {
   if (value === undefined || value === null || value === '') return fallback;
   return ['1', 'true', 'yes', 'on', 'require'].includes(String(value).trim().toLowerCase());
@@ -48,8 +39,6 @@ function getIotMysqlConfig(env = process.env) {
     rejectUnauthorized: getBooleanEnv(env.ECOCO_IOT_MYSQL_SSL_REJECT_UNAUTHORIZED, true),
     connectionLimit: Number(env.ECOCO_IOT_MYSQL_CONNECTION_LIMIT || 4),
     connectTimeoutMs: Number(env.ECOCO_IOT_MYSQL_CONNECT_TIMEOUT_MS || DEFAULT_CONNECT_TIMEOUT_MS),
-    snapshotPath: env.ECOCO_IOT_STATION_SNAPSHOT_PATH || DEFAULT_SNAPSHOT_PATH,
-    allowSnapshotFallback: getBooleanEnv(env.ECOCO_IOT_ALLOW_SNAPSHOT_FALLBACK, false),
   };
 }
 
@@ -103,7 +92,7 @@ function escapePostgresLike(value) {
   return String(value || '').replace(/[\\%_]/g, '\\$&');
 }
 
-function shouldUseLiveStationContext(question, classification = null) {
+function shouldUseLiveStationContext(question, _classification = null) {
   return stationQueryIntent.isStationDataQuestion(question);
 }
 
@@ -151,42 +140,6 @@ function sanitizeRow(row = {}) {
   };
 }
 
-function normalizeSnapshotRow(row = {}) {
-  return sanitizeRow({
-    station_id: row.stationId,
-    station_code: row.stationCode,
-    station_name: row.stationName,
-    address: row.address,
-    area_name: row.areaName,
-    district_name: row.districtName,
-    place_name: row.placeName,
-    longitude: row.longitude,
-    latitude: row.latitude,
-    service_hours: row.serviceHours,
-    station_status: row.stationStatus,
-    station_status_updated_at: row.stationStatusUpdatedAt,
-    asset_id: row.assetId,
-    machine_type: row.machineType,
-    machine_kind: row.machineKind,
-    machine_status: row.machineStatus,
-    machine_status_at: row.machineStatusAt,
-    last_conn_status: row.lastConnectionStatus,
-    last_conn_status_at: row.lastConnectionStatusAt,
-    last_heartbeat_at: row.lastHeartbeatAt,
-    alarm_code: row.alarmCode,
-    alarm_description: row.alarmDescription,
-    bin1_count: row.bin1Count,
-    bin1_max_capacity: row.bin1MaxCapacity,
-    bin1_remain_capacity: row.bin1RemainCapacity,
-    bin1_full_at: row.bin1FullAt,
-    bin2_count: row.bin2Count,
-    bin2_max_capacity: row.bin2MaxCapacity,
-    bin2_remain_capacity: row.bin2RemainCapacity,
-    bin2_full_at: row.bin2FullAt,
-    source_synced_at: row.sourceSyncedAt,
-  });
-}
-
 function formatDate(value) {
   if (!value) return '';
   const date = new Date(value);
@@ -205,17 +158,14 @@ function formatCapacity(count, max, remain, fullAt) {
 
 function formatLiveStationContext(rows, checkedAt = new Date(), source = 'live MySQL', freshness = null) {
   if (!Array.isArray(rows) || rows.length === 0) return '';
-  const isSnapshot = source === 'snapshot';
   const isPostgresSync = /postgres|neon/i.test(source);
   const lines = [
     '## Station / machine status',
     `Checked at: ${checkedAt.toISOString()}`,
     `Source: ${source}`,
-    isSnapshot
-      ? 'This is a committed station snapshot. Use it when live MySQL is unreachable, and avoid saying it is real-time.'
-      : isPostgresSync
-        ? 'This context comes from the cloud PostgreSQL station table refreshed by the local MySQL sync job. Use source_synced_at to judge freshness, and do not call it real-time if the sync is stale.'
-        : 'Use this live read-only MySQL context for station location, opening hours, machine status, bin capacity, alarms, and heartbeat. Prefer it over older RAG content when there is a conflict.',
+    isPostgresSync
+      ? 'This context comes from the cloud PostgreSQL station table refreshed by the local MySQL sync job. Use source_synced_at to judge freshness, and do not call it real-time if the sync is stale.'
+      : 'Use this live read-only MySQL context for station location, opening hours, machine status, bin capacity, alarms, and heartbeat. Prefer it over older RAG content when there is a conflict.',
     freshness?.isStale
       ? 'STALE DATA: You may use station names and addresses, but must not present machine status, connection status, alarms, or bin capacity as current.'
       : '',
@@ -244,66 +194,6 @@ function formatLiveStationContext(rows, checkedAt = new Date(), source = 'live M
   return lines.join('\n');
 }
 
-function loadStationSnapshot(snapshotPath = DEFAULT_SNAPSHOT_PATH) {
-  if (!fs.existsSync(snapshotPath)) {
-    return { generatedAt: '', rows: [] };
-  }
-
-  try {
-    const payload = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
-    const rows = Array.isArray(payload.stations)
-      ? payload.stations.map(normalizeSnapshotRow)
-      : [];
-    return {
-      generatedAt: payload.generatedAt || payload.generated_at || '',
-      rows,
-    };
-  } catch (err) {
-    console.warn(`IoT station snapshot read failed: ${err.message}`);
-    return { generatedAt: '', rows: [] };
-  }
-}
-
-function scoreSnapshotRow(row, terms) {
-  const code = normalizeText(row.stationCode).toLowerCase();
-  const name = normalizeText(row.stationName).toLowerCase();
-  const haystack = normalizeText([
-    row.stationCode,
-    row.stationName,
-    row.address,
-    row.areaName,
-    row.districtName,
-    row.placeName,
-  ].filter(Boolean).join(' ')).toLowerCase();
-  let score = 0;
-
-  for (const rawTerm of terms) {
-    const term = normalizeText(rawTerm).toLowerCase();
-    if (!term) continue;
-    if (code === term) score += 100;
-    if (name === term) score += 90;
-    if (name.includes(term)) score += 40;
-    if (code.includes(term)) score += 30;
-    if (haystack.includes(term)) score += 10;
-  }
-
-  return score;
-}
-
-function searchStationSnapshot(snapshot, terms, limit = DEFAULT_LIMIT) {
-  if (!Array.isArray(snapshot?.rows) || snapshot.rows.length === 0 || terms.length === 0) {
-    return [];
-  }
-
-  const cappedLimit = Math.min(Math.max(Number(limit) || DEFAULT_LIMIT, 1), MAX_LIMIT);
-  return snapshot.rows
-    .map(row => ({ row, score: scoreSnapshotRow(row, terms) }))
-    .filter(item => item.score > 0)
-    .sort((a, b) => b.score - a.score || String(a.row.stationCode).localeCompare(String(b.row.stationCode)))
-    .slice(0, cappedLimit)
-    .map(item => item.row);
-}
-
 function createIotStatusService({
   env = process.env,
   mysqlFactory = mysql,
@@ -312,7 +202,6 @@ function createIotStatusService({
 } = {}) {
   const config = getIotMysqlConfig(env);
   let pool = null;
-  let snapshot = null;
 
   function getPool() {
     if (!isIotMysqlConfigured(env)) return null;
@@ -352,33 +241,6 @@ function createIotStatusService({
     } catch (err) {
       return sanitizeConnectionError(err);
     }
-  }
-
-  function getSnapshot() {
-    if (!snapshot) snapshot = loadStationSnapshot(config.snapshotPath);
-    return snapshot;
-  }
-
-  function retrieveSnapshotStationContext(terms, { limit = DEFAULT_LIMIT, fallbackReason = '' } = {}) {
-    const currentSnapshot = getSnapshot();
-    const rows = searchStationSnapshot(currentSnapshot, terms, limit);
-    const freshness = getStationDataFreshness(currentSnapshot.generatedAt, env, now());
-    return {
-      retrievalMode: rows.length > 0 ? 'iot_snapshot' : 'iot_snapshot_miss',
-      terms,
-      rows,
-      ...freshness,
-      snapshotGeneratedAt: currentSnapshot.generatedAt || '',
-      fallbackReason,
-      context: rows.length > 0
-        ? formatLiveStationContext(
-          rows,
-          currentSnapshot.generatedAt ? new Date(currentSnapshot.generatedAt) : new Date(),
-          'snapshot',
-          freshness
-        )
-        : '',
-    };
   }
 
   // 依經緯度找最近站點。先用矩形粗篩讓索引生效，查無時放寬範圍重試一次。
@@ -677,7 +539,6 @@ function createIotStatusService({
     isConfigured: () => isIotMysqlConfigured(env),
     retrieveLiveStationContext,
     retrieveNearestStations,
-    retrieveSnapshotStationContext,
     testConnection,
   };
 }
@@ -686,7 +547,6 @@ module.exports = {
   buildStationSearchTerms,
   createIotStatusService,
   DEFAULT_CONNECT_TIMEOUT_MS,
-  DEFAULT_SNAPSHOT_PATH,
   DEFAULT_STATION_DATA_MAX_AGE_MS,
   formatLiveStationContext,
   getIotMysqlConfig,
@@ -696,9 +556,6 @@ module.exports = {
   getStationDataMaxAgeMs,
   isStationCountQuestion,
   isIotMysqlConfigured,
-  loadStationSnapshot,
   sanitizeConnectionError,
-  scoreSnapshotRow,
-  searchStationSnapshot,
   shouldUseLiveStationContext,
 };

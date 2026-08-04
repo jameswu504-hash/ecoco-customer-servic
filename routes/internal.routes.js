@@ -67,7 +67,10 @@ function createInternalRouter({ pool, requireStaffKey }) {
     const q = normalizeSearchQuery(req.query.q);
     const department = normalizeDepartment(req.query.department);
     const visibility = normalizeVisibility(req.query.visibility);
-    const limit = Math.min(Math.max(Number(req.query.limit || 10), 1), 20);
+    const requestedLimit = Number(req.query.limit || 10);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(Math.max(Math.floor(requestedLimit), 1), 20)
+      : 10;
     if (!q) return res.status(400).json({ error: 'Search query is required.' });
 
     const terms = q.split(/\s+/).filter(Boolean).slice(0, 8);
@@ -169,7 +172,7 @@ function createInternalRouter({ pool, requireStaffKey }) {
     res.json({ success: true });
   }));
 
-  router.use((err, req, res, next) => {
+  router.use((err, req, res, _next) => {
     console.error('Internal wiki route error:', err.message);
     res.status(500).json({ error: 'Internal wiki request failed.' });
   });

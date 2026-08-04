@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 const {
   EMAIL_PATTERN,
-  LONG_NUMBER_PATTERN,
   TW_ID_PATTERN,
   TW_MOBILE_PATTERN,
   countSensitiveLongNumbers,

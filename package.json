@@ -10,7 +10,9 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test tests/*.test.js",
-    "lint": "node scripts/lint.mjs",
+    "lint": "eslint server.js knowledge.js eslint.config.mjs config db middleware routes services scripts public tests skills .agents",
+    "lint:fix": "npm run lint -- --fix",
+    "check:syntax": "node scripts/lint.mjs",
     "anonymize:pii": "node scripts/anonymize-pii.js",
     "scan:pii": "node scripts/scan-pii.js",
     "build:knowledge": "node scripts/build-ecoco-knowledge-data.js",
@@ -24,7 +26,8 @@
     "knowledge:normalize-b2c": "node scripts/normalize-b2c-knowledge.js",
     "iot:snapshot": "node scripts/export-iot-station-snapshot.js",
     "iot:sync": "node scripts/sync-iot-stations-to-postgres.js",
-    "suggest:synonyms": "node scripts/suggest-synonyms.mjs"
+    "suggest:synonyms": "node scripts/suggest-synonyms.mjs",
+    "skill:sync": "node scripts/sync-ecoco-skill.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.104.1",
@@ -35,5 +38,9 @@
     "mysql2": "^3.23.1",
     "nodemailer": "^9.0.3",
     "pg": "^8.21.0"
+  },
+  "devDependencies": {
+    "eslint": "^10.8.0",
+    "globals": "^17.9.0"
   }
 }

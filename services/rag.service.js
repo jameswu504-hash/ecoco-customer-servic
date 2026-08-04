@@ -8,6 +8,11 @@ const {
 const { normalizeUnicodeText } = require('./text-normalization.service');
 
 const KNOWLEDGE_CHUNK_LOCK_ID = 60229;
+const EMBEDDING_MODEL_DIMENSIONS = new Map([
+  ['text-embedding-3-small', 1536],
+  ['text-embedding-3-large', 3072],
+  ['text-embedding-ada-002', 1536],
+]);
 
 function getBoundedNumber(value, fallback, minimum, maximum) {
   const number = Number(value);
@@ -220,7 +225,19 @@ function buildChunksFromSection(section) {
 }
 
 function hasHighRiskChunk(rag) {
-  return Array.isArray(rag?.chunks) && rag.chunks.some(chunk => normalizeRiskLevel(chunk.risk_level) === 'High');
+  return Array.isArray(rag?.chunks) && rag.chunks.some(chunk => (
+    normalizeRiskLevel(chunk.risk_level ?? chunk.riskLevel) === 'High'
+  ));
+}
+
+function getEmbeddingDimensions(value, model) {
+  const modelMaximum = EMBEDDING_MODEL_DIMENSIONS.get(model) || 3072;
+  const modelDefault = EMBEDDING_MODEL_DIMENSIONS.get(model) || 1536;
+  const dimensions = Number(value || modelDefault);
+  if (!Number.isInteger(dimensions) || dimensions < 1 || dimensions > modelMaximum) {
+    return modelDefault;
+  }
+  return dimensions;
 }
 
 function hasExplicitHighRiskIntent(question) {
@@ -258,7 +275,7 @@ function buildEmbeddingInput(row) {
 
 function createRagService({ pool, env = process.env, fetchImpl = fetch }) {
   const embeddingModel = env.EMBEDDING_MODEL || 'text-embedding-3-small';
-  const embeddingDimensions = Number(env.EMBEDDING_DIMENSIONS || 1536);
+  const embeddingDimensions = getEmbeddingDimensions(env.EMBEDDING_DIMENSIONS, embeddingModel);
   const embeddingBatchSize = Math.floor(
     getBoundedNumber(env.EMBEDDING_BATCH_SIZE, 80, 1, 1000)
   );

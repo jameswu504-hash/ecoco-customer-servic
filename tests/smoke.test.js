@@ -10,7 +10,6 @@ const { requireIotSyncKey } = require('../middleware/iot-sync-auth');
 const {
   createMessageWithTimeout,
   createChatRouter,
-  FRIENDLY_AI_ERROR_REPLY,
   getLatestUserMessage,
   getWebChatTimeoutMs,
   persistChatArtifacts,
@@ -111,12 +110,25 @@ test('known point issue ranks the point knowledge first', () => {
 });
 
 test('high risk chunk adds conservative guardrail', () => {
-  const guardrail = buildRuntimeGuardrails('點數沒有入帳，可以補點嗎？', {
+  const guardrail = buildRuntimeGuardrails('請說明這筆資料', {
     chunks: [{ risk_level: 'High' }],
     context: '',
   });
 
   assert.match(guardrail, /客服表單|不承諾|人工/i);
+});
+
+test('high risk guardrail accepts chunks produced before database serialization', () => {
+  const guardrail = buildRuntimeGuardrails('請說明這筆資料', {
+    chunks: [{ riskLevel: 'High' }],
+    context: '',
+  });
+
+  assert.match(guardrail, /高風險客服回覆限制/);
+});
+
+test('missing chunks do not make an ordinary question high risk', () => {
+  assert.equal(buildRuntimeGuardrails('點數怎麼計算', { context: '' }), '');
 });
 
 test('runtime guardrails ignore generic risk words from retrieved context', () => {
@@ -650,6 +662,30 @@ test('embedding requests retry transient failures but not indefinitely', async (
 
   assert.equal(attempts, 2);
   assert.deepEqual(embeddings, [[0.1, 0.2]]);
+});
+
+test('invalid embedding dimensions use a supported model default', async () => {
+  for (const invalidValue of ['NaN', '-1', '1.5', '4000']) {
+    const queries = [];
+    const rag = createRagService({
+      pool: {
+        async query(sql) {
+          queries.push(sql);
+          return { rows: [] };
+        },
+      },
+      env: {
+        OPENAI_API_KEY: 'test-key',
+        EMBEDDING_MODEL: 'text-embedding-3-small',
+        EMBEDDING_DIMENSIONS: invalidValue,
+      },
+    });
+
+    await rag.ensurePgVector();
+
+    assert.match(queries.join('\n'), /embedding vector\(1536\)/);
+    assert.equal(rag.shouldUseSemanticSearch(), true);
+  }
 });
 
 test('embedding backfill clamps a zero batch size instead of hanging', () => {
@@ -1329,12 +1365,16 @@ test('LINE route is wired and documented through environment variables', () => {
 });
 
 test('dashboard documentation links point to maintained B2C and operations guides', () => {
-  for (const filename of ['dashboard.html', 'dashboard-v2.html']) {
-    const dashboard = fs.readFileSync(path.join(__dirname, '..', 'public', filename), 'utf8');
-    assert.match(dashboard, /docs\/b2c\/CUSTOMER_SUPPORT_GUIDE\.md/);
-    assert.match(dashboard, /docs\/operations\/MAINTENANCE_GUIDE\.md/);
-    assert.doesNotMatch(dashboard, /OPERATIONS_HANDOFF_GUIDE/);
-  }
+  const legacyDashboard = path.join(__dirname, '..', 'public', 'dashboard.html');
+  const dashboard = fs.readFileSync(
+    path.join(__dirname, '..', 'public', 'dashboard-v2.html'),
+    'utf8'
+  );
+
+  assert.equal(fs.existsSync(legacyDashboard), false);
+  assert.match(dashboard, /docs\/b2c\/CUSTOMER_SUPPORT_GUIDE\.md/);
+  assert.match(dashboard, /docs\/operations\/MAINTENANCE_GUIDE\.md/);
+  assert.doesNotMatch(dashboard, /OPERATIONS_HANDOFF_GUIDE/);
 });
 
 test('LINE replies are converted to plain text before sending', () => {
