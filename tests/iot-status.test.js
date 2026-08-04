@@ -197,45 +197,8 @@ test('partner policy questions mentioning machines do not trigger live station l
   assert.equal(shouldUseLiveStationContext(question, classification), false);
 });
 
-test('live station lookup formats readonly MySQL context', async () => {
-  const queries = [];
-  const fakePool = {
-    async query(sql, params = []) {
-      queries.push({ sql, params });
-      return [[{
-        station_id: 1,
-        station_code: 'es0140',
-        station_name: '小北百貨台南西門店站',
-        address: '臺南市北區西門路四段5號',
-        area_name: '臺南',
-        district_name: '北區',
-        place_name: '小北百貨',
-        service_hours: '24H',
-        station_status: 'up',
-        station_status_updated_at: new Date('2026-07-24T01:00:00Z'),
-        asset_id: ['809005', '909710', '0101942'].join(''),
-        machine_type: 'ai',
-        machine_kind: 'AI-4',
-        machine_status: 'up',
-        machine_status_at: new Date('2026-07-24T02:00:00Z'),
-        last_conn_status: 'online',
-        last_conn_status_at: new Date('2026-07-24T03:00:00Z'),
-        last_heartbeat_at: new Date('2026-07-24T03:05:00Z'),
-        alarm_code: null,
-        alarm_description: null,
-        bin1_count: 100,
-        bin1_max_capacity: 1500,
-        bin1_remain_capacity: 1400,
-        bin1_full_at: null,
-        bin2_count: 200,
-        bin2_max_capacity: 1500,
-        bin2_remain_capacity: 1300,
-        bin2_full_at: null,
-      }]];
-    },
-    async end() {},
-  };
-  const mysqlFactory = { createPool: () => fakePool };
+test('customer station lookup does not open direct MySQL without the PostgreSQL mirror', async () => {
+  let mysqlPoolCreated = false;
   const service = createIotStatusService({
     env: {
       ECOCO_IOT_MYSQL_HOST: 'example.invalid',
@@ -243,21 +206,22 @@ test('live station lookup formats readonly MySQL context', async () => {
       ECOCO_IOT_MYSQL_PASSWORD: 'secret',
       ECOCO_IOT_MYSQL_DATABASE: 'ecoco',
     },
-    mysqlFactory,
+    mysqlFactory: {
+      createPool() {
+        mysqlPoolCreated = true;
+        throw new Error('customer lookup must not open direct MySQL');
+      },
+    },
   });
 
   const result = await service.retrieveLiveStationContext('台南西門店站狀態', {
     classification: { category: 'station_machine' },
   });
 
-  assert.equal(result.retrievalMode, 'mysql_iot');
-  assert.equal(result.rows.length, 1);
-  assert.match(result.context, /Station \/ machine status/);
-  assert.match(result.context, /Source: live MySQL/);
-  assert.match(result.context, /小北百貨台南西門店站/);
-  assert.match(result.context, /last_heartbeat_at/);
-  assert.equal(queries.length, 1);
-  assert.match(queries[0].sql, /FROM stations s/);
+  assert.equal(result.retrievalMode, 'iot_unavailable');
+  assert.equal(result.fallbackReason, 'postgres_iot_disabled');
+  assert.equal(result.rows.length, 0);
+  assert.equal(mysqlPoolCreated, false);
 });
 
 test('station lookup prefers PostgreSQL sync rows before MySQL fallback', async () => {
@@ -406,6 +370,39 @@ test('successful PostgreSQL station miss does not fall through to direct MySQL',
   assert.equal(result.isStale, true);
   assert.equal(mysqlPoolCreated, false);
   assert.equal(pgQueryCount, 2);
+});
+
+test('PostgreSQL station lookup errors never fall through to MySQL or snapshots', async () => {
+  let mysqlPoolCreated = false;
+  const service = createIotStatusService({
+    env: {
+      ECOCO_IOT_MYSQL_HOST: 'mysql.example.invalid',
+      ECOCO_IOT_MYSQL_USER: 'readonly',
+      ECOCO_IOT_MYSQL_PASSWORD: 'secret',
+      ECOCO_IOT_MYSQL_DATABASE: 'ecoco',
+      ECOCO_IOT_ALLOW_SNAPSHOT_FALLBACK: 'true',
+    },
+    pgPool: {
+      async query() {
+        throw new Error('PostgreSQL mirror unavailable');
+      },
+    },
+    mysqlFactory: {
+      createPool() {
+        mysqlPoolCreated = true;
+        throw new Error('customer lookup must not use direct MySQL');
+      },
+    },
+  });
+
+  const result = await service.retrieveLiveStationContext('崇學站現在正常嗎', {
+    classification: { category: 'station_machine' },
+  });
+
+  assert.equal(result.retrievalMode, 'iot_unavailable');
+  assert.equal(result.fallbackReason, 'postgres_iot_error');
+  assert.equal(result.rows.length, 0);
+  assert.equal(mysqlPoolCreated, false);
 });
 
 test('PostgreSQL station count queries return distinct station totals', async () => {
@@ -582,7 +579,7 @@ test('IoT MySQL connection diagnostics return sanitized errors', async () => {
   });
 });
 
-test('IoT snapshot fallback requires an explicit opt-in when live MySQL is unreachable', async () => {
+test('customer station lookup never serves a snapshot even when legacy fallback is enabled', async () => {
   const tempPath = path.join(__dirname, `.tmp-iot-snapshot-${Date.now()}.json`);
   fs.writeFileSync(tempPath, JSON.stringify({
     generatedAt: '2026-07-24T00:00:00.000Z',
@@ -627,12 +624,10 @@ test('IoT snapshot fallback requires an explicit opt-in when live MySQL is unrea
       classification: { category: 'station_machine' },
     });
 
-    assert.equal(result.retrievalMode, 'iot_snapshot');
-    assert.equal(result.isStale, true);
-    assert.equal(result.fallbackReason, 'ETIMEDOUT');
-    assert.equal(result.rows[0].stationCode, 'es0140');
-    assert.match(result.context, /Source: snapshot/);
-    assert.match(result.context, /小北百貨台南西門店站/);
+    assert.equal(result.retrievalMode, 'iot_unavailable');
+    assert.equal(result.fallbackReason, 'postgres_iot_disabled');
+    assert.equal(result.rows.length, 0);
+    assert.equal(result.context, '');
   } finally {
     fs.unlinkSync(tempPath);
   }

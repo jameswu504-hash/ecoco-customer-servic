@@ -316,6 +316,122 @@ test('repeating an identical approved candidate request is idempotent', async ()
   assert.equal(queries.at(-1).sql, 'COMMIT');
 });
 
+test('approved knowledge can create an editable pending revision without changing the published row', async () => {
+  const queries = [];
+  const approvedCandidate = {
+    id: 81,
+    company_id: 7,
+    batch_id: 51,
+    line_group_id: 4,
+    title: 'Published title',
+    category: 'Published category',
+    content: 'Published content',
+    summary: 'Published summary',
+    facts: ['fact'],
+    pending_items: [],
+    todos: [],
+    source_message_ids: [11, 12],
+    risk_flags: [],
+    content_hash: 'published-hash',
+    status: 'approved',
+    approved_section_id: 91,
+  };
+  const connection = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (/SELECT pkc\.\*/.test(sql)) return { rows: [approvedCandidate] };
+      if (/MAX\(revision_number\)/.test(sql)) return { rows: [{ next: 2 }] };
+      if (/INSERT INTO partner_knowledge_candidates/.test(sql)) {
+        return {
+          rows: [{
+            ...approvedCandidate,
+            id: 82,
+            status: 'pending_review',
+            approved_section_id: null,
+            revision_of_candidate_id: 81,
+            revision_number: 2,
+          }],
+        };
+      }
+      return { rows: [] };
+    },
+    release() {},
+  };
+  const service = createPartnerConversationKnowledgeService({
+    pool: { async connect() { return connection; } },
+  });
+
+  const result = await service.createCandidateRevision(7, 81);
+
+  assert.equal(result.candidate.id, 82);
+  assert.equal(result.candidate.status, 'pending_review');
+  assert.equal(result.candidate.revision_of_candidate_id, 81);
+  const insert = queries.find(({ sql }) => /INSERT INTO partner_knowledge_candidates/.test(sql));
+  assert.match(insert.sql, /revision_of_candidate_id/);
+  assert.equal(insert.params[0], 7);
+  assert.equal(insert.params[1], 81);
+  assert.ok(queries.some(({ sql }) => sql === 'COMMIT'));
+  assert.equal(queries.some(({ sql }) => /UPDATE partner_knowledge_candidates/.test(sql)), false);
+});
+
+test('approving a revision publishes new chunks and archives the superseded knowledge section', async () => {
+  const queries = [];
+  const connection = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (/SELECT pkc\.\*, pcb\.conversation_day/.test(sql)) {
+        return {
+          rows: [{
+            id: 82,
+            company_id: 7,
+            batch_id: 51,
+            line_group_id: 4,
+            title: '合作內容第二版',
+            category: 'LINE 待審｜一般合作事項',
+            content: '新版合作內容。',
+            source_message_ids: [11, 12],
+            risk_flags: [],
+            status: 'pending_review',
+            approved_section_id: null,
+            revision_of_candidate_id: 81,
+            revision_number: 2,
+            conversation_day: '2026-07-30',
+            skill_name: SKILL_NAME,
+            skill_version: SKILL_VERSION,
+          }],
+        };
+      }
+      if (/SELECT approved_section_id/.test(sql)) {
+        return { rows: [{ approved_section_id: 91 }] };
+      }
+      if (/MAX\(sort_order\)/.test(sql)) return { rows: [{ next: 4 }] };
+      if (/INSERT INTO partner_knowledge_sections/.test(sql)) return { rows: [{ id: 92 }] };
+      if (/UPDATE partner_knowledge_candidates/.test(sql)) {
+        return { rows: [{ id: 82, status: 'approved', approved_section_id: 92 }] };
+      }
+      return { rows: [] };
+    },
+    release() {},
+  };
+  const service = createPartnerConversationKnowledgeService({
+    pool: { async connect() { return connection; } },
+  });
+
+  const result = await service.reviewCandidate(7, 82, {
+    status: 'approved',
+    title: '合作內容第二版',
+    category: 'LINE 待審｜一般合作事項',
+    content: '新版合作內容。',
+  });
+
+  assert.equal(result.createdKnowledgeSectionId, 92);
+  assert.equal(result.replacedKnowledgeSectionId, 91);
+  const archive = queries.find(({ sql }) => /UPDATE partner_knowledge_sections[\s\S]*archived_at = NOW/.test(sql));
+  assert.ok(archive);
+  assert.deepEqual(archive.params, [7, 91]);
+  assert.ok(queries.some(({ sql }) => sql === 'COMMIT'));
+});
+
 test('partner admin exposes manual one-day and seven-day candidate review workflow', () => {
   const root = path.join(__dirname, '..');
   const html = fs.readFileSync(path.join(root, 'public', 'partners.html'), 'utf8');
@@ -335,8 +451,11 @@ test('partner admin exposes manual one-day and seven-day candidate review workfl
   assert.match(js, /candidateStatus/);
   assert.match(js, /紀錄超過 2,000 則，僅處理最新 2,000 則/);
   assert.match(routes, /knowledge-candidates\/:candidateId/);
+  assert.match(routes, /knowledge-candidates\/:candidateId\/revisions/);
+  assert.match(js, /建立修訂版本/);
+  assert.match(js, /knowledge-candidates\/\$\{candidate\.id\}\/revisions/);
   assert.match(skill, /name: ecoco-clean-brand-knowledge/);
-  assert.match(skill, /版本：1\.2\.0/);
+  assert.match(skill, /版本：1\.3\.0/);
   assert.match(skill, /Bot 回覆不得自動列為已確認事實/);
   assert.match(skill, /pending_review/);
   assert.match(skill, /不得進入 RAG/);

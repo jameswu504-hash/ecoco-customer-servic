@@ -1,133 +1,74 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+本文件提供 AI 與工程協作者處理此 repository 時的必要規則。產品與維運文件由 [`docs/README.md`](docs/README.md) 進入。
 
-## 指令
+## 驗證指令
 
 ```bash
-npm start                   # 啟動伺服器（production）
-npm run dev                 # 開發模式（node --watch 熱重載）
-
-npm run audit:knowledge     # 掃描 data/ 知識庫，找出重複與衝突
-npm run apply:knowledge-audit  # 將稽核結果套用（把重複項標為 archived，不刪除）
-npm run build:knowledge     # 從 data/ 組出 ecoco-knowledge-import.json
-npm run import:knowledge    # 把 ecoco-knowledge-import.json 匯入 PostgreSQL
-npm run knowledge:backfill-embeddings  # 只補 knowledge_chunks 缺少或模型不符的 embedding
-npm run iot:sync            # 從唯讀 MySQL 同步站點狀態到 Render/Neon
-
-npm run lint                # 語法檢查（scripts/lint.mjs 自動掃描所有 .js/.mjs）
-npm test                    # 執行 tests/*.test.js（node --test，目前共 5 個測試檔）
-npm run eval:validate       # 驗證 evals/golden-set.json 格式
-npm run eval                # 對線上服務跑 golden set（需設 ECOCO_BASE_URL、ADMIN_KEY）
-npm run scan:pii            # 掃描 repo 是否含個資
+npm run lint
+npm test
+npm run eval:validate
+npm run scan:pii
+git diff --check
 ```
 
-**修改程式碼後必須執行 `npm run lint` 與 `npm test`，全數通過才能 commit。**CI（.github/workflows/ci.yml）會再跑一次 lint、test、eval:validate、scan:pii。
+修改功能後必須執行與風險相稱的測試；提交前至少完成上述檢查。測試範圍以 `tests/*.test.js` 為準，不在文件硬寫檔案數量。
 
-啟動需要 `.env`：
+## 常用指令
 
+```bash
+npm start
+npm run dev
+npm run build:knowledge
+npm run import:knowledge
+npm run audit:knowledge
+npm run knowledge:backfill-embeddings
+npm run iot:sync
+npm run eval
 ```
-ANTHROPIC_API_KEY=...
-ADMIN_KEY=...
-SESSION_SECRET=...                   # 至少 32 個隨機字元；簽署前台 HttpOnly cookie
-IOT_SYNC_KEY=...                     # 本機 IoT upload-only key，不得與 ADMIN_KEY 共用
-DATABASE_URL=postgresql://...
-KNOWLEDGE_AUTO_SYNC=disable       # 日常維護只用後台 PostgreSQL；大改版才匯出 JSON 回 Git
-PGSSL=verify-full                # 雲端連線加密並驗證憑證；只有相容性需求才降為 require
-```
 
-## 架構
+## 系統邊界
 
-### 兩層知識資料
+- B2C：官網與 LINE 一對一聊天，使用 ECOCO 共用知識及 Hive 站點同步鏡像。
+- B2B：LINE 群組先通過綁定 gate，再使用共用知識與相同 `company_id` 的公司私有知識。
+- 未綁定群組不得退回 B2C 回答。
+- B2C 不得檢索 `partner_*` 公司私有資料。
+- 站點資料不放入靜態 B2C 知識；由 Hive／Azure MySQL 同步到 `iot_station_statuses`。
 
-系統有兩個知識來源，必須理解兩者的關係才能正確維護：
+詳細架構見 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)，B2B 規則見 [`docs/b2b/README.md`](docs/b2b/README.md)。
 
-| 層 | 檔案 | 說明 |
-|---|---|---|
-| PostgreSQL（線上權威層） | `knowledge_sections` | 後台日常編輯與伺服器實際讀取的正式內容 |
-| PostgreSQL（衍生檢索層） | `knowledge_chunks` | 由 sections 切分與 embedding 產生，不可手動編輯 |
-| Git JSON（版本紀錄層） | `data/ecoco-knowledge-import.json` | 大改版、交接或備份時由 PostgreSQL 匯出、人工確認後提交 |
-| 整理底稿 | `data/ecoco-ai-customer-service-database.json` | 來源整合、衝突追蹤與稽核用途，不會自動覆蓋線上 DB |
+## 知識資料
 
-**日常更新流程：** 在後台新增、修改、封存或恢復知識，資料直接寫入 PostgreSQL。  
-**正式版本流程：** 大改版、交接或備份前，從後台下載 JSON，人工確認後覆蓋 `data/ecoco-knowledge-import.json`，再 commit / push。  
-**注意：** 後台直接編輯不會回寫 Git JSON，Render 預設也不會自動用 Git JSON 覆蓋 PostgreSQL。
+- PostgreSQL `knowledge_sections`、`knowledge_chunks` 是線上 B2C 共用知識來源。
+- `partner_knowledge_sections`、`partner_knowledge_chunks` 必須在 SQL 層依 `company_id` 隔離。
+- `data/ecoco-knowledge-import.json` 是備份與明確匯入檔，不會因 Git push 自動成為正式資料。
+- 封存或刪除 section 時，必須同步處理 chunks。
+- B2B LINE 對話不是知識；需整理為候選並經人工核准。
+- 品牌文件清洗依 `skills/ecoco-clean-brand-knowledge/SKILL.md`，原始檔不送外部 AI。
 
-### `server.js` 的啟動順序
+## RAG
 
-1. `validateRuntimeConfig()` — 檢查必要環境變數，缺 `DATABASE_URL`／`ANTHROPIC_API_KEY`／`ADMIN_KEY` 直接啟動失敗
-2. `initDb()` — 逐一執行 SCHEMA 建表（雲端 Postgres 不接受多語句，故分開執行），並跑 timestamp 欄位遷移與 pgvector 初始化
-3. `KNOWLEDGE_AUTO_SYNC` 決定是否從 Git JSON 同步進 PostgreSQL
-4. `ensureKnowledgeChunksReady()` — chunks 為空或同步有變更時重建 `knowledge_chunks`
-5. `purgeExpiredConversationData()` — 啟動時清理一次，之後每 24 小時依 `CONVERSATION_RETENTION_DAYS` 清除過期 B2C/B2B 對話、評分、已結案缺口與 LINE event 紀錄
-6. 開始接請求
+- 有 pgvector 與 `OPENAI_API_KEY` 時可用語意檢索。
+- embedding 不可用時必須安全退回關鍵字檢索。
+- 風險控制以資料欄位與程式規則為準，不可只依賴 prompt。
+- 只把本次問題命中的必要 chunks 交給 Claude，不可傳送整個資料庫。
 
-### RAG 流程
+## 安全
 
-`/api/chat` 收到問題後：
-1. 檢索 `knowledge_chunks`：主要走 pgvector 語意檢索（需 `vector` extension + `OPENAI_API_KEY`），關鍵字／同義詞 `ILIKE` 檢索作為備援或混合來源，排序後取前 8 筆片段（`MAX_RAG_CHUNKS`）。分類器的 `ragScope` 只做排序加權，不得作 SQL 硬過濾。
-2. 靜態 system prompt 標記 `cache_control: ephemeral` 啟用 prompt caching；RAG 片段放在動態區塊
-3. 呼叫 Claude（預設 `claude-sonnet-4-6`，可用 `ANTHROPIC_MODEL` 環境變數覆蓋，`max_tokens: 1024`）
+- 不得提交 `.env`、API key、Database URL、`ADMIN_KEY`、`IOT_SYNC_KEY` 或 LINE token。
+- 管理 API 必須通過管理驗證與 rate limit。
+- IoT 同步使用 `x-iot-sync-key`；正式環境應設定獨立 `IOT_SYNC_KEY`。
+- LINE webhook 必須驗證 `X-Line-Signature`。
+- 使用參數化 SQL，不可將使用者輸入直接拼入查詢。
+- 管理操作與 webhook 問題應留下可追查紀錄，但不得在 log 印出密鑰或完整敏感資料。
 
-`knowledge_chunks` 是從 `knowledge_sections` 自動切分的衍生資料，**不要手動編輯**。後台修改分類時只刷新該 section；啟動時僅在 chunks 為空、知識同步有變更，或明確設定 `REBUILD_KNOWLEDGE_CHUNKS_ON_START=always` 時完整重建。
+## 文件規則
 
-### 知識缺口偵測
-
-偵測順序：優先解析回覆結尾的 `<meta>{"gap":...}</meta>` JSON 標記，其次是 `[KNOWLEDGE_GAP]` 機器標記，最後才是「沒有確切資料」等字串比對（見 `routes/chat.routes.js` 的 `detectKnowledgeGap`）。命中即寫一筆到 `unanswered_questions`；標記在送給使用者前會被移除。DB 寫入失敗不中斷對話（內層獨立 try/catch）。
-
-### KNOWLEDGE_AUTO_SYNC 模式
-
-| 模式 | 行為 |
-|---|---|
-| `disable`（預設） | 不同步 Git JSON；日常以後台 PostgreSQL 為準 |
-| `insert_only` | 只新增 Git JSON 裡沒有的分類，保留後台編輯 |
-| `upsert` | 新增 + 更新已存在的分類 |
-| `replace` | 清空 PostgreSQL 知識，完整以 Git JSON 取代 |
-
-### Admin 保護
-
-`requireAdminKey` 用 `crypto.timingSafeEqual` 比較，防計時攻擊。後台所有 `/api/knowledge/*`、`/api/stats`、`/api/sessions`、`/api/unanswered` 等均需帶 `x-admin-key` header，並經 admin rate limit。`POST /api/iot/station-statuses/sync` 改用專用 `x-iot-sync-key`；設定 `IOT_SYNC_KEY` 後不得再接受 `ADMIN_KEY`。
-
-客服前台 session 由伺服器簽發 `HttpOnly; SameSite=Strict` signed cookie。不得重新接受任意 `x-session-id`，否則會恢復跨 session 歷史讀取風險。
-
-### Dashboard API 與知識編輯
-
-- `/api/sessions` 已分頁，回傳 `{ total, limit, offset, sessions }`，其中 `sessions` 只含對話摘要與訊息數；單場訊息由 `/api/session-messages?session_id=` 懶載入。`/api/search` 維持舊行為，仍回傳含 `messages` 的完整搜尋結果。
-- `public/kb-parser.js` 是後台知識庫分題解析器，以 `### ` 行切割題目，並保證 `assembleKbContent(parseKbContent(x)) === x`。儲存流程仍以完整 `knowledge_sections.content` 字串為準，不改資料庫 schema。
-
-### B2B LINE 公司分支
-
-- 同一個 `/api/line/webhook` 服務 B2C 與 B2B；一對一訊息走 B2C，群組訊息先檢查 `partner_line_groups`。
-- `line_webhook_events` 以 LINE `webhookEventId` 防重送；對話 `message_id` 與評分也有資料庫唯一約束。
-- 未綁定群組不得進入 B2C 或 B2B RAG。已綁定群組只能讀取 ECOCO 共用知識與目前 `company_id` 的 `partner_knowledge_sections`。
-- B2B 私有對話只寫入 `partner_conversations`。所有私有知識與歷史 SQL 都必須帶 `company_id`，不可用 prompt 取代後端隔離。
-- 合作公司資料不得寫入全域 `knowledge_sections`。
-- `/partners.html` 與 `/api/partners/*` 只供 ECOCO 管理者使用，全部由 `ADMIN_KEY` 保護；公司端只在 LINE 群組互動。
-- 詳見 `docs/B2B_LINE_PARTNER_FRAMEWORK.md`。
-
-## 重要規則
-
-**修改前先說明：** 任何影響 AI 回覆行為、資料同步邏輯、部署設定或 Git 歷史的變更，必須先向使用者解釋，再執行。
-
-**高風險類別（response-policies）：** 點數、兌換券、機台錯誤、帳號、客訴等類別有保守回答規則。已標記 high-risk 的 chunks 或明確個案／補償意圖會啟用限制；「退款規則／流程／條件」等一般政策問法仍先查 RAG，但不得承諾個案結果。不要因「點數」「帳號」或單一「點」字本身直接轉人工。
-
-**知識庫稽核：** 重複項標記 `"status": "archived"` 而非刪除，保留原始紀錄供比對。
-
-## 頁面
-
-| 頁面 | 路徑 |
-|---|---|
-| 客服前台 | `public/index.html` |
-| 後台儀表板 | 對外入口 `/dashboard.html`；實際 shell 為 `public/dashboard-v2.html`，共用 `public/dashboard.js` |
-| B2B 合作夥伴管理 | `public/partners.html`，入口 `/partners.html`，僅 ECOCO 管理者使用 |
+- 現行文件依 `docs/b2c/`、`docs/b2b/`、`docs/operations/`、`docs/reference/` 分類。
+- 不新增日期型 handoff；把有效內容更新到現行文件。
+- `docs/archive/` 只供追溯，`docs/future/` 只放未實作規劃。
+- 功能、路徑或資料規則改變時，同步更新 `docs/README.md` 與對應現行文件。
 
 ## 部署
 
-Render 從 GitHub main 分支自動部署，執行 `npm start`。環境變數在 Render Dashboard 設定，不可 commit 進版本控制。
-
-## RAG Implementation Note
-
-- Primary retrieval: pgvector semantic search on `knowledge_chunks.embedding`, enabled only when PostgreSQL has the `vector` extension and `OPENAI_API_KEY` is configured.
-- Fallback retrieval: keyword/synonym search through `search_text ILIKE`, so the service still works without embeddings.
-- Chunk risk control: `knowledge_chunks.risk_level` is the source of truth for high-risk guardrails. Do not rely on matching prompt text such as `風險：High`.
-- Embedding defaults: `EMBEDDING_MODEL=text-embedding-3-small`, `EMBEDDING_DIMENSIONS=1536`, `EMBEDDING_BATCH_SIZE=80`.
+Render 由 GitHub `main` 自動部署，啟動指令為 `npm start`。部署與環境設定見 [`docs/operations/DEPLOYMENT_RUNBOOK.md`](docs/operations/DEPLOYMENT_RUNBOOK.md)。

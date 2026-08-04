@@ -29,7 +29,7 @@
 | --- | --- |
 | `id` | 系統流水號 |
 | `msg_id` | `/api/chat` 回傳的伺服器 `messageId`，對應 `conversations.message_id` |
-| `type` | 評分類型，例如喜歡或不喜歡 |
+| `type` | 評分類型：`positive`、`negative` 或 `neutral` |
 | `question` | 使用者問題 |
 | `reply` | AI 回覆 |
 | `timestamp` | 評分時間 |
@@ -137,8 +137,13 @@ LINE webhook 的 durable idempotency 紀錄。`event_id` 是主鍵；`status`、
 | `partner_companies` | 合作公司主檔，含 `slug`、名稱與啟用狀態 | `id` |
 | `partner_line_groups` | LINE 群組與公司綁定；只保存 `groupId` 的 SHA-256 與末四碼 | `company_id`, `group_key` |
 | `partner_binding_codes` | 24 小時有效的一次性群組綁定碼；只保存 code hash | `company_id` |
+| `partner_source_documents` | 匯入文件的檔名、雜湊、大小、保存模式與狀態；不保存原始內容 | `company_id` |
+| `partner_cleaning_jobs` | 資料清洗 Skill 版本、報告與人工核准狀態 | `company_id`, `source_document_id` |
 | `partner_knowledge_sections` | 公司專屬合作資料，不得混入全域 `knowledge_sections` | `company_id` |
+| `partner_knowledge_chunks` | 公司專屬 RAG 切片及來源追溯資料 | `company_id`, `section_id` |
 | `partner_conversations` | B2B 群組與管理頁模擬測試的對話 | `company_id`, `line_group_id`, `session_id` |
+| `partner_conversation_batches` | 依群組、日期整理 LINE 對話的批次 | `company_id`, `line_group_id` |
+| `partner_knowledge_candidates` | 從對話整理、等待人工審核的候選知識；以 `revision_of_candidate_id`、`revision_number` 追蹤已核准知識的修訂版 | `company_id`, `batch_id` |
 
 所有 B2B 私有資料與對話查詢都必須包含 `company_id`。停用公司或群組後，LINE webhook 不得再進入該公司的 RAG 分支。
 
@@ -225,43 +230,42 @@ LINE webhook 的 durable idempotency 紀錄。`event_id` 是主鍵；`status`、
 - 本機用 `.env`。
 - Render 上線用 Environment Variables。
 - GitHub 只能放 `.env.example`，不能放真正 `.env`。
-# IoT Station Status Table
+## IoT 站點狀態
 
-## `iot_station_statuses`
+### `iot_station_statuses`
 
-Cloud copy of readonly Azure MySQL station/machine state. Render reads this table for station and machine status replies.
+這是 Hive／Azure MySQL 站點與機台狀態的雲端鏡像。官網與 LINE 客服從此表回答站點位置、機台狀態、連線及容量問題。
 
-Primary key:
+複合主鍵：
 
 ```text
 (station_code, asset_id)
 ```
 
-The sync job writes one row per station asset after deduping duplicate MySQL rows. Customer replies should use this table for station address, machine status, connection status, and bin capacity.
+同步程式會先去除來源重複列，再以每個站點設備一列的方式寫入。
 
 Important columns:
 
-| Column | Meaning |
+| 欄位 | 說明 |
 | --- | --- |
-| `station_code` | Station code such as `es0140` |
-| `asset_id` | Machine asset identifier; paired with station code as the primary key |
-| `station_name` | Customer-visible station name |
-| `address` | Customer-visible address |
-| `area_name`, `district_name`, `place_name` | Location metadata |
-| `longitude`, `latitude` | Coordinates from the source station table |
-| `station_status` | Station-level status from MySQL |
-| `machine_status` | Machine-level status from MySQL |
-| `last_conn_status` | Latest connection status |
-| `last_heartbeat_at` | Latest heartbeat timestamp when available |
-| `bin1_count`, `bin1_max_capacity`, `bin1_remain_capacity` | Bin 1 capacity values |
-| `bin2_count`, `bin2_max_capacity`, `bin2_remain_capacity` | Bin 2 capacity values |
-| `source_synced_at` | Admin-only freshness marker; do not show in customer replies |
+| `station_code` | 站點代碼 |
+| `asset_id` | 機台資產識別碼；與站點代碼共同組成主鍵 |
+| `station_name` | 對使用者顯示的站點名稱 |
+| `address` | 地址 |
+| `area_name`, `district_name`, `place_name` | 地區資訊 |
+| `longitude`, `latitude` | 座標 |
+| `station_status` | 來源站點狀態 |
+| `machine_status` | 來源機台狀態 |
+| `last_conn_status` | 最新連線狀態 |
+| `last_heartbeat_at` | 最新心跳時間（來源有提供時） |
+| `bin1_*`, `bin2_*` | 各回收槽目前值、最大容量與剩餘量 |
+| `source_synced_at` | 管理端新鮮度依據，不直接顯示給使用者 |
 
 Related scripts and endpoints:
 
-| Item | Purpose |
+| 項目 | 用途 |
 | --- | --- |
-| `npm run iot:sync` | Local sync from readonly MySQL into Neon via Render IoT upload |
-| `POST /api/iot/station-statuses/sync` | Upload-only endpoint protected by `x-iot-sync-key` |
-| `GET /api/iot/station-statuses/search` | Admin-only verification endpoint |
-| `/api/system/status` | Shows station freshness plus embedding coverage diagnostics |
+| `npm run iot:sync` | 從唯讀 MySQL 經 Render API 同步到 PostgreSQL |
+| `POST /api/iot/station-statuses/sync` | 以 `x-iot-sync-key` 保護的上傳端點 |
+| `GET /api/iot/station-statuses/search` | 管理者驗證站點資料的查詢端點 |
+| `/api/system/status` | 檢查站點新鮮度與系統狀態 |

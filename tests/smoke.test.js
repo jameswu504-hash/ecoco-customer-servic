@@ -1308,7 +1308,7 @@ test('LINE signature comparison pads unequal lengths before timing-safe compare'
 test('LINE route is wired and documented through environment variables', () => {
   const server = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
   const envExample = fs.readFileSync(path.join(__dirname, '..', '.env.example'), 'utf8');
-  const guide = fs.readFileSync(path.join(__dirname, '..', 'docs', 'LINE_INTEGRATION_GUIDE.md'), 'utf8');
+  const guide = fs.readFileSync(path.join(__dirname, '..', 'docs', 'operations', 'LINE_INTEGRATION_GUIDE.md'), 'utf8');
   const config = getLineConfig({
     LINE_CHANNEL_SECRET: 'secret',
     LINE_CHANNEL_ACCESS_TOKEN: 'token',
@@ -1326,6 +1326,15 @@ test('LINE route is wired and documented through environment variables', () => {
     channelSecret: 'secret',
     channelAccessToken: 'token',
   });
+});
+
+test('dashboard documentation links point to maintained B2C and operations guides', () => {
+  for (const filename of ['dashboard.html', 'dashboard-v2.html']) {
+    const dashboard = fs.readFileSync(path.join(__dirname, '..', 'public', filename), 'utf8');
+    assert.match(dashboard, /docs\/b2c\/CUSTOMER_SUPPORT_GUIDE\.md/);
+    assert.match(dashboard, /docs\/operations\/MAINTENANCE_GUIDE\.md/);
+    assert.doesNotMatch(dashboard, /OPERATIONS_HANDOFF_GUIDE/);
+  }
 });
 
 test('LINE replies are converted to plain text before sending', () => {

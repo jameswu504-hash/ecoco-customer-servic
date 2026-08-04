@@ -110,11 +110,14 @@ function createPartnersRouter({
   router.get('/:companyId/conversations', asyncHandler(async (req, res) => {
     const company = await partnerService.getCompany(req.params.companyId);
     if (!company) return res.status(404).json({ error: 'Partner company not found.' });
-    res.json(await partnerService.listLineConversationDays(
-      company.id,
-      req.query.days,
-      req.query.status
-    ));
+    res.json(await partnerService.listLineConversationDays(company.id, {
+      days: req.query.days,
+      status: req.query.status,
+      query: req.query.query,
+      groupId: req.query.group_id,
+      limit: req.query.limit,
+      offset: req.query.offset,
+    }));
   }));
 
   router.patch('/:companyId/conversations/:day/status', asyncHandler(async (req, res) => {
@@ -357,6 +360,35 @@ function createPartnersRouter({
     res.status(201).json(result);
   }));
 
+  router.post(
+    '/:companyId/knowledge-candidates/:candidateId/revisions',
+    asyncHandler(async (req, res) => {
+      try {
+        const result = await partnerConversationKnowledgeService.createCandidateRevision(
+          req.params.companyId,
+          req.params.candidateId
+        );
+        if (!result) return res.status(404).json({ error: 'Knowledge candidate not found.' });
+        await saveAdminAudit(pool, {
+          action: 'partner_knowledge_candidate_revision_created',
+          targetType: 'partner_knowledge_candidate',
+          targetId: String(result.candidate.id),
+          details: {
+            companyId: Number(req.params.companyId),
+            revisionOfCandidateId: Number(req.params.candidateId),
+            revisionNumber: Number(result.candidate.revision_number || 1),
+          },
+        });
+        res.status(201).json(result);
+      } catch (err) {
+        if (err.code === 'PARTNER_CANDIDATE_REVISION_REQUIRES_APPROVAL') {
+          return res.status(409).json({ error: err.message });
+        }
+        throw err;
+      }
+    })
+  );
+
   router.patch(
     '/:companyId/knowledge-candidates/:candidateId',
     asyncHandler(async (req, res) => {
@@ -382,6 +414,7 @@ function createPartnersRouter({
         if (
           err.code === 'PARTNER_CANDIDATE_ALREADY_APPROVED'
           || err.code === 'PARTNER_CANDIDATE_REVIEW_REQUIRED'
+          || err.code === 'PARTNER_CANDIDATE_REVISION_SOURCE_MISSING'
         ) {
           return res.status(409).json({ error: err.message });
         }

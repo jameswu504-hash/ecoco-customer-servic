@@ -17,10 +17,8 @@ const {
   getPartnerTestSessionId,
 } = require('../routes/partners.routes');
 const {
-  PARTNER_LINE_IMPORT_CHUNK_CHARS,
   PARTNER_NO_DATA_REPLY,
   PARTNER_SCOPE_DENIED_REPLY,
-  buildLineChatKnowledgeSections,
   buildPartnerKnowledgeContext,
   createPartnerService,
   generatePartnerBindingCode,
@@ -329,6 +327,58 @@ test('partner knowledge pagination rejects unsupported page sizes and clamps sta
   assert.deepEqual(queries[1].params, [7, '', 10, 0]);
 });
 
+test('partner conversation API forwards search, group and pagination options', async () => {
+  let received;
+  const page = {
+    days: [],
+    totalDays: 0,
+    totalMessages: 0,
+    limit: 20,
+    offset: 40,
+  };
+  const app = express();
+  app.use('/api/partners', createPartnersRouter({
+    partnerService: {
+      async getCompany() {
+        return { id: 7, slug: 'familymart', name: 'FamilyMart', status: 'active' };
+      },
+      async listLineConversationDays(companyId, options) {
+        received = { companyId, options };
+        return page;
+      },
+    },
+    partnerCleaningService: {},
+    partnerConversationKnowledgeService: {},
+    requireAdminKey: (req, res, next) => next(),
+    pool: {},
+  }));
+
+  const server = app.listen(0);
+  await new Promise(resolve => server.once('listening', resolve));
+  try {
+    const { port } = server.address();
+    const response = await fetch(
+      `http://127.0.0.1:${port}/api/partners/7/conversations`
+      + '?days=90&status=archived&query=%E5%90%88%E7%B4%84&group_id=8&limit=20&offset=40'
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), page);
+    assert.deepEqual(received, {
+      companyId: 7,
+      options: {
+        days: '90',
+        status: 'archived',
+        query: '合約',
+        groupId: '8',
+        limit: '20',
+        offset: '40',
+      },
+    });
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
 test('partner status mutations reject unsupported values with HTTP 400', async () => {
   const service = createService({
     async query() {
@@ -413,6 +463,9 @@ test('partner LINE conversation logs are company-scoped and grouped by Taipei da
   const pool = {
     async query(sql, params = []) {
       queries.push({ sql, params });
+      if (/COUNT\(DISTINCT conversation_day\)/.test(sql)) {
+        return { rows: [{ total_days: 2, total_messages: 3 }] };
+      }
       return {
         rows: [
           {
@@ -466,11 +519,62 @@ test('partner LINE conversation logs are company-scoped and grouped by Taipei da
     ['user', 'assistant']
   );
   assert.equal(result.days[1].messages[0].groupLabel, 'LINE 群組 • 1234');
-  assert.match(queries[0].sql, /WHERE pc\.company_id = \$1/);
-  assert.match(queries[0].sql, /pc\.line_group_id IS NOT NULL/);
-  assert.match(queries[0].sql, /pc\.archived_at IS NULL/);
-  assert.match(queries[0].sql, /AT TIME ZONE 'Asia\/Taipei'/);
-  assert.deepEqual(queries[0].params.slice(0, 2), [7, 90]);
+  assert.match(queries[1].sql, /WHERE pc\.company_id = \$1/);
+  assert.match(queries[1].sql, /pc\.line_group_id IS NOT NULL/);
+  assert.match(queries[1].sql, /pc\.archived_at IS NULL/);
+  assert.match(queries[1].sql, /AT TIME ZONE 'Asia\/Taipei'/);
+  assert.deepEqual(queries[1].params.slice(0, 2), [7, 90]);
+});
+
+test('partner LINE conversation search and day pagination are executed by PostgreSQL', async () => {
+  const queries = [];
+  const pool = {
+    async query(sql, params = []) {
+      queries.push({ sql, params });
+      if (/COUNT\(DISTINCT conversation_day\)/.test(sql)) {
+        return { rows: [{ total_days: 42, total_messages: 130 }] };
+      }
+      return {
+        rows: [{
+          id: 9,
+          line_group_id: 8,
+          session_id: 'line_group_a',
+          role: 'user',
+          content: '合約確認',
+          timestamp: '2026-07-28T01:04:00.000Z',
+          conversation_day: '2026-07-28',
+          group_label: '全家測試群',
+          group_id_last4: '1234',
+        }],
+      };
+    },
+  };
+  const service = createService(pool);
+
+  const result = await service.listLineConversationDays(7, {
+    days: 90,
+    status: 'active',
+    query: '100%_合作',
+    groupId: 8,
+    limit: 15,
+    offset: 30,
+  });
+
+  assert.equal(result.totalDays, 42);
+  assert.equal(result.totalMessages, 130);
+  assert.equal(result.limit, 15);
+  assert.equal(result.offset, 30);
+  assert.equal(result.days.length, 1);
+  assert.equal(queries.length, 2);
+  for (const query of queries) {
+    assert.match(query.sql, /pc\.company_id = \$1/);
+    assert.match(query.sql, /pc\.line_group_id = \$3/);
+    assert.match(query.sql, /pc\.content ILIKE \$4/);
+    assert.equal(query.params[2], 8);
+    assert.equal(query.params[3], '%100\\%\\_合作%');
+  }
+  assert.match(queries[1].sql, /LIMIT \$5 OFFSET \$6/);
+  assert.deepEqual(queries[1].params.slice(-2), [15, 30]);
 });
 
 test('partner LINE conversation days can be archived, restored and permanently deleted', async () => {
@@ -933,120 +1037,6 @@ test('manual partner knowledge preserves internal contacts and writes RAG chunks
   assert.ok(chunkInserts.every(({ params }) => params[0] === 1 && params[1] === 8));
 });
 
-test('LINE TXT imports are anonymized, cleaned and split at date boundaries', () => {
-  const phone = ['0912', '345', '678'].join('-');
-  const memberNumber = ['1234', '5678'].join('');
-  const repeatedMessage = '門市設備、活動排程與回收合作細節請依最新確認內容辦理。'.repeat(300);
-  const parsed = buildLineChatKnowledgeSections({
-    sourceName: '[LINE] ECOCO x 測試公司 全循環的聊天.txt',
-    content: [
-      '[LINE] ECOCO x 測試公司 全循環的聊天記錄',
-      '儲存日期：2026/7/28 10:24',
-      '',
-      '2026/7/26（週日）',
-      `09:00\t測試窗口\t聯絡電話 ${phone}，會員編號 ${memberNumber}`,
-      '09:01\t測試窗口\t[照片]',
-      repeatedMessage,
-      '',
-      '2026/7/27（週一）',
-      '10:00\tECOCO\t這是較新的確認內容',
-      '10:01\tECOCO\t[貼圖]',
-    ].join('\n'),
-  });
-
-  assert.ok(parsed.sections.length >= 2);
-  assert.equal(parsed.ignoredAttachmentCount, 2);
-  assert.equal(parsed.sourceName, 'ECOCO x 測試公司 全循環的聊天');
-  assert.ok(parsed.sections.every(section => section.content.length <= PARTNER_LINE_IMPORT_CHUNK_CHARS));
-  assert.ok(parsed.sections.every(section => /LINE 歷史｜/.test(section.category)));
-  assert.ok(parsed.sections.some(section => /2026-07-26/.test(section.category)));
-  assert.ok(parsed.sections.some(section => /2026-07-27/.test(section.category)));
-  const combined = parsed.sections.map(section => section.content).join('\n');
-  assert.equal(combined.includes(phone), false);
-  assert.equal(combined.includes(memberNumber), false);
-  assert.equal(combined.includes('[照片]'), false);
-  assert.equal(combined.includes('[貼圖]'), false);
-  assert.match(combined, /較新日期為優先/);
-});
-
-test('LINE TXT imports can preserve speaker attribution and contact details for internal use', () => {
-  const phone = ['0912', '345', '678'].join('-');
-  const email = ['project.owner', 'example.com'].join('@');
-  const parsed = buildLineChatKnowledgeSections({
-    sourceName: '內部合作群.txt',
-    preservePersonalData: true,
-    content: [
-      '2026/7/28（週二）',
-      `09:00\t全家-專案窗口\t請聯絡 ${phone} 或 ${email}`,
-    ].join('\n'),
-  });
-  const combined = parsed.sections.map(section => section.content).join('\n');
-
-  assert.equal(parsed.preservePersonalData, true);
-  assert.match(combined, /全家-專案窗口/);
-  assert.ok(combined.includes(phone));
-  assert.ok(combined.includes(email));
-});
-
-test('LINE TXT batch import writes only new company-scoped sections in one transaction', async () => {
-  const payload = {
-    sourceName: '合作公司聊天.txt',
-    content: [
-      '2026/7/25（週六）',
-      `09:00\t窗口\t${'舊合作紀錄。'.repeat(700)}`,
-      '2026/7/26（週日）',
-      `10:00\t窗口\t${'新合作紀錄。'.repeat(700)}`,
-    ].join('\n'),
-  };
-  const parsed = buildLineChatKnowledgeSections(payload);
-  const transactionQueries = [];
-  const connection = {
-    async query(sql, params = []) {
-      transactionQueries.push({ sql, params });
-      if (/SELECT category/.test(sql)) {
-        return { rows: [{ category: parsed.sections[0].category }] };
-      }
-      if (/MAX\(sort_order\)/.test(sql)) return { rows: [{ next: 12 }] };
-      if (/INSERT INTO partner_knowledge_sections/.test(sql)) {
-        return {
-          rows: [{
-            id: 100 + transactionQueries.length,
-            company_id: params[0],
-            category: params[1],
-            content: params[2],
-            sort_order: params[3],
-          }],
-        };
-      }
-      return { rows: [] };
-    },
-    release() {},
-  };
-  const pool = {
-    async query(sql) {
-      if (/FROM partner_companies\s+WHERE id/.test(sql)) {
-        return { rows: [{ id: 9, name: '合作公司', status: 'active' }] };
-      }
-      return { rows: [] };
-    },
-    async connect() {
-      return connection;
-    },
-  };
-  const service = createService(pool);
-
-  const result = await service.importLineChatKnowledge(9, payload);
-
-  assert.equal(result.totalSectionCount, parsed.sections.length);
-  assert.equal(result.skippedDuplicateCount, 1);
-  assert.equal(result.createdCount, parsed.sections.length - 1);
-  assert.ok(transactionQueries.some(({ sql }) => sql === 'BEGIN'));
-  assert.ok(transactionQueries.some(({ sql }) => sql === 'COMMIT'));
-  const inserts = transactionQueries.filter(({ sql }) => /INSERT INTO partner_knowledge_sections/.test(sql));
-  assert.ok(inserts.every(({ params }) => params[0] === 9));
-  assert.ok(inserts.every(({ params }) => params[2].length <= PARTNER_LINE_IMPORT_CHUNK_CHARS));
-});
-
 test('company knowledge clear removes only scoped knowledge data in one transaction', async () => {
   const transactionQueries = [];
   const connection = {
@@ -1323,7 +1313,7 @@ test('partner admin page exposes company-scoped test chat behind admin API', () 
   assert.match(html, /LINE 對話紀錄/);
   assert.match(html, /尚未綁定真實 LINE 群組，仍可先使用下方測試功能|testChat/);
   assert.match(js, /\/api\/partners\/\$\{company\.id\}\/test-chat/);
-  assert.match(js, /\/api\/partners\/\$\{companyId\}\/conversations\?days=\$\{days\}&status=/);
+  assert.match(js, /fetchConversationPage\(companyId\)/);
   assert.match(js, /conversation-day/);
   assert.match(html, /knowledgeStatus/);
   assert.match(html, /id="knowledgeSearch"/);
@@ -1368,6 +1358,37 @@ test('partner admin page exposes company-scoped test chat behind admin API', () 
   assert.match(routes, /:companyId\/conversations/);
   assert.match(js, /x-admin-key/);
   assert.match(routes, /router\.use\(requireAdminKey\)/);
+});
+
+test('partner admin exposes searchable paginated LINE conversation controls', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'partners.html'), 'utf8');
+  const js = fs.readFileSync(path.join(__dirname, '..', 'public', 'partners.js'), 'utf8');
+
+  assert.match(html, /id="conversationSearch"/);
+  assert.match(html, /id="conversationGroup"/);
+  assert.match(
+    html,
+    /id="conversationPageSize"[\s\S]*value="10"[\s\S]*value="15"[\s\S]*value="20"[\s\S]*value="50"[\s\S]*value="100"/
+  );
+  assert.match(html, /id="conversationPrevBtn"/);
+  assert.match(html, /id="conversationNextBtn"/);
+  assert.match(js, /query:\s*partnerState\.conversationQuery/);
+  assert.match(js, /group_id:\s*partnerState\.conversationGroupId/);
+  assert.match(js, /limit:\s*String\(partnerState\.conversationPageSize\)/);
+  assert.match(
+    js,
+    /offset:\s*String\(partnerState\.conversationPage \* partnerState\.conversationPageSize\)/
+  );
+});
+
+test('partner service no longer exposes the legacy direct LINE TXT import path', () => {
+  const partnerModule = require('../services/partner.service');
+  const service = partnerModule.createPartnerService({
+    pool: { async query() { return { rows: [] }; } },
+  });
+
+  assert.equal('buildLineChatKnowledgeSections' in partnerModule, false);
+  assert.equal('importLineChatKnowledge' in service, false);
 });
 
 test('partner test sessions remain stable only for valid server-issued ids', () => {

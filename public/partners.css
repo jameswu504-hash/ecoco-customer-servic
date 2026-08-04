@@ -470,6 +470,7 @@ button:disabled {
 }
 
 .conversation-controls select,
+.conversation-controls input,
 .knowledge-controls select,
 .candidate-controls select {
   min-height: 38px;
@@ -478,6 +479,23 @@ button:disabled {
   border-radius: 6px;
   background: #fff;
   color: var(--ink);
+}
+
+.conversation-controls input {
+  min-width: 220px;
+}
+
+.conversation-pager {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.conversation-pager span {
+  min-width: 52px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
 }
 
 .conversation-summary {

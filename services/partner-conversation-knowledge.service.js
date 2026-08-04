@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 
 const SKILL_NAME = 'ecoco-clean-brand-knowledge';
-const SKILL_VERSION = '1.2.0';
+const SKILL_VERSION = '1.3.0';
 const MAX_GENERATION_DAYS = 7;
 const MAX_SOURCE_MESSAGES = 2_000;
 const MAX_CANDIDATE_CONTENT = 12_000;
@@ -222,6 +222,8 @@ function createPartnerConversationKnowledgeService({ pool }) {
          pkc.reviewed_by,
          pkc.reviewed_at,
          pkc.approved_section_id,
+         pkc.revision_of_candidate_id,
+         pkc.revision_number,
          pkc.created_at,
          pkc.updated_at,
          pcb.conversation_day,
@@ -421,6 +423,85 @@ function createPartnerConversationKnowledgeService({ pool }) {
     }
   }
 
+  async function createCandidateRevision(companyId, candidateId) {
+    const safeCompanyId = normalizeId(companyId);
+    const safeCandidateId = normalizeId(candidateId);
+    if (!safeCompanyId || !safeCandidateId) return null;
+    const db = await pool.connect();
+    try {
+      await db.query('BEGIN');
+      await db.query(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        [`partner_candidate_revision:${safeCompanyId}:${safeCandidateId}`]
+      );
+      const { rows } = await db.query(
+        `SELECT pkc.*
+         FROM partner_knowledge_candidates pkc
+         WHERE pkc.company_id = $1
+           AND pkc.id = $2
+         FOR UPDATE`,
+        [safeCompanyId, safeCandidateId]
+      );
+      const candidate = rows[0];
+      if (!candidate) {
+        await db.query('ROLLBACK');
+        return null;
+      }
+      if (candidate.status !== 'approved' || !candidate.approved_section_id) {
+        const error = new Error('Only approved knowledge can create a revision.');
+        error.code = 'PARTNER_CANDIDATE_REVISION_REQUIRES_APPROVAL';
+        throw error;
+      }
+      const { rows: revisionRows } = await db.query(
+        `SELECT COALESCE(MAX(revision_number), $3::integer) + 1 AS next
+         FROM partner_knowledge_candidates
+         WHERE company_id = $1
+           AND (id = $2 OR revision_of_candidate_id = $2)`,
+        [safeCompanyId, safeCandidateId, Number(candidate.revision_number || 1)]
+      );
+      const revisionNumber = Number(revisionRows[0]?.next || 2);
+      const revisionHash = sha256(
+        `${candidate.content_hash}:${safeCandidateId}:${revisionNumber}:${crypto.randomUUID()}`
+      );
+      const { rows: createdRows } = await db.query(
+        `INSERT INTO partner_knowledge_candidates
+          (company_id, revision_of_candidate_id, revision_number, batch_id,
+           line_group_id, title, category, content, summary, facts,
+           pending_items, todos, source_message_ids, risk_flags, content_hash,
+           status, reviewed_by, reviewed_at, approved_section_id,
+           created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb,
+                 $11::jsonb, $12::jsonb, $13::jsonb, $14::jsonb, $15,
+                 'pending_review', '', NULL, NULL, NOW(), NOW())
+         RETURNING *`,
+        [
+          safeCompanyId,
+          safeCandidateId,
+          revisionNumber,
+          Number(candidate.batch_id),
+          Number(candidate.line_group_id),
+          candidate.title,
+          candidate.category,
+          candidate.content,
+          candidate.summary || '',
+          JSON.stringify(candidate.facts || []),
+          JSON.stringify(candidate.pending_items || []),
+          JSON.stringify(candidate.todos || []),
+          JSON.stringify(candidate.source_message_ids || []),
+          JSON.stringify(candidate.risk_flags || []),
+          revisionHash,
+        ]
+      );
+      await db.query('COMMIT');
+      return { candidate: createdRows[0] };
+    } catch (err) {
+      await db.query('ROLLBACK');
+      throw err;
+    } finally {
+      db.release();
+    }
+  }
+
   async function reviewCandidate(companyId, candidateId, payload = {}) {
     const safeCompanyId = normalizeId(companyId);
     const safeCandidateId = normalizeId(candidateId);
@@ -499,6 +580,25 @@ function createPartnerConversationKnowledgeService({ pool }) {
       let approvedSectionId = candidate.approved_section_id
         ? Number(candidate.approved_section_id)
         : null;
+      let replacedKnowledgeSectionId = null;
+
+      if (requestedStatus === 'approved' && candidate.revision_of_candidate_id) {
+        const { rows: parentRows } = await db.query(
+          `SELECT approved_section_id
+           FROM partner_knowledge_candidates
+           WHERE company_id = $1
+             AND id = $2
+             AND status = 'approved'
+           FOR UPDATE`,
+          [safeCompanyId, Number(candidate.revision_of_candidate_id)]
+        );
+        replacedKnowledgeSectionId = Number(parentRows[0]?.approved_section_id || 0) || null;
+        if (!replacedKnowledgeSectionId) {
+          const error = new Error('The knowledge revision no longer has an approved source.');
+          error.code = 'PARTNER_CANDIDATE_REVISION_SOURCE_MISSING';
+          throw error;
+        }
+      }
 
       if (requestedStatus === 'approved' && !approvedSectionId) {
         const { rows: sortRows } = await db.query(
@@ -516,6 +616,10 @@ function createPartnerConversationKnowledgeService({ pool }) {
           skillName: candidate.skill_name,
           skillVersion: candidate.skill_version,
           riskFlags: candidate.risk_flags || [],
+          revisionOfCandidateId: candidate.revision_of_candidate_id
+            ? Number(candidate.revision_of_candidate_id)
+            : null,
+          revisionNumber: Number(candidate.revision_number || 1),
           externalAiUsed: false,
         };
         const approvedContentHash = sha256(content);
@@ -564,6 +668,17 @@ function createPartnerConversationKnowledgeService({ pool }) {
             ]
           );
         }
+        if (replacedKnowledgeSectionId) {
+          await db.query(
+            `UPDATE partner_knowledge_sections
+             SET archived_at = NOW(),
+                 updated_at = NOW()
+             WHERE company_id = $1
+               AND id = $2
+               AND archived_at IS NULL`,
+            [safeCompanyId, replacedKnowledgeSectionId]
+          );
+        }
       }
 
       const { rows: updatedRows } = await db.query(
@@ -595,6 +710,9 @@ function createPartnerConversationKnowledgeService({ pool }) {
         createdKnowledgeSectionId: requestedStatus === 'approved'
           ? approvedSectionId
           : null,
+        replacedKnowledgeSectionId: requestedStatus === 'approved'
+          ? replacedKnowledgeSectionId
+          : null,
       };
     } catch (err) {
       await db.query('ROLLBACK');
@@ -605,6 +723,7 @@ function createPartnerConversationKnowledgeService({ pool }) {
   }
 
   return {
+    createCandidateRevision,
     generateCandidates,
     listCandidates,
     reviewCandidate,

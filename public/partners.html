@@ -227,6 +227,12 @@
               <h3>LINE 對話紀錄</h3>
             </div>
             <div class="conversation-controls">
+              <label for="conversationSearch">搜尋</label>
+              <input id="conversationSearch" type="search" placeholder="訊息、群組名稱或群組末四碼" autocomplete="off">
+              <label for="conversationGroup">群組</label>
+              <select id="conversationGroup">
+                <option value="">全部群組</option>
+              </select>
               <label for="conversationStatus">狀態</label>
               <select id="conversationStatus">
                 <option value="active" selected>使用中</option>
@@ -238,6 +244,19 @@
                 <option value="30" selected>最近 30 天</option>
                 <option value="90">最近 90 天</option>
               </select>
+              <label for="conversationPageSize">每頁</label>
+              <select id="conversationPageSize">
+                <option value="10" selected>10 天</option>
+                <option value="15">15 天</option>
+                <option value="20">20 天</option>
+                <option value="50">50 天</option>
+                <option value="100">100 天</option>
+              </select>
+              <div class="conversation-pager" aria-label="LINE 對話分頁">
+                <button class="secondary-button" id="conversationPrevBtn" type="button">上一頁</button>
+                <span id="conversationPageInfo" aria-live="polite">1 / 1</span>
+                <button class="secondary-button" id="conversationNextBtn" type="button">下一頁</button>
+              </div>
               <button class="secondary-button" id="refreshConversationsBtn" type="button">更新紀錄</button>
             </div>
           </div>

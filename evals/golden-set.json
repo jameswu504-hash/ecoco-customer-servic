@@ -1,6 +1,6 @@
 {
   "version": "2026-07-13",
-  "description": "ECOCO AI customer service golden evaluation set. Cases are anonymized and should be reviewed by ECOCO before production gating.",
+  "description": "ECOCO AI 客服黃金評測集；案例已去識別化，正式作為上線阻擋條件前應由 ECOCO 人工審核。",
   "cases": [
     {
       "id": "points-expiry-001",

@@ -13,10 +13,17 @@ const partnerState = {
   knowledgeQuery: '',
   knowledgeRequestId: 0,
   knowledgeSearchTimer: null,
+  conversationPage: 0,
+  conversationPageSize: 10,
+  conversationQuery: '',
+  conversationGroupId: '',
+  conversationRequestId: 0,
+  conversationSearchTimer: null,
 };
 
 const CLEANER_MAX_BYTES = 2_000_000;
 const KNOWLEDGE_PAGE_SIZES = new Set([10, 15, 20, 50, 100]);
+const CONVERSATION_PAGE_SIZES = new Set([10, 15, 20, 50, 100]);
 
 function getAdminKey() {
   return sessionStorage.getItem('adminKey') || '';
@@ -146,6 +153,29 @@ function renderLineGroups(groups) {
     row.append(info, state);
     list.appendChild(row);
   });
+}
+
+function renderConversationGroupOptions(groups) {
+  const select = document.getElementById('conversationGroup');
+  const selectedValue = String(partnerState.conversationGroupId || '');
+  select.replaceChildren();
+
+  const allGroups = document.createElement('option');
+  allGroups.value = '';
+  allGroups.textContent = '全部群組';
+  select.appendChild(allGroups);
+
+  groups.forEach(group => {
+    const option = document.createElement('option');
+    option.value = String(group.id);
+    option.textContent = group.label || `LINE 群組 · ${group.group_id_last4}`;
+    select.appendChild(option);
+  });
+
+  select.value = Array.from(select.options).some(option => option.value === selectedValue)
+    ? selectedValue
+    : '';
+  partnerState.conversationGroupId = select.value;
 }
 
 function createCompactButton(label, className, onClick) {
@@ -279,6 +309,20 @@ function renderConversationLog(payload) {
   log.replaceChildren();
   const days = Array.isArray(payload?.days) ? payload.days : [];
   const selectedStatus = payload?.status === 'archived' ? 'archived' : 'active';
+  const resultLimit = Number(payload?.limit);
+  if (CONVERSATION_PAGE_SIZES.has(resultLimit)) {
+    partnerState.conversationPageSize = resultLimit;
+  }
+  const totalDays = Number(payload?.totalDays || 0);
+  const offset = Number(payload?.offset || 0);
+  partnerState.conversationPage = Math.floor(offset / partnerState.conversationPageSize);
+  const pageCount = Math.max(1, Math.ceil(totalDays / partnerState.conversationPageSize));
+  document.getElementById('conversationPageInfo').textContent =
+    `${partnerState.conversationPage + 1} / ${pageCount}`;
+  document.getElementById('conversationPrevBtn').disabled =
+    partnerState.conversationPage === 0 || totalDays === 0;
+  document.getElementById('conversationNextBtn').disabled =
+    partnerState.conversationPage >= pageCount - 1 || totalDays === 0;
 
   if (!days.length) {
     const empty = document.createElement('div');
@@ -287,7 +331,9 @@ function renderConversationLog(payload) {
       ? '目前沒有已封存的 LINE 群組對話紀錄。'
       : '目前沒有真實 LINE 群組對話紀錄。後台測試對話不會顯示在這裡。';
     log.appendChild(empty);
-    summary.textContent = `最近 ${Number(payload?.selectedDays || 30)} 天沒有${selectedStatus === 'archived' ? '已封存的' : ''} LINE 群組訊息。`;
+    summary.textContent = partnerState.conversationQuery
+      ? `找不到符合「${partnerState.conversationQuery}」的 LINE 群組訊息。`
+      : `最近 ${Number(payload?.selectedDays || 30)} 天沒有${selectedStatus === 'archived' ? '已封存的' : ''} LINE 群組訊息。`;
     return;
   }
 
@@ -496,7 +542,12 @@ function renderKnowledgeCandidates(payload) {
       const approved = document.createElement('span');
       approved.className = 'candidate-approved-note';
       approved.textContent = `已建立公司知識 #${candidate.approved_section_id}`;
-      actions.appendChild(approved);
+      actions.append(
+        approved,
+        createCompactButton('建立修訂版本', 'secondary-button', event => (
+          createKnowledgeCandidateRevision(candidate, event.currentTarget)
+        ))
+      );
     }
 
     row.append(heading, badges, notes, editor, actions);
@@ -541,6 +592,7 @@ function renderDetail() {
   cleanerDropZone.setAttribute('aria-disabled', String(!isActive));
 
   renderLineGroups(detail.lineGroups);
+  renderConversationGroupOptions(detail.lineGroups);
   renderKnowledge(partnerState.knowledgePageResult);
   renderConversationLog(partnerState.conversationLog);
   renderKnowledgeCandidates(partnerState.knowledgeCandidates);
@@ -598,8 +650,6 @@ async function refreshKnowledgePage() {
 }
 
 async function loadCompanyDetail(companyId) {
-  const days = Number(document.getElementById('conversationDays')?.value || 30);
-  const conversationStatus = document.getElementById('conversationStatus')?.value || 'active';
   const candidateStatus =
     document.getElementById('candidateStatus')?.value || 'pending_review';
   const [detail, knowledgeResult, conversationResult, candidateResult] = await Promise.all([
@@ -607,9 +657,7 @@ async function loadCompanyDetail(companyId) {
     fetchKnowledgePage(companyId)
       .then(data => ({ data, error: null }))
       .catch(error => ({ data: null, error })),
-    partnerFetch(
-      `/api/partners/${companyId}/conversations?days=${days}&status=${conversationStatus}`
-    )
+    fetchConversationPage(companyId)
       .then(data => ({ data, error: null }))
       .catch(error => ({ data: null, error })),
     partnerFetch(
@@ -633,22 +681,42 @@ async function loadCompanyDetail(companyId) {
     candidateResult.error?.message || '';
 }
 
+function getConversationQueryParams() {
+  const days = Number(document.getElementById('conversationDays')?.value || 30);
+  const status = document.getElementById('conversationStatus')?.value || 'active';
+  return new URLSearchParams({
+    days: String(days),
+    status,
+    query: partnerState.conversationQuery,
+    group_id: partnerState.conversationGroupId,
+    limit: String(partnerState.conversationPageSize),
+    offset: String(partnerState.conversationPage * partnerState.conversationPageSize),
+  });
+}
+
+function fetchConversationPage(companyId) {
+  return partnerFetch(
+    `/api/partners/${companyId}/conversations?${getConversationQueryParams().toString()}`
+  );
+}
+
 async function refreshConversationLog() {
   const companyId = partnerState.selectedCompanyId;
   if (!companyId) return;
   const button = document.getElementById('refreshConversationsBtn');
   const error = document.getElementById('conversationError');
-  const days = Number(document.getElementById('conversationDays').value || 30);
-  const status = document.getElementById('conversationStatus').value || 'active';
+  const requestId = ++partnerState.conversationRequestId;
   error.textContent = '';
   setBusy(button, true, '更新中...');
   try {
-    partnerState.conversationLog = await partnerFetch(
-      `/api/partners/${companyId}/conversations?days=${days}&status=${status}`
-    );
+    const result = await fetchConversationPage(companyId);
+    if (requestId !== partnerState.conversationRequestId) return;
+    partnerState.conversationLog = result;
     renderConversationLog(partnerState.conversationLog);
   } catch (err) {
-    error.textContent = err.message;
+    if (requestId === partnerState.conversationRequestId) {
+      error.textContent = err.message;
+    }
   } finally {
     setBusy(button, false);
   }
@@ -731,7 +799,9 @@ async function updateKnowledgeCandidate(candidate, status, row, button) {
     );
     if (status === 'approved') {
       operationStatus.textContent =
-        `已核准並建立公司知識 #${result.createdKnowledgeSectionId}，現在可以被 B2B RAG 使用。`;
+        result.replacedKnowledgeSectionId
+          ? `已核准修訂版並建立公司知識 #${result.createdKnowledgeSectionId}；舊知識 #${result.replacedKnowledgeSectionId} 已封存。`
+          : `已核准並建立公司知識 #${result.createdKnowledgeSectionId}，現在可以被 B2B RAG 使用。`;
       await loadCompanies(false);
     } else {
       operationStatus.textContent =
@@ -745,12 +815,43 @@ async function updateKnowledgeCandidate(candidate, status, row, button) {
   }
 }
 
+async function createKnowledgeCandidateRevision(candidate, button) {
+  const company = partnerState.detail?.company;
+  if (!company) return;
+  const error = document.getElementById('candidateError');
+  const operationStatus = document.getElementById('candidateOperationStatus');
+  error.textContent = '';
+  operationStatus.textContent = '';
+  setBusy(button, true, '建立中...');
+  try {
+    const result = await partnerFetch(
+      `/api/partners/${company.id}/knowledge-candidates/${candidate.id}/revisions`,
+      { method: 'POST', body: '{}' }
+    );
+    document.getElementById('candidateStatus').value = 'pending_review';
+    await refreshKnowledgeCandidates();
+    operationStatus.textContent =
+      `已建立修訂版本 #${result.candidate.id}，請編輯並重新核准後才會取代現行知識。`;
+  } catch (err) {
+    error.textContent = err.message;
+  } finally {
+    setBusy(button, false);
+  }
+}
+
 async function selectCompany(companyId) {
   if (Number(companyId) === Number(partnerState.selectedCompanyId)) return;
   partnerState.testSessionId = '';
   partnerState.knowledgePageResult = null;
   partnerState.knowledgeRequestId += 1;
   partnerState.conversationLog = null;
+  partnerState.conversationRequestId += 1;
+  partnerState.conversationPage = 0;
+  partnerState.conversationQuery = '';
+  partnerState.conversationGroupId = '';
+  clearTimeout(partnerState.conversationSearchTimer);
+  document.getElementById('conversationSearch').value = '';
+  document.getElementById('conversationGroup').value = '';
   partnerState.knowledgeCandidates = null;
   partnerState.knowledgePage = 0;
   partnerState.knowledgeQuery = '';
@@ -1306,8 +1407,42 @@ function bindEvents() {
   document.getElementById('loginForm').addEventListener('submit', submitLogin);
   document.getElementById('openCreateCompanyBtn').addEventListener('click', openCreateCompanyDialog);
   document.getElementById('refreshConversationsBtn').addEventListener('click', refreshConversationLog);
-  document.getElementById('conversationDays').addEventListener('change', refreshConversationLog);
-  document.getElementById('conversationStatus').addEventListener('change', refreshConversationLog);
+  document.getElementById('conversationDays').addEventListener('change', () => {
+    partnerState.conversationPage = 0;
+    refreshConversationLog();
+  });
+  document.getElementById('conversationStatus').addEventListener('change', () => {
+    partnerState.conversationPage = 0;
+    refreshConversationLog();
+  });
+  document.getElementById('conversationGroup').addEventListener('change', event => {
+    partnerState.conversationGroupId = event.target.value;
+    partnerState.conversationPage = 0;
+    refreshConversationLog();
+  });
+  document.getElementById('conversationSearch').addEventListener('input', event => {
+    partnerState.conversationQuery = event.target.value;
+    partnerState.conversationPage = 0;
+    clearTimeout(partnerState.conversationSearchTimer);
+    partnerState.conversationSearchTimer = setTimeout(
+      () => refreshConversationLog(),
+      250
+    );
+  });
+  document.getElementById('conversationPageSize').addEventListener('change', event => {
+    const pageSize = Number(event.target.value);
+    partnerState.conversationPageSize = CONVERSATION_PAGE_SIZES.has(pageSize) ? pageSize : 10;
+    partnerState.conversationPage = 0;
+    refreshConversationLog();
+  });
+  document.getElementById('conversationPrevBtn').addEventListener('click', () => {
+    partnerState.conversationPage = Math.max(0, partnerState.conversationPage - 1);
+    refreshConversationLog();
+  });
+  document.getElementById('conversationNextBtn').addEventListener('click', () => {
+    partnerState.conversationPage += 1;
+    refreshConversationLog();
+  });
   document.getElementById('candidateStatus').addEventListener(
     'change',
     refreshKnowledgeCandidates

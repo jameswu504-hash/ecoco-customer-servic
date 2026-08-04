@@ -20,9 +20,9 @@ LLM Wiki 可以理解成「給 AI 和維護人員看的客服知識維基」。�
 | --- | --- | --- |
 | 正式客服知識 | AI 實際回答會參考的內容 | `data/ecoco-knowledge-import.json`、PostgreSQL `knowledge_sections` |
 | 回答規則 | 告訴 AI 哪些能答、哪些要保守、哪些要轉人工 | `data/ecoco-response-policies.json` |
-| 品牌語氣 | ECOCO 的稱呼、語氣、口吻與禁用說法 | `docs\META_AI_INSTRUCTIONS.md`、知識庫中的品牌規則 |
-| 維護流程 | 內部人員如何新增、修改、封存、匯出知識 | `docs\MAINTENANCE_GUIDE.md`、`docs\OPERATIONS_HANDOFF_GUIDE.md` |
-| 技術交接 | 工程端如何部署、匯入、更新資料 | `docs\DEPLOYMENT_RUNBOOK.md`、`docs\DATA_DICTIONARY.md` |
+| 品牌語氣 | ECOCO 的稱呼、語氣、口吻與禁用說法 | PostgreSQL 共用知識與 response policies |
+| 維護流程 | 內部人員如何新增、修改、封存、匯出知識 | `docs/operations/MAINTENANCE_GUIDE.md` |
+| 技術交接 | 工程端如何部署、匯入、更新資料 | `docs/operations/DEPLOYMENT_RUNBOOK.md`、`docs/reference/DATA_DICTIONARY.md` |
 
 換句話說，LLM Wiki 不是要再多開一個新系統，而是把現有的 Git JSON、PostgreSQL、Rule、文件整理成一套「誰都知道去哪裡看、怎麼改、怎麼上線」的管理方式。
 

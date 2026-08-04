@@ -7,28 +7,24 @@ const {
   shouldUseDeterministicStationReply,
 } = require('./station-response.service');
 const { buildSearchTerms, escapeIlikePattern } = require('./rag.service');
-const { anonymizeText } = require('../scripts/anonymize-pii');
 const { maskSensitiveText } = require('./privacy.service');
 const { saveChatTrace } = require('./trace.service');
 const { splitChunkContent } = require('./partner-conversation-knowledge.service');
 
 const PARTNER_BINDING_CODE_TTL_HOURS = 24;
 const PARTNER_MAX_KNOWLEDGE_CHARS = 20_000;
-const PARTNER_LINE_IMPORT_MAX_CHARS = 250_000;
-const PARTNER_LINE_IMPORT_CHUNK_CHARS = 6_000;
-const PARTNER_LINE_IMPORT_MAX_SECTIONS = 50;
 const PARTNER_COMPANY_CACHE_TTL_MS = 60 * 1000;
 const PARTNER_CONVERSATION_DEFAULT_DAYS = 30;
 const PARTNER_CONVERSATION_MAX_DAYS = 90;
-const PARTNER_CONVERSATION_MAX_ROWS = 2000;
+const PARTNER_CONVERSATION_DEFAULT_PAGE_SIZE = 10;
+const PARTNER_CONVERSATION_PAGE_SIZES = new Set([10, 15, 20, 50, 100]);
+const PARTNER_CONVERSATION_MAX_OFFSET = 1_000_000;
 const PARTNER_KNOWLEDGE_DEFAULT_PAGE_SIZE = 10;
 const PARTNER_KNOWLEDGE_PAGE_SIZES = new Set([10, 15, 20, 50, 100]);
 const PARTNER_KNOWLEDGE_MAX_OFFSET = 1_000_000;
 const PARTNER_UNBOUND_REPLY = '此 LINE 群組尚未綁定 ECOCO 合作夥伴。請由 ECOCO 管理者建立公司並產生一次性綁定碼。';
 const PARTNER_NO_DATA_REPLY = '目前沒有可供此群組回答的公司專屬資料，請聯絡 ECOCO 窗口協助確認。';
 const PARTNER_SCOPE_DENIED_REPLY = PARTNER_NO_DATA_REPLY;
-const LINE_EXPORT_DATE_PATTERN = /^(\d{4})\/(\d{1,2})\/(\d{1,2})(?:（[^）]*）)?\s*$/;
-const LINE_EXPORT_ATTACHMENT_PATTERN = /^\d{1,2}:\d{2}\t[^\t]+\t\[(?:照片|貼圖|檔案|影片|語音訊息)\]\s*$/;
 
 function normalizePartnerSlug(value) {
   return String(value || '')
@@ -174,166 +170,6 @@ function buildPartnerKnowledgeContext(company, rows = [], sharedContext = '') {
     privateContext ? `## ${company.name} 專屬資料\n${privateContext}` : '',
     sharedContext ? `## ECOCO 共用資料\n${sharedContext}` : '',
   ].filter(Boolean).join('\n\n');
-}
-
-function normalizeLineImportSourceName(value, preservePersonalData = false) {
-  const filename = String(value || '')
-    .split(/[\\/]/)
-    .pop()
-    .replace(/\.txt$/i, '')
-    .replace(/^\[LINE\]\s*/i, '');
-  const safeFilename = preservePersonalData ? filename : anonymizeText(filename);
-  return safeFilename
-    .normalize('NFKC')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 80) || 'LINE 聊天紀錄';
-}
-
-function parseLineExportDate(line) {
-  const match = String(line || '').match(LINE_EXPORT_DATE_PATTERN);
-  if (!match) return null;
-  return {
-    display: `${match[1]}-${String(match[2]).padStart(2, '0')}-${String(match[3]).padStart(2, '0')}`,
-    raw: String(line).trim(),
-  };
-}
-
-function splitTextByLimit(text, maxChars) {
-  const pieces = [];
-  let remaining = String(text || '').trim();
-  while (remaining.length > maxChars) {
-    let cutAt = remaining.lastIndexOf('\n', maxChars);
-    if (cutAt < Math.floor(maxChars * 0.5)) cutAt = maxChars;
-    pieces.push(remaining.slice(0, cutAt).trim());
-    remaining = remaining.slice(cutAt).trim();
-  }
-  if (remaining) pieces.push(remaining);
-  return pieces;
-}
-
-function buildLineChatKnowledgeSections({
-  sourceName,
-  content,
-  preservePersonalData = false,
-}) {
-  const rawContent = String(content || '').replace(/^\uFEFF/, '').trim();
-  if (!rawContent) throw new Error('LINE TXT content is required.');
-  if (rawContent.length > PARTNER_LINE_IMPORT_MAX_CHARS) {
-    throw new Error(`LINE TXT content must be under ${PARTNER_LINE_IMPORT_MAX_CHARS} characters.`);
-  }
-
-  const shouldPreservePersonalData = preservePersonalData === true;
-  const safeSourceName = normalizeLineImportSourceName(
-    sourceName,
-    shouldPreservePersonalData
-  );
-  const safeContent = (
-    shouldPreservePersonalData ? rawContent : anonymizeText(rawContent)
-  ).replace(/\r\n?/g, '\n');
-  const cleanedLines = [];
-  let ignoredAttachmentCount = 0;
-  let previousBlank = false;
-
-  for (const rawLine of safeContent.split('\n')) {
-    const line = rawLine.replace(/[ \t]+$/g, '');
-    if (/^\[LINE\].*聊天記錄\s*$/.test(line) || /^儲存日期[:：]/.test(line)) continue;
-    if (LINE_EXPORT_ATTACHMENT_PATTERN.test(line)) {
-      ignoredAttachmentCount += 1;
-      continue;
-    }
-    const isBlank = !line.trim();
-    if (isBlank && previousBlank) continue;
-    cleanedLines.push(line);
-    previousBlank = isBlank;
-  }
-
-  const blocks = [];
-  let currentDate = null;
-  let currentLines = [];
-  const flushBlock = () => {
-    const body = currentLines.join('\n').trim();
-    if (body) blocks.push({ date: currentDate, body });
-    currentLines = [];
-  };
-
-  for (const line of cleanedLines) {
-    const parsedDate = parseLineExportDate(line);
-    if (parsedDate) {
-      flushBlock();
-      currentDate = parsedDate;
-      continue;
-    }
-    currentLines.push(line);
-  }
-  flushBlock();
-
-  if (blocks.length === 0) {
-    throw new Error('LINE TXT does not contain usable chat messages.');
-  }
-
-  const contentBudget = PARTNER_LINE_IMPORT_CHUNK_CHARS - 320;
-  const atoms = [];
-  for (const block of blocks) {
-    const dateLine = block.date?.raw || '未標日期';
-    for (const piece of splitTextByLimit(block.body, contentBudget - dateLine.length - 1)) {
-      atoms.push({
-        startDate: block.date?.display || '',
-        endDate: block.date?.display || '',
-        text: `${dateLine}\n${piece}`,
-      });
-    }
-  }
-
-  const groups = [];
-  let currentGroup = null;
-  for (const atom of atoms) {
-    const candidateLength = currentGroup
-      ? currentGroup.text.length + 2 + atom.text.length
-      : atom.text.length;
-    if (!currentGroup || candidateLength > contentBudget) {
-      currentGroup = { ...atom };
-      groups.push(currentGroup);
-      continue;
-    }
-    currentGroup.text += `\n\n${atom.text}`;
-    currentGroup.endDate = atom.endDate || currentGroup.endDate;
-  }
-
-  if (groups.length > PARTNER_LINE_IMPORT_MAX_SECTIONS) {
-    throw new Error(`LINE TXT creates more than ${PARTNER_LINE_IMPORT_MAX_SECTIONS} knowledge sections.`);
-  }
-
-  const guidance = [
-    `[匯入來源] ${safeSourceName}`,
-    '[資料性質] LINE 歷史聊天紀錄。回答時以較新日期為優先；報價、活動期限、門市或機台狀態，以及尚未明確確認的事項，不可直接視為目前承諾，必要時請 ECOCO 窗口確認。',
-    shouldPreservePersonalData
-      ? '[資料處理] 保留原始發言者與聯絡資料，只能在目前合作公司的授權範圍內使用。'
-      : '[資料處理] 已遮蔽電話、Email 與長編號等聯絡資料。',
-  ].join('\n');
-
-  const sections = groups.map((group, index) => {
-    const dateRange = group.startDate
-      ? (group.endDate && group.endDate !== group.startDate
-        ? `${group.startDate}~${group.endDate}`
-        : group.startDate)
-      : '未標日期';
-    const sectionContent = `${guidance}\n\n${group.text}`.trim();
-    const contentHash = crypto.createHash('sha256').update(sectionContent).digest('hex').slice(0, 10);
-    return {
-      category: `LINE 歷史｜${safeSourceName}｜${dateRange}｜${contentHash}`.slice(0, 160),
-      content: sectionContent,
-      sortIndex: index,
-    };
-  });
-
-  return {
-    sourceName: safeSourceName,
-    sourceCharacters: rawContent.length,
-    preservePersonalData: shouldPreservePersonalData,
-    ignoredAttachmentCount,
-    sections,
-  };
 }
 
 function createPartnerService({
@@ -684,19 +520,83 @@ function createPartnerService({
 
   async function listLineConversationDays(
     companyId,
-    days = PARTNER_CONVERSATION_DEFAULT_DAYS,
-    status = 'active'
+    options = {},
+    legacyStatus = 'active'
   ) {
-    const requestedDays = Number(days);
+    const normalizedOptions = typeof options === 'object' && options !== null
+      ? options
+      : { days: options, status: legacyStatus };
+    const requestedDays = Number(normalizedOptions.days);
     const safeDays = Number.isFinite(requestedDays)
       ? Math.min(Math.max(Math.floor(requestedDays), 1), PARTNER_CONVERSATION_MAX_DAYS)
       : PARTNER_CONVERSATION_DEFAULT_DAYS;
-    const normalizedStatus = normalizePartnerDataStatus(status);
+    const normalizedStatus = normalizePartnerDataStatus(normalizedOptions.status || 'active');
     const archiveClause = normalizedStatus === 'archived'
       ? 'AND pc.archived_at IS NOT NULL'
       : 'AND pc.archived_at IS NULL';
+    const requestedLimit = Number(normalizedOptions.limit);
+    const limit = PARTNER_CONVERSATION_PAGE_SIZES.has(requestedLimit)
+      ? requestedLimit
+      : PARTNER_CONVERSATION_DEFAULT_PAGE_SIZE;
+    const requestedOffset = Number(normalizedOptions.offset);
+    const offset = Number.isFinite(requestedOffset)
+      ? Math.min(Math.max(Math.floor(requestedOffset), 0), PARTNER_CONVERSATION_MAX_OFFSET)
+      : 0;
+    const requestedGroupId = Number(normalizedOptions.groupId);
+    const groupId = Number.isInteger(requestedGroupId) && requestedGroupId > 0
+      ? requestedGroupId
+      : null;
+    const query = String(normalizedOptions.query || '')
+      .normalize('NFKC')
+      .trim()
+      .slice(0, 200);
+    const params = [Number(companyId), safeDays];
+    const filters = [
+      'pc.company_id = $1',
+      'pc.line_group_id IS NOT NULL',
+      archiveClause.replace(/^AND\s+/, ''),
+      "pc.timestamp >= NOW() - ($2::integer * INTERVAL '1 day')",
+    ];
+    if (groupId) {
+      params.push(groupId);
+      filters.push(`pc.line_group_id = $${params.length}`);
+    }
+    if (query) {
+      params.push(`%${escapeIlikePattern(query)}%`);
+      const searchParam = `$${params.length}`;
+      filters.push(
+        `(pc.content ILIKE ${searchParam} ESCAPE '\\'`
+        + ` OR plg.label ILIKE ${searchParam} ESCAPE '\\'`
+        + ` OR plg.group_id_last4 ILIKE ${searchParam} ESCAPE '\\')`
+      );
+    }
+    const whereClause = filters.join('\n          AND ');
+    const dayExpression = "TO_CHAR(pc.timestamp AT TIME ZONE 'Asia/Taipei', 'YYYY-MM-DD')";
+    const { rows: countRows } = await pool.query(
+      `WITH filtered AS (
+         SELECT ${dayExpression} AS conversation_day
+         FROM partner_conversations pc
+         JOIN partner_line_groups plg
+           ON plg.id = pc.line_group_id
+          AND plg.company_id = pc.company_id
+         WHERE ${whereClause}
+       )
+       SELECT COUNT(DISTINCT conversation_day)::int AS total_days,
+              COUNT(*)::int AS total_messages
+       FROM filtered`,
+      params
+    );
+    const totalDays = Number(countRows[0]?.total_days || 0);
+    const totalMessages = Number(countRows[0]?.total_messages || 0);
+    const safeOffset = totalDays > 0
+      ? Math.min(offset, Math.floor((totalDays - 1) / limit) * limit)
+      : 0;
+    const pagedParams = [...params, limit, safeOffset];
+    const limitParam = `$${pagedParams.length - 1}`;
+    const offsetParam = `$${pagedParams.length}`;
     const { rows } = await pool.query(
-      `SELECT
+      `WITH filtered AS (
+         SELECT
          pc.id,
          pc.line_group_id,
          pc.session_id,
@@ -704,20 +604,26 @@ function createPartnerService({
          pc.content,
          pc.timestamp,
          pc.archived_at,
-         TO_CHAR(pc.timestamp AT TIME ZONE 'Asia/Taipei', 'YYYY-MM-DD') AS conversation_day,
+         ${dayExpression} AS conversation_day,
          plg.label AS group_label,
          plg.group_id_last4
-       FROM partner_conversations pc
-       JOIN partner_line_groups plg
-         ON plg.id = pc.line_group_id
-        AND plg.company_id = pc.company_id
-       WHERE pc.company_id = $1
-         AND pc.line_group_id IS NOT NULL
-         ${archiveClause}
-         AND pc.timestamp >= NOW() - ($2::integer * INTERVAL '1 day')
-       ORDER BY pc.timestamp DESC, pc.id DESC
-       LIMIT $3`,
-      [Number(companyId), safeDays, PARTNER_CONVERSATION_MAX_ROWS]
+         FROM partner_conversations pc
+         JOIN partner_line_groups plg
+           ON plg.id = pc.line_group_id
+          AND plg.company_id = pc.company_id
+         WHERE ${whereClause}
+       ), paged_days AS (
+         SELECT conversation_day
+         FROM filtered
+         GROUP BY conversation_day
+         ORDER BY conversation_day DESC
+         LIMIT ${limitParam} OFFSET ${offsetParam}
+       )
+       SELECT filtered.*
+       FROM filtered
+       JOIN paged_days USING (conversation_day)
+       ORDER BY filtered.timestamp DESC, filtered.id DESC`,
+      pagedParams
     );
 
     const dayMap = new Map();
@@ -753,9 +659,14 @@ function createPartnerService({
       days: groupedDays,
       selectedDays: safeDays,
       status: normalizedStatus,
-      totalDays: groupedDays.length,
-      totalMessages: groupedDays.reduce((sum, day) => sum + day.messageCount, 0),
-      truncated: rows.length >= PARTNER_CONVERSATION_MAX_ROWS,
+      query,
+      groupId,
+      totalDays,
+      totalMessages,
+      visibleMessages: groupedDays.reduce((sum, day) => sum + day.messageCount, 0),
+      limit,
+      offset: safeOffset,
+      truncated: false,
     };
   }
 
@@ -1201,72 +1112,6 @@ function createPartnerService({
     }
   }
 
-  async function importLineChatKnowledge(companyId, payload = {}) {
-    const company = await getCompany(companyId);
-    if (!company) return null;
-    const parsed = buildLineChatKnowledgeSections(payload);
-    const db = await pool.connect();
-
-    try {
-      await db.query('BEGIN');
-      await db.query(
-        'SELECT pg_advisory_xact_lock(hashtext($1))',
-        [`partner_knowledge_import:${company.id}`]
-      );
-      const { rows: existingRows } = await db.query(
-        `SELECT category
-         FROM partner_knowledge_sections
-         WHERE company_id = $1 AND archived_at IS NULL`,
-        [company.id]
-      );
-      const existingCategories = new Set(existingRows.map(row => row.category));
-      const { rows: sortRows } = await db.query(
-        `SELECT COALESCE(MAX(sort_order), -1) + 1 AS next
-         FROM partner_knowledge_sections
-         WHERE company_id = $1`,
-        [company.id]
-      );
-      let nextSortOrder = Number(sortRows[0]?.next || 0);
-      const createdSections = [];
-      let skippedDuplicateCount = 0;
-
-      for (const section of parsed.sections) {
-        if (existingCategories.has(section.category)) {
-          skippedDuplicateCount += 1;
-          continue;
-        }
-        const { rows } = await db.query(
-          `INSERT INTO partner_knowledge_sections
-            (company_id, category, content, sort_order, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, NOW(), NOW())
-           RETURNING id, company_id, category, content, sort_order, created_at, updated_at`,
-          [company.id, section.category, section.content, nextSortOrder]
-        );
-        createdSections.push(rows[0]);
-        existingCategories.add(section.category);
-        nextSortOrder += 1;
-      }
-
-      await db.query('COMMIT');
-      return {
-        company,
-        sourceName: parsed.sourceName,
-        sourceCharacters: parsed.sourceCharacters,
-        preservePersonalData: parsed.preservePersonalData,
-        ignoredAttachmentCount: parsed.ignoredAttachmentCount,
-        totalSectionCount: parsed.sections.length,
-        createdCount: createdSections.length,
-        skippedDuplicateCount,
-        createdSections,
-      };
-    } catch (err) {
-      await db.query('ROLLBACK');
-      throw err;
-    } finally {
-      db.release();
-    }
-  }
-
   async function retrievePartnerKnowledge(companyId, question) {
     if (isPartnerOverviewQuestion(question)) {
       const { rows } = await pool.query(
@@ -1609,7 +1454,6 @@ function createPartnerService({
     deleteArchivedKnowledge,
     generateBindingCode,
     getCompany,
-    importLineChatKnowledge,
     listCompanies,
     listKnowledge,
     listLineConversationDays,
@@ -1627,15 +1471,11 @@ function createPartnerService({
 module.exports = {
   PARTNER_BINDING_CODE_TTL_HOURS,
   PARTNER_COMPANY_CACHE_TTL_MS,
-  PARTNER_LINE_IMPORT_CHUNK_CHARS,
-  PARTNER_LINE_IMPORT_MAX_CHARS,
-  PARTNER_LINE_IMPORT_MAX_SECTIONS,
   PARTNER_MAX_KNOWLEDGE_CHARS,
   PARTNER_NO_DATA_REPLY,
   PARTNER_SCOPE_DENIED_REPLY,
   PARTNER_UNBOUND_REPLY,
   buildPartnerSearchTerms,
-  buildLineChatKnowledgeSections,
   buildPartnerKnowledgeContext,
   createPartnerService,
   generatePartnerBindingCode,

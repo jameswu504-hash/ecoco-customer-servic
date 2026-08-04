@@ -634,7 +634,7 @@ function createIotStatusService({
 
     const terms = buildStationSearchTerms(question);
     if (terms.length === 0) {
-      return withQueryIntent({ retrievalMode: 'mysql_iot_no_terms', terms, rows: [], context: '' });
+      return withQueryIntent({ retrievalMode: 'postgres_iot_no_terms', terms, rows: [], context: '' });
     }
 
     if (pgPool) {
@@ -646,116 +646,24 @@ function createIotStatusService({
         return withQueryIntent(postgresResult);
       } catch (err) {
         console.warn(`PostgreSQL IoT station lookup error: ${err.message}`);
-      }
-    }
-
-    const currentPool = getPool();
-    if (!currentPool) {
-      if (config.allowSnapshotFallback) {
-        return withQueryIntent(retrieveSnapshotStationContext(terms, {
-          limit,
-          fallbackReason: 'mysql_iot_disabled',
-        }));
-      }
-      return withQueryIntent({
-        retrievalMode: 'iot_unavailable',
-        terms,
-        rows: [],
-        context: '',
-        fallbackReason: 'mysql_iot_disabled',
-      });
-    }
-
-    const cappedLimit = Math.min(Math.max(Number(limit) || DEFAULT_LIMIT, 1), MAX_LIMIT);
-    const searchableFields = ['s.code', 's.name', 's.address', 's.asset_id', 'a.name', 'd.name', 'p.name', 'm.asset_id'];
-    const clauses = [];
-    const values = [];
-    for (const term of terms) {
-      for (const field of searchableFields) {
-        clauses.push(`${field} LIKE ?`);
-        values.push(`%${term}%`);
-      }
-    }
-
-    let rows = [];
-    try {
-      [rows] = await currentPool.query(
-        `SELECT
-           s.id AS station_id,
-           s.code AS station_code,
-           s.name AS station_name,
-           s.address,
-           a.name AS area_name,
-           d.name AS district_name,
-           p.name AS place_name,
-           s.service_hours,
-           s.status AS station_status,
-           s.status_updated_at AS station_status_updated_at,
-           s.asset_id,
-           m.type AS machine_type,
-           m.kind AS machine_kind,
-           m.status AS machine_status,
-           m.status_at AS machine_status_at,
-           m.last_conn_status,
-           m.last_conn_status_at,
-           m.last_heartbeat_at,
-           m.alarm_code,
-           m.alarm_description,
-           m.bin1_count,
-           m.bin1_max_capacity,
-           m.bin1_remain_capacity,
-           m.bin1_full_at,
-           m.bin2_count,
-           m.bin2_max_capacity,
-           m.bin2_remain_capacity,
-           m.bin2_full_at
-         FROM stations s
-         LEFT JOIN machines m ON m.asset_id = s.asset_id
-         LEFT JOIN areas a ON a.id = s.area_id
-         LEFT JOIN districts d ON d.id = s.district_id
-         LEFT JOIN places p ON p.id = s.place_id
-         WHERE COALESCE(s.is_delete, 0) = 0
-           AND (${clauses.join(' OR ')})
-         ORDER BY
-           CASE
-             WHEN s.code IN (${terms.map(() => '?').join(',')}) THEN 0
-             WHEN s.name IN (${terms.map(() => '?').join(',')}) THEN 1
-             WHEN s.name LIKE ? THEN 2
-             ELSE 3
-           END,
-           s.status = 'up' DESC,
-           s.id ASC
-         LIMIT ?`,
-        [
-          ...values,
-          ...terms,
-          ...terms,
-          `%${terms[0]}%`,
-          cappedLimit,
-        ]
-      );
-    } catch (err) {
-      if (config.allowSnapshotFallback) {
-        const fallback = retrieveSnapshotStationContext(terms, {
-          limit,
-          fallbackReason: err?.code || err?.message || 'mysql_iot_error',
+        return withQueryIntent({
+          retrievalMode: 'iot_unavailable',
+          terms,
+          rows: [],
+          context: '',
+          fallbackReason: 'postgres_iot_error',
         });
-        if (fallback.context) return withQueryIntent(fallback);
       }
-      throw err;
     }
 
-    const safeRows = rows.map(sanitizeRow);
     return withQueryIntent({
-      retrievalMode: safeRows.length > 0 ? 'mysql_iot' : 'mysql_iot_miss',
+      retrievalMode: 'iot_unavailable',
       terms,
-      rows: safeRows,
-      checkedAt: new Date(now()).toISOString(),
-      dataAgeMs: 0,
-      maxAgeMs: getStationDataMaxAgeMs(env),
-      isStale: false,
-      context: formatLiveStationContext(safeRows),
+      rows: [],
+      context: '',
+      fallbackReason: 'postgres_iot_disabled',
     });
+
   }
 
   async function end() {

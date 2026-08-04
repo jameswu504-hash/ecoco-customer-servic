@@ -12,7 +12,6 @@
 | Claude / Anthropic API | 產生客服回覆 |
 | OpenAI Embedding API | 將問題與知識庫轉成向量，提供 pgvector 語意檢索 |
 | GitHub | 正式程式碼與知識庫 JSON 版本管理來源 |
-| GitLab | 公司內部同步備份或審查分支 |
 
 ## 2. 必要環境變數
 
@@ -220,47 +219,24 @@ npm.cmd run scan:pii
 - PostgreSQL 是否支援 `vector`
 - `/api/system/status` 的 `semanticRagEnabled`
 - Render Logs 是否有 embedding 或 pgvector 錯誤
-## 11. IoT Station Status Deployment Checks
+## 11. Hive／IoT 站點部署檢查
 
-Production station status flow:
+正式流程為「公司內網同步主機 → 唯讀 Hive／Azure MySQL → Render 同步 API → PostgreSQL → 官網／LINE 客服」。Render 不需要為一般站點回答直接連到公司 MySQL。
 
-```text
-trusted local machine -> readonly Azure MySQL -> Render IoT sync API -> Neon/PostgreSQL -> LINE/web bot
-```
-
-Render does not need to connect directly to Azure MySQL for normal station replies. A direct MySQL `ETIMEDOUT` in Render logs is an optional fallback failure, not the main production path, as long as the Neon station table is synced.
-
-After deploy, verify:
+部署後使用管理 API 檢查：
 
 ```text
 GET /api/system/status
 x-admin-key: <ADMIN_KEY>
 ```
 
-Important fields:
+確認 `database` 為 `ok`、站點筆數大於零、最後同步時間在預期範圍內，且 `iotStationDataStale` 為 `false`。站點數會隨撤站與新增改變，不應拿文件內的固定數字當門檻。
 
-| Field | Expected |
-| --- | --- |
-| `database` | `ok` |
-| `iotStationStatusCount` | greater than `0`; current synced production value is around `701` |
-| `iotStationLastSyncedAt` | recent timestamp; should refresh every 5 minutes while the local sync machine is running |
-| `iotStationDataStale` | `false` |
-| `iotStationDataAgeMs` | less than `iotStationDataMaxAgeMs` |
-
-Admin-only station lookup:
+若站點查無資料，先查管理端點，再檢查同步主機排程與 log：
 
 ```text
-GET /api/iot/station-statuses/search?q=es0140&limit=10
+GET /api/iot/station-statuses/search?q=<站點名稱或代碼>&limit=10
 x-admin-key: <ADMIN_KEY>
 ```
 
-Customer-visible station replies should be line-broken and friendly. They must not show `source_synced_at` or "資料同步時間". If data is stale, the reply must not expose status or capacity as current.
-
-If station replies say no data:
-
-1. Check `/api/system/status` and confirm `iotStationStatusCount > 0`.
-2. Search the station through `/api/iot/station-statuses/search`.
-3. On the sync machine, check Windows Task Scheduler task `ECOCO IoT Station Sync`.
-4. Confirm it launches `tools/iot-sync/run-hidden.vbs`, which does not open a console window.
-5. Check `.local-iot-sync/logs/iot-sync-*.log` on the sync machine.
-6. Run one manual sync with `npm run iot:sync` from a network that can reach Azure MySQL.
+完整架構、排程與排錯方式見 [Hive／IoT 站點狀態同步](IOT_STATION_STATUS.md)。

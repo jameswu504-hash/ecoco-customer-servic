@@ -24,7 +24,9 @@
 - `content_hash`：公司範圍內的去重 SHA-256。
 - `status`：`pending_review`、`approved`、`rejected`、`archived`。
 - `approved_section_id`：核准後建立的公司知識 ID。
+- `revision_of_candidate_id`：修訂版所取代的已核准候選 ID；初版為空。
+- `revision_number`：同一知識的版本序號，初版為 1。
 
 ## 核准規則
 
-核准時建立 `partner_knowledge_sections` 及 `partner_knowledge_chunks`。Chunk 必須保存候選 ID、批次 ID、日期、群組與來源訊息 ID，且所有 SQL 都必須包含相同 `company_id`。
+核准時建立 `partner_knowledge_sections` 及 `partner_knowledge_chunks`。Chunk 必須保存候選 ID、批次 ID、日期、群組與來源訊息 ID，且所有 SQL 都必須包含相同 `company_id`。核准修訂版時，先建立新版 Section 與 Chunk，再封存被取代的舊 Section；舊候選及來源紀錄保留供追溯。

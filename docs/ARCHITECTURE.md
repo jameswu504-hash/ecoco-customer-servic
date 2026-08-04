@@ -1,55 +1,65 @@
-# ECOCO AI 客服系統架構
+# ECOCO AI 客服目前架構
 
-本文件說明目前系統的主要選型與維運邊界，供公司交接、主管檢視與技術維護使用。
+## 1. 產品層次
 
-## 核心架構
+ECOCO AI 客服以 B2C 為核心，B2B 是共用同一後端與 LINE 官方帳號的擴充層。
 
-```mermaid
-flowchart LR
-  Customer["網站使用者 / LINE 使用者"] --> Express["Express API"]
-  Express --> RAG["RAG 檢索服務"]
-  RAG --> Knowledge[("PostgreSQL<br/>knowledge_sections<br/>knowledge_chunks")]
-  Express --> Claude["Claude API"]
-  Claude --> Express
-  Express --> Ops[("conversations<br/>ratings<br/>unanswered_questions<br/>chat_traces")]
-  Dashboard["客服後台 / 主管報表"] --> Express
-  Actions["GitHub Actions"] --> Express
+```text
+ECOCO AI 客服
+├─ B2C AI 客服
+│  ├─ 官網聊天
+│  ├─ LINE 一對一聊天
+│  ├─ ECOCO 共用 RAG 知識
+│  └─ Hive 站點狀態鏡像
+└─ B2B 合作夥伴
+   ├─ LINE 群組綁定 gate
+   ├─ 公司專屬 RAG 知識
+   └─ 對話保存、清洗、候選知識與審核
 ```
 
-## 為什麼這樣選型
+## 2. 請求分流
 
-### Express API
+### B2C
 
-Express 足以支撐目前客服前台、後台、LINE webhook、報表與知識庫管理。專案規模仍適合單一 Node.js service，部署到 Render 的維運成本低，對公司交接也直觀。
+- 官網 `/api/chat`：直接走 B2C 回答流程。
+- LINE `source.type = user`：走 B2C 回答流程。
+- 使用 ECOCO 共用知識；站點問題另查同步到 PostgreSQL 的 Hive 站點資料。
+- 不會讀取任何合作公司的私有知識。
 
-### PostgreSQL + RAG
+### B2B
 
-知識庫正式來源以 PostgreSQL 為主，`knowledge_sections` 保存客服可維護的分類內容，`knowledge_chunks` 保存檢索片段。這樣可以讓客服後台修改後立即成為 AI 回覆依據，不需要每次都改程式碼。
+- LINE `source.type = group`：一定先進 B2B 群組 gate。
+- 未綁定群組只顯示綁定指引，不會退回 B2C 回答。
+- 已綁定群組可查 ECOCO 共用知識，以及該 `company_id` 的公司專屬知識。
+- 不同公司的資料不可交叉檢索。
 
-系統優先使用 pgvector / embedding 做語意檢索；若 OpenAI embedding 不可用，會降級為關鍵字檢索，讓服務仍可回答基本問題。
-問題分類的 `ragScope` 只影響排序加權，不是 SQL 硬篩選，避免分類錯誤時完全排除正確知識。
+## 3. 主要元件
 
-### Claude 回覆生成
+| 元件 | 職責 |
+|---|---|
+| `server.js` | Express API、LINE webhook、B2C/B2B 分流、RAG、資料庫存取 |
+| `public/` | B2C 前台、客服後台與 B2B 合作夥伴後台 |
+| PostgreSQL | 共用知識、公司知識、對話、群組綁定、站點狀態與稽核紀錄 |
+| Claude API | 依檢索片段產生回答 |
+| OpenAI Embedding API | 可選的語意向量；額度不足時退回關鍵字檢索 |
+| Hive／Azure MySQL | 站點與設備狀態來源，由同步程式讀取，不由每次客服請求直接查詢 |
 
-Claude 負責將 RAG 找到的公司知識轉成客服可讀的回覆。Prompt 分成固定規則與動態 RAG 內容，避免每次都重送完整知識庫，也降低模型把不存在資訊說成事實的風險。
+## 4. 資料隔離
 
-### GitHub Actions
+| 資料 | 使用範圍 |
+|---|---|
+| `knowledge_sections`、`knowledge_chunks` | B2C 與所有 B2B 群組可使用的 ECOCO 共用知識 |
+| `partner_knowledge_sections`、`partner_knowledge_chunks` | 只限相同 `company_id` 的已綁定群組 |
+| `iot_station_statuses` | B2C 與需要站點資訊的 B2B 問題；內容來自 Hive 同步鏡像 |
+| `partner_line_groups` | LINE 群組與合作公司的永久綁定關係 |
+| `partner_conversations`、`line_webhook_events` | 群組對話與 webhook 追蹤紀錄 |
 
-正式維運自動化以 GitHub Actions 為主，負責 lint、test、eval、PII scan、知識庫備份與每週 AI 維運分析。
+## 5. 安全與資料處理
 
-## 目前重要邊界
+- Webhook 會驗證 LINE 簽章。
+- 管理 API 需 `ADMIN_KEY`，同步 API 需 `IOT_SYNC_KEY`（未設定時目前保留相容 fallback）。
+- B2B 群組對話保存前會遮蔽敏感資料。
+- B2B 回答只把該問題檢索到的必要片段送給 Claude，不會傳送整個公司資料庫。
+- 檔案清洗在本機以規則處理，不把原始文件交給外部 AI。
 
-- LINE rate limit bucket 目前存在單一 Node.js 記憶體內。單一 Render instance 可用；若未來水平擴展多 instance，需改用 Redis 或 PostgreSQL。
-- LINE webhook event 以 PostgreSQL `line_webhook_events` 防止 redelivery 重複處理；這與記憶體 rate limit 是不同機制。
-- `knowledge.js` 只作為空資料庫初始 seed fallback；正式回覆不直接讀這份檔案。
-- 內部 Wiki 仍屬未來功能，正式客服落地主線不依賴它。
-- 對話紀錄會做基本遮罩後保存；這偏向隱私保護，但可能讓多輪客服情境中部分個資線索無法被模型完整沿用。
-- 網站對話以伺服器簽署的 `HttpOnly` cookie 綁定，LINE 對話則以雜湊後的來源 ID 建立 session。
-
-## 維護重點
-
-- 上線前確認 Render Environment Variables 只存在正式密鑰，不提交到 Git。
-- 知識庫以後台與 PostgreSQL 為主，Git JSON 匯出只作交接與備份。
-- 修改客服回覆邏輯後需跑 `npm run lint`、`npm test`，並確認 GitHub Actions 通過。
-- LINE webhook 若超過 reply token 時效，系統會回覆保守訊息並記錄 trace；如需主動追補訊息，需另評估 push message 成本與權限。
-- 只有 `CONVERSATION_RETENTION_ENABLED=true` 時，才依 `CONVERSATION_RETENTION_DAYS` 在啟動時與每 24 小時清理過期原始資料；預設保留全部資料。
+更細的操作與資料規則請從 [文件索引](README.md) 進入各模組文件。

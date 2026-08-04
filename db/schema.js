@@ -289,12 +289,21 @@ const SCHEMA = [
       reviewed_by          TEXT NOT NULL DEFAULT '',
       reviewed_at          TIMESTAMPTZ,
       approved_section_id  INTEGER REFERENCES partner_knowledge_sections(id) ON DELETE SET NULL,
+      revision_of_candidate_id INTEGER REFERENCES partner_knowledge_candidates(id) ON DELETE SET NULL,
+      revision_number      INTEGER NOT NULL DEFAULT 1,
       created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(company_id, content_hash)
     )`,
+  `ALTER TABLE partner_knowledge_candidates
+     ADD COLUMN IF NOT EXISTS revision_of_candidate_id INTEGER
+       REFERENCES partner_knowledge_candidates(id) ON DELETE SET NULL`,
+  `ALTER TABLE partner_knowledge_candidates
+     ADD COLUMN IF NOT EXISTS revision_number INTEGER NOT NULL DEFAULT 1`,
   `CREATE INDEX IF NOT EXISTS idx_partner_knowledge_candidates_review
      ON partner_knowledge_candidates(company_id, status, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_partner_knowledge_candidates_revision
+     ON partner_knowledge_candidates(company_id, revision_of_candidate_id, revision_number DESC)`,
   `CREATE TABLE IF NOT EXISTS internal_wiki_entries (
       id          SERIAL PRIMARY KEY,
       department  TEXT NOT NULL DEFAULT 'general',

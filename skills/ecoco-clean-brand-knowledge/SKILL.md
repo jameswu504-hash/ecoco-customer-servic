@@ -5,7 +5,7 @@ description: 將 ECOCO 品牌方的 LINE TXT、Markdown 文件或已綁定 LINE 
 
 # ECOCO 品牌資料清洗
 
-版本：1.2.0
+版本：1.3.0
 
 ## 必守原則
 
@@ -38,6 +38,7 @@ description: 將 ECOCO 品牌方的 LINE TXT、Markdown 文件或已綁定 LINE 
 6. 以內容雜湊去重；同一批資料重跑不得重複建立候選。
 7. 管理者可修改標題、分類及內容，再核准、退回或封存。
 8. 只有 `approved` 候選可以建立公司知識 Section 與 RAG Chunk。
+9. 已核准候選不可原地修改；需建立 `pending_review` 修訂版本，重新核准後才封存並取代舊 Section。
 
 ## 輸出與狀態
 

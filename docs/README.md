@@ -1,108 +1,61 @@
-# ECOCO AI 客服內部文件索引
+# ECOCO AI 客服文件
 
-本資料夾收錄 ECOCO AI 客服系統的正式說明文件。文件依使用者角色分組，方便客服、主管、維護者與工程協作者快速找到需要的資訊。
+這裡只列目前仍有效、需要持續維護的文件。日期型交接、一次性檢查與舊版流程已移到 `archive/`，不得作為現行系統依據。
 
-## 建議閱讀順序
+## 系統層次
 
-| 角色 | 建議先讀 | 目的 |
-| --- | --- | --- |
-| 客服人員 | [客服落地討論指南](CUSTOMER_ROLLOUT_GUIDE.md)、[客服人員操作指南](CUSTOMER_SUPPORT_GUIDE.md) | 了解試營運流程、日常後台操作與知識缺口處理 |
-| 客服主管 / 營運主管 | [客服落地討論指南](CUSTOMER_ROLLOUT_GUIDE.md)、[LINE@ 串接落地清單](LINE_ROLLOUT_CHECKLIST.md)、[PRD](PRD_ECOCO_AI_CUSTOMER_SERVICE.md) | 確認上線範圍、LINE 權限、客服口徑與角色分工 |
-| 系統維護者 | [維運與交接手冊](OPERATIONS_HANDOFF_GUIDE.md)、[部署與環境手冊](DEPLOYMENT_RUNBOOK.md)、[日常維護指南](MAINTENANCE_GUIDE.md) | 了解部署、資料庫、知識更新與交接流程 |
-| 工程協作者 | [資料字典](DATA_DICTIONARY.md)、[資料來源清單](DATA_SOURCES.md) | 了解資料表、JSON、來源與限制 |
-| AI / LLM 評估者 | [Eval 與可觀測性](EVAL_OBSERVABILITY_GUIDE.md) | 了解回覆品質評測、RAG traces 與後續改善方向 |
+```text
+ECOCO AI 客服
+├─ B2C AI 客服（核心）
+│  ├─ 官網聊天
+│  ├─ LINE 一對一聊天
+│  ├─ ECOCO 共用知識庫
+│  └─ Hive 站點狀態同步資料
+└─ B2B 合作夥伴（擴充層）
+   ├─ LINE 群組綁定
+   ├─ 公司專屬知識庫
+   └─ 群組對話保存、清洗與人工審核
+```
 
-## 核心交付文件
+B2C 不需要群組綁定。B2B 群組完成綁定後，才可使用該公司的私有資料；公司資料以 `company_id` 隔離。
 
-| 文件 | 說明 |
-| --- | --- |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | 系統架構、資料流與主要技術選型 |
-| [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) | 專案整體定位、主要功能與角色分工 |
-| [CUSTOMER_ROLLOUT_GUIDE.md](CUSTOMER_ROLLOUT_GUIDE.md) | 客服、主管與營運討論落地時使用的正式指南 |
-| [CUSTOMER_SUPPORT_GUIDE.md](CUSTOMER_SUPPORT_GUIDE.md) | 客服與營運人員的後台操作 SOP |
-| [PRD_ECOCO_AI_CUSTOMER_SERVICE.md](PRD_ECOCO_AI_CUSTOMER_SERVICE.md) | 產品需求文件，包含目標、範圍、功能、指標與風險 |
-| [CUSTOMER_SERVICE_FLOW.md](CUSTOMER_SERVICE_FLOW.md) | 客服流程與風險控管摘要，作為落地討論的輔助文件 |
-| [OPERATIONS_HANDOFF_GUIDE.md](OPERATIONS_HANDOFF_GUIDE.md) | 維運、權限、資料庫、部署與交接標準 |
-| [DEPLOYMENT_RUNBOOK.md](DEPLOYMENT_RUNBOOK.md) | Render、PostgreSQL、Claude、OpenAI embedding 與健康檢查 |
-| [MAINTENANCE_GUIDE.md](MAINTENANCE_GUIDE.md) | 日常維護、知識缺口狀態與例行檢查 |
-| [LINE_ROLLOUT_CHECKLIST.md](LINE_ROLLOUT_CHECKLIST.md) | LINE@ 正式串接前的權限、資源、測試與決策清單 |
-| [LINE_INTEGRATION_GUIDE.md](LINE_INTEGRATION_GUIDE.md) | LINE Messaging API Webhook 技術串接方式 |
-| [B2B_LINE_PARTNER_FRAMEWORK.md](B2B_LINE_PARTNER_FRAMEWORK.md) | 單一 LINE OA 的 B2B 公司分支、群組綁定、模擬測試與資料隔離 |
-| [HANDOFF_2026-07-28.md](HANDOFF_2026-07-28.md) | 2026-07-28 最新程式、Render、IoT 排程與 B2B LINE 交接狀態 |
-| [IOT_STATION_STATUS_HANDOFF_2026-07-24.md](IOT_STATION_STATUS_HANDOFF_2026-07-24.md) | IoT 站點資料同步架構、排程、驗證與排錯 |
-| [LIVE_IOT_MYSQL_INTEGRATION.md](LIVE_IOT_MYSQL_INTEGRATION.md) | Azure MySQL 到 Neon/PostgreSQL 的實作與欄位說明 |
+## 目前有效文件
 
-## 資料與知識庫文件
+### B2C AI 客服
 
-| 文件 | 說明 |
-| --- | --- |
-| [DATA_SOURCES.md](DATA_SOURCES.md) | 知識來源、使用限制、資料量摘要與更新原則 |
-| [DATA_DICTIONARY.md](DATA_DICTIONARY.md) | PostgreSQL 資料表、JSON 檔案與環境變數說明 |
-| [knowledge-import.md](knowledge-import.md) | 知識 JSON 的產生、匯入、匯出與同步方式 |
-| [KNOWLEDGE_QUALITY_AUDIT.md](KNOWLEDGE_QUALITY_AUDIT.md) | 重複知識、衝突與資料品質稽核摘要 |
-| [META_AI_INSTRUCTIONS.md](META_AI_INSTRUCTIONS.md) | Meta AI 指令來源與轉換為客服規則的方式 |
+- [B2C 系統說明](b2c/README.md)：渠道、資料來源、回答流程與邊界。
+- [客服操作指南](b2c/CUSTOMER_SUPPORT_GUIDE.md)：客服人員如何使用前後台與維護知識。
 
-## 安全與治理文件
+### B2B 合作夥伴
 
-| 文件 | 說明 |
-| --- | --- |
-| [security-keys.md](security-keys.md) | API key、token、`.env` 與 Render 環境變數的安全原則 |
-| [PII_HISTORY_CLEANUP_PLAN.md](archive/PII_HISTORY_CLEANUP_PLAN.md) | 歷史清除方案（已決議不執行，僅留封存紀錄） |
-| [REPO_FILE_AUDIT.md](REPO_FILE_AUDIT.md) | Git repository 檔案用途與不必要檔案稽核 |
+- [B2B LINE 群組與公司資料](b2b/README.md)：綁定、觸發、權限與資料隔離。
+- [LINE 對話轉知識審核](b2b/KNOWLEDGE_REVIEW.md)：候選知識、人工審核及匯入流程。
+- [`skills/ecoco-clean-brand-knowledge/SKILL.md`](../skills/ecoco-clean-brand-knowledge/SKILL.md)：品牌資料清洗規則。
 
-## 未啟用的未來模組
+### 維運
 
-| 文件 | 說明 |
-| --- | --- |
-| [future/internal-wiki/README.md](future/internal-wiki/README.md) | 內部 Wiki / 員工訓練知識系統規劃，目前 production 不啟用 |
-| [future/internal-wiki/INTERNAL_WIKI_GUIDE.md](future/internal-wiki/INTERNAL_WIKI_GUIDE.md) | 內部 Wiki 的部署、API 與資料表設計 |
-| [future/internal-wiki/LLM_WIKI_RULE_MODEL_STRATEGY.md](future/internal-wiki/LLM_WIKI_RULE_MODEL_STRATEGY.md) | LLM Wiki、Rule 與本地模型策略討論 |
+- [部署手冊](operations/DEPLOYMENT_RUNBOOK.md)
+- [日常維護](operations/MAINTENANCE_GUIDE.md)
+- [LINE 串接](operations/LINE_INTEGRATION_GUIDE.md)
+- [Hive／IoT 站點狀態同步](operations/IOT_STATION_STATUS.md)
+- [評測與可觀測性](operations/EVAL_OBSERVABILITY_GUIDE.md)
 
-## 歷史參考
+### 技術參考
 
-| 文件 | 說明 |
-| --- | --- |
-| [archive/commandcenter-migration.md](archive/commandcenter-migration.md) | 舊 CommandCenter 可參考內容與不建議沿用內容；不放入客服落地主線 |
+- [系統架構](ARCHITECTURE.md)
+- [資料字典](reference/DATA_DICTIONARY.md)
+- [知識與資料來源](reference/KNOWLEDGE_DATA.md)
+- [密鑰安全](reference/SECURITY_KEYS.md)
 
-## 重要維護原則
+### 未來構想與歷史資料
 
-- PostgreSQL 是線上執行資料庫，AI 目前實際讀取 `knowledge_sections` 與 `knowledge_chunks`。
-- Git 裡的 `data/ecoco-knowledge-import.json` 是正式版本備份，不會因為後台修改而自動更新。
-- 大量更新、交接或正式版本備份前，請從後台下載 JSON，人工確認後放回 Git。
-- 正式維運自動化以 GitHub Actions 為準，包含 CI、知識庫備份與每週 AI 維運分析。
-- 內部 Wiki / 員工訓練知識系統尚未啟用；客服正式文件不得寫成現行功能。
-- API key、token、資料庫連線字串與 `.env` 不得提交。
-- 真實手機、Email、會員資料或可識別個資不得提交。
-- 高風險客服問題不得由 AI 承諾補點、退款、賠償或已完成處理。
-- B2B 合作資料只能放在 `partner_knowledge_sections`，不可混入全域 `knowledge_sections`。
+- `future/`：尚未成為正式功能的研究與規劃。
+- `archive/`：歷史 PRD、交接、一次性 QA 與舊流程，只供追溯。
 
-## 文件維護規範
+## 文件維護規則
 
-文件應保持「可交接、可查證、可執行」。
-
-新增或修改文件時，請避免：
-
-- 只寫個人學習心得，卻沒有操作步驟。
-- 使用未確認的內部結論。
-- 將測試帳號、API key、真實個資寫入文件。
-- 讓同一件事散落在多份文件且內容互相矛盾。
-
-若文件與實際系統不一致，應優先修正正式文件，再同步通知維護者檢查程式或資料庫設定。
-## 正式上線確認
-
-正式接入 LINE@ 或擴大試營運前，請先使用 [CUSTOMER_ROLLOUT_GUIDE.md](CUSTOMER_ROLLOUT_GUIDE.md)、[LINE_ROLLOUT_CHECKLIST.md](LINE_ROLLOUT_CHECKLIST.md) 與 [LAUNCH_CONFIRMATION_CHECKLIST.md](archive/LAUNCH_CONFIRMATION_CHECKLIST.md) 完成內部確認。這些文件包含：
-
-- 知識庫內容與高風險回答確認
-- 公司 API key、Render、PostgreSQL、LINE 權限替換
-- UptimeRobot `/healthz` 監控
-- PostgreSQL / GitHub Actions 備份確認
-- GitHub Actions 健檢與備份流程確認
-- 客服、主管、技術窗口、專案維護者的角色分工
-
-Render 環境變數可參考 [config/render-production.env.example](../config/render-production.env.example)。
-## IoT 站點狀態文件
-
-目前採「本機/VPN 讀取唯讀 Azure MySQL，再上傳 Neon/PostgreSQL；Render 只查雲端副本」：
-
-- [IOT_STATION_STATUS_HANDOFF_2026-07-24.md](IOT_STATION_STATUS_HANDOFF_2026-07-24.md)：架構、排程、客服回覆格式、驗證與排錯。
-- [LIVE_IOT_MYSQL_INTEGRATION.md](LIVE_IOT_MYSQL_INTEGRATION.md)：MySQL → Render 管理上傳 API → Neon/PostgreSQL 實作細節。
+1. 現行說明依 B2C、B2B、維運、技術參考分類，不再新增日期型 handoff 文件。
+2. 同一功能只保留一份現行說明；修改功能時同步更新該文件與本索引。
+3. 不在文件硬寫站點數、測試檔數或知識筆數等容易過期的數字。
+4. 歷史文件移入 `archive/` 後不再維護，也不得拿來判斷正式環境行為。
+5. 未實作內容只能放在 `future/`，不可寫成已上線功能。
