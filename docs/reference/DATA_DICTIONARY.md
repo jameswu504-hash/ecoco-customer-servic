@@ -92,7 +92,7 @@ RAG 第一版使用的檢索片段表。這張表由 `knowledge_sections` 自動
 | `title` | chunk 標題 |
 | `content` | chunk 內容 |
 | `search_text` | 給搜尋使用的合併文字 |
-| `risk_level` | `Low` / `High` 等風險等級；高風險 guardrail 的正式依據 |
+| `risk_level` | `Low` / `Medium` / `High` 風險等級；高風險 guardrail 的正式資料庫依據。程式建立 Chunk 時的 `riskLevel` 會與此欄位正規化後判斷 |
 | `sort_order` | 排序 |
 | `source_updated_at` | 來源 section 的更新時間 |
 | `embedding` | pgvector 向量；只有 extension 與 embedding 設定可用時存在 |
@@ -216,7 +216,7 @@ LINE webhook 的 durable idempotency 紀錄。`event_id` 是主鍵；`status`、
 | `IOT_SYNC_KEY` | 本機同步專用 upload key，不得與 `ADMIN_KEY` 共用 |
 | `APP_MODE` / `STAFF_KEY` | 正式客服或內部 Wiki 模式，以及 staff-only API key |
 | `OPENAI_API_KEY` | pgvector embedding API key；未設定時改用關鍵字檢索 |
-| `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS` | embedding 模型與維度 |
+| `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS` | embedding 模型與維度；維度必須為模型上限內的正整數，否則使用模型預設值 |
 | `EMBEDDING_BATCH_SIZE` / `EMBEDDING_TIMEOUT_MS` | embedding 批次與 timeout |
 | `EMBEDDING_MAX_RETRIES` / `EMBEDDING_RETRY_BASE_MS` | embedding 暫時性失敗重試上限與退避基準 |
 | `ECOCO_IOT_MYSQL_*` | 本機/VPN 唯讀 MySQL 同步設定，不需要放在 Render |

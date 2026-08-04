@@ -17,7 +17,7 @@ ECOCO 客服 PostgreSQL：iot_station_statuses
         └─ LINE 客服
 ```
 
-Hive／Azure MySQL 是站點與機台狀態來源。客服不會在每次使用者提問時直接連 Hive，而是只讀取同步到 PostgreSQL 的鏡像，避免內網連線、回應時間與權限影響線上客服。鏡像查詢失敗時會回報站點資料暫時不可用，不會改查 MySQL 或舊 snapshot。
+Hive／Azure MySQL 是站點與機台狀態來源。客服不會在每次使用者提問時直接連 Hive，而是只讀取同步到 PostgreSQL 的鏡像，避免內網連線、回應時間與權限影響線上客服。鏡像查詢失敗時會回報站點資料暫時不可用，不會改查 MySQL 或舊 snapshot；客服 Runtime 已移除 snapshot fallback 設定與查詢入口。
 
 ## 同步方式
 
@@ -60,7 +60,7 @@ npm run iot:sync
 4. LINE 一對一詢問相同問題是否一致。
 5. Hive 已撤除的測試站點是否不再出現。
 
-正式官網與 LINE 的請求時間路徑只允許讀取 `iot_station_statuses`。`ECOCO_IOT_MYSQL_*` 與 snapshot 工具只供同步、匯出及診斷，不是客服回答的備援來源。
+正式官網與 LINE 的請求時間路徑只允許讀取 `iot_station_statuses`。`ECOCO_IOT_MYSQL_*` 只供同步與診斷；`npm run iot:snapshot` 及 `IOT_STATION_SNAPSHOT_OUTPUT` 只用於離線匯出，不是客服回答的備援來源，也沒有可重新開啟 Runtime fallback 的環境變數。
 
 ## 排錯順序
 

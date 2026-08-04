@@ -49,6 +49,8 @@ B2B 是架在 B2C AI 客服之上的合作夥伴擴充層。目前正式使用�
 4. SQL 保存來源 metadata、清洗狀態、知識文件與 RAG chunks。
 5. 匯入後仍以 `company_id` 隔離。
 
+`skills/ecoco-clean-brand-knowledge/` 是正式 Skill 唯一來源；`.agents/skills/` 只是 Agent 相容副本。修改規則、Schema 或清洗程式後必須執行 `npm run skill:sync`，測試會比對完整檔案而非只比較版本號。
+
 LINE 群組對話要轉成正式知識時，走相同的人工審核原則，詳見 [LINE 對話轉知識審核](KNOWLEDGE_REVIEW.md)。
 
 ## 管理入口

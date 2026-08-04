@@ -30,7 +30,7 @@ B2C 不需要群組綁定。B2B 群組完成綁定後，才可使用該公司的
 
 - [B2B LINE 群組與公司資料](b2b/README.md)：綁定、觸發、權限與資料隔離。
 - [LINE 對話轉知識審核](b2b/KNOWLEDGE_REVIEW.md)：候選知識、人工審核及匯入流程。
-- [`skills/ecoco-clean-brand-knowledge/SKILL.md`](../skills/ecoco-clean-brand-knowledge/SKILL.md)：品牌資料清洗規則。
+- [`skills/ecoco-clean-brand-knowledge/SKILL.md`](../skills/ecoco-clean-brand-knowledge/SKILL.md)：品牌資料清洗規則的唯一來源；`.agents/skills/` 由 `npm run skill:sync` 產生相容副本，CI 會檢查兩份內容一致。
 
 ### 維運
 

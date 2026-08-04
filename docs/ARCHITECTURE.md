@@ -38,7 +38,7 @@ ECOCO AI 客服
 | 元件 | 職責 |
 |---|---|
 | `server.js` | Express API、LINE webhook、B2C/B2B 分流、RAG、資料庫存取 |
-| `public/` | B2C 前台、客服後台與 B2B 合作夥伴後台 |
+| `public/` | B2C 前台、唯一維護的 `dashboard-v2.html` 客服後台與 B2B 合作夥伴後台；公開 `/dashboard.html` 由後端送出 V2 |
 | PostgreSQL | 共用知識、公司知識、對話、群組綁定、站點狀態與稽核紀錄 |
 | Claude API | 依檢索片段產生回答 |
 | OpenAI Embedding API | 可選的語意向量；額度不足時退回關鍵字檢索 |
@@ -61,5 +61,12 @@ ECOCO AI 客服
 - B2B 群組對話保存前會遮蔽敏感資料。
 - B2B 回答只把該問題檢索到的必要片段送給 Claude，不會傳送整個公司資料庫。
 - 檔案清洗在本機以規則處理，不把原始文件交給外部 AI。
+- 高風險 guardrail 會將資料庫的 `risk_level` 與記憶體 Chunk 的 `riskLevel` 正規化為相同判斷，不因資料形狀差異失效。
+
+## 6. 品質門檻
+
+- `npm run lint` 執行 ESLint；`npm run check:syntax` 執行純語法掃描。
+- HTTP 整合測試涵蓋客服、LINE、B2B、營運報表及 Internal Wiki 權限與資料操作。
+- `skills/ecoco-clean-brand-knowledge/` 是清洗 Skill 唯一來源；`.agents/skills/` 必須由同步指令產生並保持完整一致。
 
 更細的操作與資料規則請從 [文件索引](README.md) 進入各模組文件。

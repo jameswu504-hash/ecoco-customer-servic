@@ -6,6 +6,7 @@
 
 ```bash
 npm run lint
+npm run check:syntax
 npm test
 npm run eval:validate
 npm run scan:pii
@@ -44,7 +45,7 @@ npm run eval
 - `data/ecoco-knowledge-import.json` 是備份與明確匯入檔，不會因 Git push 自動成為正式資料。
 - 封存或刪除 section 時，必須同步處理 chunks。
 - B2B LINE 對話不是知識；需整理為候選並經人工核准。
-- 品牌文件清洗依 `skills/ecoco-clean-brand-knowledge/SKILL.md`，原始檔不送外部 AI。
+- 品牌文件清洗依 `skills/ecoco-clean-brand-knowledge/SKILL.md`，原始檔不送外部 AI；這個目錄是唯一來源，修改後執行 `npm run skill:sync` 更新 `.agents/skills/` 相容副本。
 
 ## RAG
 

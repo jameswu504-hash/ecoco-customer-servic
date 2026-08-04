@@ -21,9 +21,11 @@ JSON 的欄位名稱與列舉值（例如 `id`、`question`、`expected`、`tags
 npm run eval:validate
 npm test
 npm run lint
+npm run check:syntax
+npm run scan:pii
 ```
 
-`eval:validate` 檢查評測集格式，不會呼叫外部模型。單元與整合測試確認路由、權限、RAG、LINE 及資料處理沒有回歸。
+`eval:validate` 檢查評測集格式，不會呼叫外部模型。`lint` 使用 ESLint，`check:syntax` 保留純語法檢查。單元與 HTTP 整合測試確認路由、權限、RAG、LINE、營運報表、Internal Wiki 及資料處理沒有回歸；個資掃描則避免真實聯絡資料或識別碼進入 Git。
 
 ## 實際回答評測
 

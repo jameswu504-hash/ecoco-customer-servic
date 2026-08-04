@@ -31,7 +31,7 @@ Service -> Environment -> Environment Variables
 | `OPENAI_API_KEY` | 建議 | OpenAI embedding key，用來啟用 pgvector 語意檢索 | 系統仍可用，但只會 fallback 到關鍵字檢索 |
 | `ANTHROPIC_MODEL` | 選填 | Claude 模型，預設由程式指定 | 未設定時使用預設模型 |
 | `EMBEDDING_MODEL` | 選填 | 預設 `text-embedding-3-small` | 未設定時使用預設 embedding 模型 |
-| `EMBEDDING_DIMENSIONS` | 選填 | 預設 `1536` | 不建議任意改，需和 embedding 模型維度一致 |
+| `EMBEDDING_DIMENSIONS` | 選填 | `text-embedding-3-small` 預設／上限 `1536`，`text-embedding-3-large` 上限 `3072` | 非正整數、超過模型上限或格式錯誤時會安全回到該模型預設值 |
 | `EMBEDDING_TIMEOUT_MS` | 選填 | 預設 `10000` | embedding API 太久會 timeout，系統 fallback 關鍵字檢索 |
 | `EMBEDDING_MAX_RETRIES` | 選填 | 預設 `2`，只重試 `408`、`429`、`5xx` 與網路錯誤 | 暫時性錯誤較容易留下缺漏向量 |
 | `WEB_CHAT_TIMEOUT_MS` | 選填 | 網頁 AI 回覆預設 `45000`，上限 `55000` | 使用預設值 |
@@ -168,11 +168,13 @@ Windows PowerShell 可能會擋 `npm.ps1`，建議使用：
 
 ```powershell
 npm.cmd run lint
+npm.cmd run check:syntax
 npm.cmd test
+npm.cmd run eval:validate
 npm.cmd run scan:pii
 ```
 
-三個都通過後再 commit。
+`lint` 是 ESLint 程式品質檢查，`check:syntax` 是純 `node --check`；其餘指令分別驗證整合行為、評測集格式與個資。全部通過後再 commit。
 
 ## 9. 部署流程
 

@@ -62,7 +62,7 @@ npm start
 預設入口：
 
 - `http://localhost:3000/`
-- `http://localhost:3000/dashboard.html`
+- `http://localhost:3000/dashboard.html`（由後端送出唯一維護的 `dashboard-v2.html`）
 - `http://localhost:3000/partners.html`
 - `http://localhost:3000/healthz`
 
@@ -72,11 +72,14 @@ npm start
 
 ```bash
 npm run lint
+npm run check:syntax
 npm test
 npm run eval:validate
 npm run scan:pii
 git diff --check
 ```
+
+`npm run lint` 使用 ESLint 檢查未定義變數、未使用程式碼及常見錯誤；`npm run check:syntax` 保留純 `node --check` 語法掃描。兩者用途不同，提交前都要通過。
 
 ## 知識與站點資料
 
